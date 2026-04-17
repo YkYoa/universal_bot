@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="openarm_body">
+
+  <xacro:macro name="openarm_body"
+               params="body_type
+                       body_prefix:=''
+                       no_prefix:=false
+                       description_pkg:='openarm_description'
+                       connected_to:='world'
+                       xyz:='0 0 0'
+                       rpy:='0 0 0'
+                       inertials:=''
+                       kinematics:=''
+                       kinematics_link:=''">
+
+    <xacro:property name="prefix" value="${'' if no_prefix else 'openarm_body_'}" />
+
+    <!-- Connect the body to the world -->
+    <xacro:if value="${connected_to != ''}">
+      <link name="${connected_to}" />
+      <joint name="${prefix}joint_to_${connected_to}" type="fixed">
+        <parent link="${connected_to}" />
+        <child link="${prefix}link0" />
+        <origin xyz="${xyz}" rpy="${rpy}" />
+      </joint>
+    </xacro:if>
+
+    <!-- ========================================================================= -->
+    <!-- CHANGING THE BODY                                                         -->
+    <!-- ========================================================================= -->
+    <!-- If you design a new body (like an AGV, a new stand, etc.):                -->
+    <!-- 1. Drop the new meshes into meshes/body/v10/visual/ and collision/        -->
+    <!-- 2. Change the filename="..." below to match your new mesh names.          -->
+    <!-- 3. Update the mass and inertia directly in the <inertial> tag below.      -->
+    <!-- 4. Need wheels or extra links? Just add new <link> and <joint> tags here! -->
+    <!-- ========================================================================= -->
+
+    <link name="${prefix}link0">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <!-- Swap the visual mesh here -->
+          <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/body_link0.dae" scale="0.001 0.001 0.001" />
+        </geometry>
+      </visual>
+
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <!-- Swap the collision mesh here -->
+          <mesh filename="package://${description_pkg}/meshes/body/${body_type}/collision/body_link0_symp.stl" scale="0.001 0.001 0.001" />
+        </geometry>
+      </collision>
+
+      <!-- Mass and Inertia (from configuration/common_version/tomo_alpha style) -->
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <mass value="13.89" />
+        <inertia ixx="1.653" ixy="0.0" ixz="0.0" 
+                 iyy="1.653" iyz="0.0" 
+                 izz="0.051" />
+      </inertial>
+    </link>
+
+  </xacro:macro>
+
+</robot>
