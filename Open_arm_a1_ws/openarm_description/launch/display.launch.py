@@ -16,7 +16,7 @@ def generate_launch_description():
     declared_arguments.append(DeclareLaunchArgument("bimanual", default_value="false", description="Is this a bimanual setup?"))
     declared_arguments.append(DeclareLaunchArgument("hand", default_value="true", description="Include hand?"))
     declared_arguments.append(DeclareLaunchArgument("mobile_base", default_value="false", description="Include mobile base?"))
-    declared_arguments.append(DeclareLaunchArgument("mobile_base_arm_xyz", default_value="0 0 0", description="Single-arm mount offset on the mobile base."))
+    declared_arguments.append(DeclareLaunchArgument("mobile_base_arm_xyz", default_value="0 0 0.31", description="Single-arm mount offset on the mobile base."))
     declared_arguments.append(DeclareLaunchArgument("mobile_base_arm_rpy", default_value="0 0 0", description="Single-arm mount rotation on the mobile base."))
     declared_arguments.append(DeclareLaunchArgument("mobile_base_body_xyz", default_value="0 0 0", description="Bimanual body mount offset on the mobile base."))
     declared_arguments.append(DeclareLaunchArgument("mobile_base_body_rpy", default_value="0 0 0", description="Bimanual body mount rotation on the mobile base."))
@@ -72,7 +72,8 @@ def generate_launch_description():
         package="joint_state_publisher",
         executable="joint_state_publisher",
         name="joint_state_publisher",
-        parameters=[robot_description]
+        parameters=[robot_description],
+        remappings=[("/robot_description", "/robot_description_full")]
     )
 
     robot_state_publisher_node = Node(
@@ -80,6 +81,7 @@ def generate_launch_description():
         executable="robot_state_publisher",
         output="both",
         parameters=[robot_description],
+        remappings=[("/robot_description", "/robot_description_full")]
     )
     
     rviz_node = Node(

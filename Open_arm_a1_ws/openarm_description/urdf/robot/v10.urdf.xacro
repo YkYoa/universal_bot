@@ -49,7 +49,7 @@
 
   <xacro:arg name="can_fd" default="true" />
   <xacro:arg name="mobile_base" default="false" />
-  <xacro:arg name="mobile_base_xyz" default="0 0 0" />
+  <xacro:arg name="mobile_base_xyz" default="0 0 0.31" />
   <xacro:arg name="mobile_base_rpy" default="0 0 0" />
   <xacro:arg name="mobile_base_arm_xyz" default="0 0 0" />
   <xacro:arg name="mobile_base_arm_rpy" default="0 0 0" />

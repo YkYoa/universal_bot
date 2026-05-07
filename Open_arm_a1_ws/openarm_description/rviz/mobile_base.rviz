@@ -43,7 +43,7 @@ Visualization Manager:
         Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /robot_description
+        Value: /robot_description_full
       Enabled: true
       Links:
         All Links Enabled: true
