@@ -123,6 +123,23 @@
       </xacro:if>
     </ros2_control>
 
+    <!-- Base Hardware Interface -->
+    <ros2_control name="openarm_base_hardware_interface" type="system">
+        <hardware>
+          <plugin>mock_components/GenericSystem</plugin>
+          <param name="state_following_offset">0.0</param>
+        </hardware>
+      <xacro:configure_joint joint_name="openarm_base_fl_caster_joint" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="openarm_base_fl_wheel_joint" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="openarm_base_fr_caster_joint" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="openarm_base_fr_wheel_joint" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="openarm_base_bl_caster_joint" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="openarm_base_bl_wheel_joint" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="openarm_base_br_caster_joint" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="openarm_base_br_wheel_joint" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="openarm_base_left_drive_wheel_joint" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="openarm_base_right_drive_wheel_joint" initial_position="0.0"/>
+    </ros2_control>
   </xacro:macro>
 
 </robot>
