@@ -86,15 +86,26 @@ def generate_launch_description():
         arguments=["right_gripper_controller", "-c", "/controller_manager"],
     )
 
-    foxglove_bridge_node = Node(
-        package="foxglove_bridge",
-        executable="foxglove_bridge",
-        name="foxglove_bridge",
-        output="screen",
-        parameters=[{
-            "port": 8765,
-            "address": "0.0.0.0",
-        }]
+    # foxglove_bridge_node = Node(
+    #     package="foxglove_bridge",
+    #     executable="foxglove_bridge",
+    #     name="foxglove_bridge",
+    #     output="screen",
+    #     parameters=[{
+    #         "port": 8765,
+    #         "address": "0.0.0.0",
+    #     }]
+    # )
+    
+    rviz_config_file = PathJoinSubstitution(
+        [FindPackageShare("openarm_description"), "rviz", "bimanual.rviz"]
+    )
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        output="log",
+        arguments=["-d", rviz_config_file],
     )
 
     return LaunchDescription(
@@ -106,6 +117,7 @@ def generate_launch_description():
             right_arm_controller_spawner,
             left_gripper_controller_spawner,
             right_gripper_controller_spawner,
-            foxglove_bridge_node,
+            # foxglove_bridge_node,
+            rviz_node,
         ]
     )
