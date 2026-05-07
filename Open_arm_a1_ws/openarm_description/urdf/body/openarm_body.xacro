@@ -11,13 +11,16 @@
                        rpy:='0 0 0'
                        inertials:=''
                        kinematics:=''
-                       kinematics_link:=''">
+                       kinematics_link:=''
+                       create_connected_link:=true">
 
     <xacro:property name="prefix" value="${'' if no_prefix else 'openarm_body_'}" />
 
     <!-- Connect the body to the world -->
     <xacro:if value="${connected_to != ''}">
-      <link name="${connected_to}" />
+      <xacro:if value="${create_connected_link}">
+        <link name="${connected_to}" />
+      </xacro:if>
       <joint name="${prefix}joint_to_${connected_to}" type="fixed">
         <parent link="${connected_to}" />
         <child link="${prefix}link0" />

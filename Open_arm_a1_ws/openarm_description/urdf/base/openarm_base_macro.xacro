@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="base_caster"
+               params="prefix description_pkg corner caster_xyz wheel_z">
+    <link name="${prefix}${corner}_caster_link">
+      <inertial>
+        <origin xyz="-0.0210296737391897 2.66276711600594E-05 -0.0404565446191801" rpy="0 0 0" />
+        <mass value="0.174999250427368" />
+        <inertia ixx="8.59598402931729E-05" ixy="1.30108354990252E-07" ixz="-7.86718942953962E-06"
+                 iyy="9.65979989897865E-05" iyz="2.17811240261892E-07" izz="7.64688653952788E-05" />
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://${description_pkg}/meshes/base/visual/${corner}_caster_link.STL" />
+        </geometry>
+        <material name="${prefix}body_light" />
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://${description_pkg}/meshes/base/collision/${corner}_caster_link.STL" />
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}${corner}_caster_joint" type="continuous">
+      <origin xyz="${caster_xyz}" rpy="0 0 0" />
+      <parent link="${prefix}link" />
+      <child link="${prefix}${corner}_caster_link" />
+      <axis xyz="0 0 1" />
+    </joint>
+
+    <link name="${prefix}${corner}_wheel_link">
+      <inertial>
+        <origin xyz="-3.97836671182927E-05 -9.02813330067032E-06 ${wheel_z}" rpy="0 0 0" />
+        <mass value="0.109320570218184" />
+        <inertia ixx="3.6860500337048E-05" ixy="-9.46425018050332E-09" ixz="1.95534990593222E-11"
+                 iyy="3.69224586520118E-05" iyz="3.31849367825639E-12" izz="4.97629238797921E-05" />
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://${description_pkg}/meshes/base/visual/${corner}_wheel_link.STL" />
+        </geometry>
+        <material name="${prefix}body_light" />
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://${description_pkg}/meshes/base/collision/${corner}_wheel_link.STL" />
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}${corner}_wheel_joint" type="continuous">
+      <origin xyz="-0.0314999999999983 0 -0.058" rpy="-1.5707963267949 0 0" />
+      <parent link="${prefix}${corner}_caster_link" />
+      <child link="${prefix}${corner}_wheel_link" />
+      <axis xyz="0 0 1" />
+    </joint>
+  </xacro:macro>
+
+</robot>

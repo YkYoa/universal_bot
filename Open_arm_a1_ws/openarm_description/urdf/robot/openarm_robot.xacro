@@ -37,11 +37,19 @@
             left_arm_prefix:='left_'
             right_arm_prefix:='right_'
             can_fd:='true'
+            mobile_base:=false
+            mobile_base_xyz:='0 0 0'
+            mobile_base_rpy:='0 0 0'
+            mobile_base_arm_xyz:='0 0 0'
+            mobile_base_arm_rpy:='0 0 0'
+            mobile_base_body_xyz:='0 0 0'
+            mobile_base_body_rpy:='0 0 0'
             "
             >
 
     <xacro:include filename="$(find openarm_description)/urdf/arm/openarm_macro.xacro" />
     <xacro:include filename="$(find openarm_description)/urdf/arm/openarm_arm.xacro" />
+    <xacro:include filename="$(find openarm_description)/urdf/base/openarm_base.xacro" />
     <xacro:include filename="$(find openarm_description)/urdf/body/openarm_body_macro.xacro" />
     <xacro:include filename="$(find openarm_description)/urdf/body/openarm_body.xacro" />
     <xacro:include filename="$(find openarm_description)/urdf/ee/openarm_hand.xacro" />
@@ -54,6 +62,15 @@
 
     <xacro:property name="arm_prefix_modified" value="${'' if arm_prefix == '' else arm_prefix + '_'}" />
     <xacro:property name="body_prefix_modified" value="${'' if body_prefix == '' else body_prefix + '_'}" />
+    <xacro:property name="base_link_name" value="openarm_base_link" />
+
+    <xacro:if value="${mobile_base}">
+        <xacro:openarm_base
+        description_pkg="openarm_description"
+        connected_to="${body_connected_to}"
+        xyz="${mobile_base_xyz}"
+        rpy="${mobile_base_rpy}" />
+    </xacro:if>
 
     <xacro:if value="${bimanual}">
 
@@ -62,12 +79,13 @@
         body_prefix="${body_prefix_modified}"
         no_prefix="${no_prefix}"
         description_pkg="openarm_description"
-        connected_to="${body_connected_to}"
-        xyz="${xyz}"
-        rpy="${rpy}"
+        connected_to="${base_link_name if mobile_base else body_connected_to}"
+        xyz="${mobile_base_body_xyz if mobile_base else xyz}"
+        rpy="${mobile_base_body_rpy if mobile_base else rpy}"
         inertials="${body_inertials}"
         kinematics="${body_kinematics}"
-        kinematics_link="${body_kinematics_link}" />
+        kinematics_link="${body_kinematics_link}"
+        create_connected_link="${not mobile_base}" />
 
         <!-- left arm -->
         <xacro:openarm_arm
@@ -149,13 +167,13 @@
         arm_type="${arm_type}"
         arm_prefix="${arm_prefix_modified}"
         no_prefix="${no_prefix}"
-        xyz="${xyz}"
-        rpy="${rpy}"
+        xyz="${mobile_base_arm_xyz if mobile_base else xyz}"
+        rpy="${mobile_base_arm_rpy if mobile_base else rpy}"
         joint_limits="${joint_limits}"
         kinematics="${kinematics}"
         kinematics_link="${kinematics_link}"
         inertials="${inertials}"
-        connected_to=""
+        connected_to="${base_link_name if mobile_base else ''}"
         />
 
         <xacro:if value="${ros2_control}">

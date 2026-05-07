@@ -48,6 +48,13 @@
   <xacro:arg name="left_arm_base_rpy" default="-1.5708 0 0" />
 
   <xacro:arg name="can_fd" default="true" />
+  <xacro:arg name="mobile_base" default="false" />
+  <xacro:arg name="mobile_base_xyz" default="0 0 0" />
+  <xacro:arg name="mobile_base_rpy" default="0 0 0" />
+  <xacro:arg name="mobile_base_arm_xyz" default="0 0 0" />
+  <xacro:arg name="mobile_base_arm_rpy" default="0 0 0" />
+  <xacro:arg name="mobile_base_body_xyz" default="0 0 0" />
+  <xacro:arg name="mobile_base_body_rpy" default="0 0 0" />
 
   <xacro:openarm_robot
   arm_type="v10"
@@ -83,6 +90,13 @@
   right_arm_base_rpy="$(arg right_arm_base_rpy)"
   left_arm_base_rpy="$(arg left_arm_base_rpy)"
   can_fd="$(arg can_fd)"
+  mobile_base="$(arg mobile_base)"
+  mobile_base_xyz="$(arg mobile_base_xyz)"
+  mobile_base_rpy="$(arg mobile_base_rpy)"
+  mobile_base_arm_xyz="$(arg mobile_base_arm_xyz)"
+  mobile_base_arm_rpy="$(arg mobile_base_arm_rpy)"
+  mobile_base_body_xyz="$(arg mobile_base_body_xyz)"
+  mobile_base_body_rpy="$(arg mobile_base_body_rpy)"
   />
 
 </robot>
