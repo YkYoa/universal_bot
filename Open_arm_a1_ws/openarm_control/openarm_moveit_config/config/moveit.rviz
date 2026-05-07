@@ -1,10 +1,9 @@
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
-  - Class: rviz_common/Views
-    Name: Views
-  - Class: moveit_rviz_plugin/MotionPlanning
-    Name: MotionPlanning
+    Property Tree Widget:
+      Expanded: ~
+      Splitter Ratio: 0.5
 Visualization Manager:
   Class: ""
   Displays:
@@ -12,9 +11,9 @@ Visualization Manager:
       Name: Grid
       Value: true
       Cell Size: 1
-      Color: 160; 160; 164
+      Color: 80; 80; 80
       Line Style:
-        Line Width: 0.029999999329447746
+        Line Width: 0.03
         Value: Lines
       Normal Cell Count: 0
       Offset:
@@ -42,6 +41,7 @@ Visualization Manager:
       Robot Description: robot_description
       Scene Geometry:
         Scene Alpha: 0.9
+        Scene Color: 50; 230; 50
       Scene Robot:
         Attached Body Color: 150; 50; 150
         Links:
@@ -106,7 +106,15 @@ Visualization Manager:
       Yaw: 0.5
     Saved: ~
 Window Geometry:
+  Displays:
+    collapsed: false
   Height: 900
   Width: 1400
   X: 50
   Y: 50
+  Views:
+    collapsed: true
+  MotionPlanning:
+    collapsed: false
+  MotionPlanning - Trajectory Slider:
+    collapsed: false
