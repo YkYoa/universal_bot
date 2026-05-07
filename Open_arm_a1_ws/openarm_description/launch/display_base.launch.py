@@ -24,18 +24,20 @@ def generate_launch_description():
         "base_only.rviz"
     ])
 
-    joint_state_publisher_gui_node = Node(
-        package="joint_state_publisher_gui",
-        executable="joint_state_publisher_gui",
-        name="joint_state_publisher_gui",
-        parameters=[robot_description]
+    joint_state_publisher_node = Node(
+        package="joint_state_publisher",
+        executable="joint_state_publisher",
+        name="joint_state_publisher",
+        parameters=[robot_description],
+        remappings=[("/robot_description", "/robot_description_base")]
     )
-    
+
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="both",
         parameters=[robot_description],
+        remappings=[("/robot_description", "/robot_description_base")]
     )
     
     rviz_node = Node(
@@ -47,7 +49,7 @@ def generate_launch_description():
     )
 
     nodes = [
-        joint_state_publisher_gui_node,
+        joint_state_publisher_node,
         robot_state_publisher_node,
         rviz_node,
     ]

@@ -6,7 +6,7 @@
   <xacro:openarm_base
     description_pkg="openarm_description"
     connected_to="world"
-    xyz="0 0 0"
+    xyz="0 0 0.31"
     rpy="0 0 0" />
 
 </robot>
