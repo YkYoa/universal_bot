@@ -145,6 +145,17 @@ class MoveItEEController(Node):
         
         self.get_logger().info('MoveIt EE Controller node initialized')
         self.get_logger().info('Waiting for MoveGroup action server...')
+
+    def _wait_for_future(self, future, timeout_sec=None):
+        """
+        Thread-safe wait for a future when an executor is already spinning 
+        the node in another thread.
+        """
+        event = threading.Event()
+        future.add_done_callback(lambda _: event.set())
+        if not event.wait(timeout=timeout_sec):
+            return None
+        return future.result()
         
     def _joint_state_cb(self, msg: JointState):
         with self._joint_state_lock:
@@ -185,6 +196,9 @@ class MoveItEEController(Node):
         Returns:
             dict with 'success', 'message', 'planning_time'
         """
+        if not rclpy.ok():
+            return {'success': False, 'message': 'ROS 2 context is invalid or shut down'}
+
         if not self._move_group_client.wait_for_server(timeout_sec=5.0):
             return {'success': False, 'message': 'MoveGroup action server not available'}
         
@@ -278,17 +292,14 @@ class MoveItEEController(Node):
             )
             
             send_goal_future = self._move_group_client.send_goal_async(goal)
-            rclpy.spin_until_future_complete(self, send_goal_future, timeout_sec=10.0)
+            goal_handle = self._wait_for_future(send_goal_future, timeout_sec=10.0)
             
-            goal_handle = send_goal_future.result()
             if not goal_handle or not goal_handle.accepted:
                 return {'success': False, 'message': 'Goal rejected by MoveGroup'}
             
             # Wait for result
             result_future = goal_handle.get_result_async()
-            rclpy.spin_until_future_complete(self, result_future, timeout_sec=60.0)
-            
-            result = result_future.result()
+            result = self._wait_for_future(result_future, timeout_sec=60.0)
             if result is None:
                 return {'success': False, 'message': 'Execution timed out'}
             
@@ -404,16 +415,13 @@ class MoveItEEController(Node):
         self.get_logger().info(f'Sending joint goal to {group_name}: {positions}')
         
         send_future = client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, send_future, timeout_sec=10.0)
+        goal_handle = self._wait_for_future(send_future, timeout_sec=10.0)
         
-        goal_handle = send_future.result()
         if not goal_handle or not goal_handle.accepted:
             return {'success': False, 'message': 'Joint trajectory goal rejected'}
         
         result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(self, result_future, timeout_sec=scaled_duration + 10.0)
-        
-        result = result_future.result()
+        result = self._wait_for_future(result_future, timeout_sec=scaled_duration + 10.0)
         if result is None:
             return {'success': False, 'message': 'Joint trajectory execution timed out'}
         
@@ -462,14 +470,13 @@ class MoveItEEController(Node):
         self.get_logger().info(f'Moving {side} gripper to {position:.3f}')
         
         send_future = client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, send_future, timeout_sec=5.0)
+        goal_handle = self._wait_for_future(send_future, timeout_sec=5.0)
         
-        goal_handle = send_future.result()
         if not goal_handle or not goal_handle.accepted:
             return {'success': False, 'message': 'Gripper goal rejected'}
         
         result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(self, result_future, timeout_sec=duration + 5.0)
+        self._wait_for_future(result_future, timeout_sec=duration + 5.0)
         
         return {'success': True, 'message': f'{side} gripper moved to {position:.3f}'}
 
@@ -484,6 +491,9 @@ class MoveItEEController(Node):
         Returns:
             dict with position {x,y,z} and orientation {x,y,z,w}
         """
+        if not rclpy.ok():
+            return {'success': False, 'message': 'ROS 2 context is invalid or shut down'}
+
         js = self.get_current_joint_state()
         if js is None:
             return {'success': False, 'message': 'No joint states received yet'}
@@ -505,9 +515,7 @@ class MoveItEEController(Node):
         fk_req.robot_state.joint_state = js
         
         future = self._fk_client.call_async(fk_req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
-        
-        result = future.result()
+        result = self._wait_for_future(future, timeout_sec=5.0)
         if result is None or result.error_code.val != 1:
             return self._get_joint_positions_fallback(group_name, js)
         

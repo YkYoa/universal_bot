@@ -27,6 +27,7 @@ import signal
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.signals import SignalHandlerOptions
 
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO
@@ -560,7 +561,8 @@ def api_docs():
 
 def main():
     # Initialize ROS 2
-    rclpy.init()
+    # Initialize ROS 2 without signal handlers to avoid conflict with Flask
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     
     global controller
     controller = MoveItEEController()
