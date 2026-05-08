@@ -1,0 +1,32 @@
+<mujoco model="link7">
+  <default>
+    <default class="visual">
+      <geom group="2" type="mesh" contype="0" conaffinity="0"/>
+    </default>
+    <default class="collision">
+      <geom group="3" type="mesh"/>
+    </default>
+  </default>
+  <asset>
+    <material name="material_link7_0" specular="0.20000000000000004" shininess="1.0" rgba="0.79607843 0.79607843 0.79607843 1.0"/>
+    <material name="material_link7_1" specular="0.20000000000000004" shininess="1.0" rgba="0.62745098 0.62745098 0.62745098 1.0"/>
+    <material name="material_link7_2" specular="0.20000000000000004" shininess="1.0" rgba="0.16862745 0.16862745 0.16862745 1.0"/>
+    <material name="material_link7_3" specular="0.20000000000000004" shininess="1.0" rgba="0.95686275 0.95686275 0.96078431 1.0"/>
+    <mesh file="link7_0.obj"/>
+    <mesh file="link7_1.obj"/>
+    <mesh file="link7_2.obj"/>
+    <mesh file="link7_3.obj"/>
+  </asset>
+  <worldbody>
+    <body name="link7">
+      <geom mesh="link7_0" material="material_link7_3" class="visual"/>
+      <geom mesh="link7_1" material="material_link7_2" class="visual"/>
+      <geom mesh="link7_2" material="material_link7_1" class="visual"/>
+      <geom mesh="link7_3" material="material_link7_0" class="visual"/>
+      <geom mesh="link7_0" class="collision"/>
+      <geom mesh="link7_1" class="collision"/>
+      <geom mesh="link7_2" class="collision"/>
+      <geom mesh="link7_3" class="collision"/>
+    </body>
+  </worldbody>
+</mujoco>
