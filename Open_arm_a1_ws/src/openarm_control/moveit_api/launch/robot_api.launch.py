@@ -150,17 +150,17 @@ def generate_launch_description():
         ],
     )
 
-    # ── REST API Server (Flask + ROS 2 node) ──
-    robot_api_node = Node(
-        package="moveit_api",
-        executable="robot_api_server",
-        name="robot_api_server",
-        output="screen",
-        parameters=[
-            robot_description,
-            robot_description_semantic,
-        ],
-    )
+    # # ── REST API Server (Flask + ROS 2 node) ──
+    # robot_api_node = Node(
+    #     package="moveit_api",
+    #     executable="robot_api_server",
+    #     name="robot_api_server",
+    #     output="screen",
+    #     parameters=[
+    #         robot_description,
+    #         robot_description_semantic,
+    #     ],
+    # )
 
     # ── RViz (optional, for monitoring) ──
     rviz_config_file = os.path.join(moveit_config_pkg, "config", "moveit.rviz")
@@ -190,8 +190,6 @@ def generate_launch_description():
             right_gripper_controller_spawner,
             # MoveIt
             move_group_node,
-            # REST API
-            robot_api_node,
             # Visualization
             rviz_node,
         ]
