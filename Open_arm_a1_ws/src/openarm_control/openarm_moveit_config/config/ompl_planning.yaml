@@ -17,3 +17,21 @@
         - default_planning_response_adapters/ValidateSolution
         - default_planning_response_adapters/DisplayMotionPath
       start_state_max_bounds_error: 0.1
+      planning_time: 10.0
+      max_planning_threads: 8
+      
+      left_arm:
+        planner_configs:
+          - RRTConnectkConfigDefault
+      right_arm:
+        planner_configs:
+          - RRTConnectkConfigDefault
+      both_arms:
+        planner_configs:
+          - RRTConnectkConfigDefault
+          
+      planner_configs:
+        RRTConnectkConfigDefault:
+          type: geometric::RRTConnect
+          range: 0.0  # Max step size; 0.0 means use default (automatically determined)
+          longest_valid_segment_fraction: 0.005 # Increased resolution for complex 14-DOF collision checking

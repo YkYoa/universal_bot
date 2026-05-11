@@ -14,6 +14,8 @@ The API will be available at:
 
 import os
 
+import yaml
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
@@ -61,6 +63,16 @@ def generate_launch_description():
     ompl_planning_yaml_path = os.path.join(moveit_config_pkg, "config", "ompl_planning.yaml")
     joint_limits_yaml_path = os.path.join(moveit_config_pkg, "config", "joint_limits.yaml")
     moveit_controllers_yaml_path = os.path.join(moveit_config_pkg, "config", "moveit_controllers.yaml")
+
+    # Load kinematics.yaml into the MoveIt parameter namespace.
+    with open(kinematics_yaml_path, "r") as f:
+        kinematics_config = yaml.safe_load(f) or {}
+    if "/**" in kinematics_config:
+        kinematics_params = kinematics_config["/**"]["ros__parameters"]
+    else:
+        kinematics_params = kinematics_config
+
+    robot_description_kinematics = {"robot_description_kinematics": kinematics_params}
 
     # ── ros2_control controllers ──
     controller_config = PathJoinSubstitution(
@@ -141,7 +153,7 @@ def generate_launch_description():
         parameters=[
             robot_description,
             robot_description_semantic,
-            kinematics_yaml_path,
+            robot_description_kinematics,
             ompl_planning_yaml_path,
             joint_limits_yaml_path,
             moveit_controllers_yaml_path,
@@ -174,7 +186,7 @@ def generate_launch_description():
         parameters=[
             robot_description,
             robot_description_semantic,
-            kinematics_yaml_path,
+            robot_description_kinematics,
         ],
     )
 
