@@ -85,6 +85,7 @@ class MoveItEEController(Node):
     # Joint names per arm
     LEFT_ARM_JOINTS = [f'openarm_left_joint{i}' for i in range(1, 8)]
     RIGHT_ARM_JOINTS = [f'openarm_right_joint{i}' for i in range(1, 8)]
+    BOTH_ARM_JOINTS = LEFT_ARM_JOINTS + RIGHT_ARM_JOINTS
 
     def __init__(self):
         super().__init__('moveit_ee_controller')
@@ -172,11 +173,13 @@ class MoveItEEController(Node):
     def move_to_pose(self, group_name: str, target_pose: dict,
                      velocity_scaling: float = 0.3,
                      acceleration_scaling: float = 0.3,
-                     planning_time: float = 10.0,
+                     planning_time: float = 5.0,
                      num_planning_attempts: int = 10,
                      position_tolerance: float = 0.01,
                      orientation_tolerance: float = 0.5,
-                     position_only: bool = False) -> dict:
+                     position_only: bool = False,
+                     pipeline_id: str = 'ompl',
+                     planner_id: str = None) -> dict:
         """
         Plan and execute a motion to a target end-effector pose.
         
@@ -230,6 +233,9 @@ class MoveItEEController(Node):
             req.allowed_planning_time = planning_time
             req.max_velocity_scaling_factor = velocity_scaling
             req.max_acceleration_scaling_factor = acceleration_scaling
+            req.pipeline_id = pipeline_id
+            if planner_id:
+                req.planner_id = planner_id
             
             # Workspace parameters
             req.workspace_parameters.header.frame_id = 'world'
@@ -357,6 +363,10 @@ class MoveItEEController(Node):
                 'home':  [0.0, 0.0, 0.0, -1.5, 0.0, 0.0, 0.0],
                 'ready': [0.0, 0.5, 0.0, -1.5, 0.0, 1.0, 0.0],
             },
+            'both_arms': {
+                'home':  [0.0, 0.0, 0.0, -1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.5, 0.0, 0.0, 0.0],
+                'ready': [0.0, -0.5, 0.0, -1.5, 0.0, 1.0, 0.0, 0.0, 0.5, 0.0, -1.5, 0.0, 1.0, 0.0],
+            },
         }
         
         if group_name not in named_poses:
@@ -377,32 +387,28 @@ class MoveItEEController(Node):
                                 duration: float = 3.0,
                                 velocity_scaling: float = 0.3,
                                 acceleration_scaling: float = 0.3) -> dict:
-        """
-        Move arm joints directly to target positions.
-        
-        Args:
-            group_name: 'left_arm' or 'right_arm'
-            positions: list of 7 joint angles in radians
-            duration: time to reach goal (seconds)
-        """
+        """Move joints directly (Trajectory) or via MoveGroup (safe)."""
         if group_name == 'left_arm':
             client = self._left_arm_client
             joint_names = self.LEFT_ARM_JOINTS
+            num_joints = 7
         elif group_name == 'right_arm':
             client = self._right_arm_client
             joint_names = self.RIGHT_ARM_JOINTS
+            num_joints = 7
+        elif group_name == 'both_arms':
+            # For both arms, we use the safe MoveGroup interface
+            return self._move_to_joints_moveit(group_name, positions, velocity_scaling, acceleration_scaling)
         else:
             return {'success': False, 'message': f'Unknown group: {group_name}'}
         
-        if len(positions) != 7:
-            return {'success': False, 'message': f'Expected 7 joint positions, got {len(positions)}'}
+        if len(positions) != num_joints:
+            return {'success': False, 'message': f'Expected {num_joints} joint positions, got {len(positions)}'}
         
         if not client.wait_for_server(timeout_sec=5.0):
             return {'success': False, 'message': f'{group_name} trajectory controller not available'}
         
-        # Scale duration by velocity
         scaled_duration = duration / max(velocity_scaling, 0.05)
-        
         goal_msg = FollowJointTrajectory.Goal()
         goal_msg.trajectory.joint_names = joint_names
         
@@ -412,11 +418,8 @@ class MoveItEEController(Node):
         point.time_from_start.nanosec = int((scaled_duration - int(scaled_duration)) * 1e9)
         goal_msg.trajectory.points = [point]
         
-        self.get_logger().info(f'Sending joint goal to {group_name}: {positions}')
-        
         send_future = client.send_goal_async(goal_msg)
         goal_handle = self._wait_for_future(send_future, timeout_sec=10.0)
-        
         if not goal_handle or not goal_handle.accepted:
             return {'success': False, 'message': 'Joint trajectory goal rejected'}
         
@@ -425,11 +428,59 @@ class MoveItEEController(Node):
         if result is None:
             return {'success': False, 'message': 'Joint trajectory execution timed out'}
         
-        error_code = result.result.error_code
-        if error_code == 0:  # SUCCESSFUL
-            return {'success': True, 'message': f'{group_name} reached target joint positions'}
+        return {'success': True, 'message': f'{group_name} reached target'}
+
+    def _move_to_joints_moveit(self, group_name: str, positions: list,
+                               velocity: float, acceleration: float) -> dict:
+        """Internal helper for safe joint moves via MoveIt."""
+        if not self._move_group_client.wait_for_server(timeout_sec=5.0):
+            return {'success': False, 'message': 'MoveGroup action server not available'}
+            
+        goal = MoveGroup.Goal()
+        req = goal.request
+        req.group_name = group_name
+        req.max_velocity_scaling_factor = velocity
+        req.max_acceleration_scaling_factor = acceleration
+        
+        # Determine joint names
+        if group_name == 'both_arms':
+            joint_names = self.BOTH_ARM_JOINTS
+            if len(positions) != 14:
+                 return {'success': False, 'message': f'Expected 14 joints for {group_name}, got {len(positions)}'}
         else:
-            return {'success': False, 'message': f'Trajectory error code: {error_code}'}
+             return {'success': False, 'message': f'MoveGroup joint planning not configured for {group_name}'}
+
+        # Joint constraints
+        constraints = Constraints()
+        from moveit_msgs.msg import JointConstraint
+        for name, pos in zip(joint_names, positions):
+            jc = JointConstraint()
+            jc.joint_name = name
+            jc.position = float(pos)
+            jc.tolerance_above = 0.001
+            jc.tolerance_below = 0.001
+            jc.weight = 1.0
+            constraints.joint_constraints.append(jc)
+        
+        req.goal_constraints.append(constraints)
+        
+        self.get_logger().info(f'Planning joint motion for {group_name}...')
+        send_future = self._move_group_client.send_goal_async(goal)
+        goal_handle = self._wait_for_future(send_future, timeout_sec=10.0)
+        
+        if not goal_handle or not goal_handle.accepted:
+            return {'success': False, 'message': 'Joint goal rejected by MoveGroup'}
+        
+        result_future = goal_handle.get_result_async()
+        result = self._wait_for_future(result_future, timeout_sec=60.0)
+        if result is None:
+            return {'success': False, 'message': 'Execution timed out'}
+        
+        error_code = result.result.error_code.val
+        if error_code == 1:
+            return {'success': True, 'message': f'Bimanual motion to joints successful'}
+        else:
+            return {'success': False, 'message': f'Planning failed: {error_code}'}
     
     # ──────────────────────────────────────────────
     # Gripper Control

@@ -170,9 +170,11 @@ def move_to_pose():
             "w": 0.707
         },
         "position_only": false,        // optional, if true ignore orientation
+        "pipeline_id": "ompl",         // optional: "ompl" or "pilz_industrial_motion_planner"
+        "planner_id": "RRTConnect",    // optional: "RRTConnect", "RRTstar", "LIN", "PTP", etc.
         "velocity_scaling": 0.3,       // optional, 0.0-1.0
         "acceleration_scaling": 0.3,   // optional, 0.0-1.0
-        "planning_time": 10.0,         // optional, seconds
+        "planning_time": 5.0,         // optional, seconds
         "num_attempts": 10,            // optional
         "position_tolerance": 0.01,    // optional, meters (default 1cm)
         "orientation_tolerance": 0.5   // optional, radians (default ~29 deg)
@@ -231,10 +233,22 @@ def move_to_pose():
     
     velocity = float(data.get('velocity_scaling', 0.3))
     acceleration = float(data.get('acceleration_scaling', 0.3))
-    planning_time = float(data.get('planning_time', 10.0))
+    planning_time = float(data.get('planning_time', 5.0))
     num_attempts = int(data.get('num_attempts', 10))
     pos_tol = float(data.get('position_tolerance', 0.01))
     orient_tol = float(data.get('orientation_tolerance', 0.5))
+    pipeline = data.get('pipeline_id', 'ompl')
+    planner = data.get('planner_id')
+    
+    # Auto-map friendly names to MoveIt config names
+    if pipeline == 'ompl' and planner:
+        mapping = {
+            'RRTConnect': 'RRTConnectkConfigDefault',
+            'RRTstar': 'RRTstarkConfigDefault',
+            'TRRT': 'TRRTkConfigDefault',
+            'LBKPIECE': 'LBKPIECEkConfigDefault'
+        }
+        planner = mapping.get(planner, planner)
     
     try:
         result = controller.move_to_pose(
@@ -247,6 +261,8 @@ def move_to_pose():
             position_tolerance=pos_tol,
             orientation_tolerance=orient_tol,
             position_only=position_only,
+            pipeline_id=pipeline,
+            planner_id=planner,
         )
         # Include current pose in response for reference
         if not result['success']:
@@ -282,17 +298,18 @@ def move_to_joints():
         return jsonify({'success': False, 'message': 'JSON body required'}), 400
     
     group = data.get('group')
-    if group not in ('left_arm', 'right_arm'):
+    if group not in ('left_arm', 'right_arm', 'both_arms'):
         return jsonify({
             'success': False,
-            'message': 'group must be "left_arm" or "right_arm"'
+            'message': 'group must be "left_arm", "right_arm", or "both_arms"'
         }), 400
     
     positions = data.get('positions')
-    if not positions or len(positions) != 7:
+    expected_joints = 14 if group == 'both_arms' else 7
+    if not positions or len(positions) != expected_joints:
         return jsonify({
             'success': False,
-            'message': 'positions must be a list of 7 joint values (radians)'
+            'message': f'positions must be a list of {expected_joints} joint values (radians)'
         }), 400
     
     duration = float(data.get('duration', 3.0))
@@ -335,10 +352,10 @@ def move_to_named():
     pose_name = data.get('pose')
     velocity = float(data.get('velocity_scaling', 0.3))
     
-    if group not in ('left_arm', 'right_arm'):
+    if group not in ('left_arm', 'right_arm', 'both_arms'):
         return jsonify({
             'success': False,
-            'message': 'group must be "left_arm" or "right_arm"'
+            'message': 'group must be "left_arm", "right_arm", or "both_arms"'
         }), 400
     
     if pose_name not in ('home', 'ready'):
@@ -560,10 +577,23 @@ def api_docs():
             },
         },
         'planning_groups': ['left_arm', 'right_arm', 'both_arms'],
+        'pipelines': {
+            'ompl': {
+                'description': 'Sampling-based planners (default). Best for complex obstacle avoidance.',
+                'planners': ['RRTConnect', 'RRTstar', 'TRRT', 'LBKPIECE'],
+                'smoothing': 'Ruckig (jerk-limited)'
+            },
+            'pilz_industrial_motion_planner': {
+                'description': 'Deterministic industrial planners. Best for straight lines and simple PTP.',
+                'planners': ['PTP', 'LIN', 'CIRC'],
+                'restrictions': 'Single arm only (left_arm or right_arm)'
+            }
+        },
         'gripper_range': {'min': 0.0, 'max': 0.044, 'unit': 'meters'},
         'named_poses': {
             'left_arm': ['home', 'ready'],
             'right_arm': ['home', 'ready'],
+            'both_arms': ['home', 'ready'],
         },
     })
 

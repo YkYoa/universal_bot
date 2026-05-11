@@ -18,11 +18,14 @@ ros2 launch moveit_api robot_api.launch.py use_rviz:=true
 ## 🛠 Features
 
 *   **MoveIt2 Integration**: High-level motion planning for `left_arm`, `right_arm`, and `both_arms`.
+*   **Advanced Planning Pipelines**:
+    *   **OMPL**: Sampling-based planners (RRTConnect, RRTstar, TRRT) with **Ruckig smoothing** for high-quality, jerk-limited motion.
+    *   **Pilz Industrial**: Deterministic planners (LIN, PTP) for precise single-arm industrial movements.
 *   **REST Endpoints**:
     *   `GET /api/status`: Real-time joint positions and motion state.
-    *   `POST /api/move/pose`: Cartesian planning to a target (x, y, z, qx, qy, qz, qw).
-    *   `POST /api/move/joints`: Direct joint-space trajectory control.
-    *   `POST /api/move/named`: Move to predefined poses (e.g., `home`, `ready`).
+    *   `POST /api/move/pose`: Cartesian planning. Now supports `pipeline_id` and `planner_id` selection.
+    *   `POST /api/move/joints`: Direct joint-space trajectory control. Supports 14-DOF `both_arms` coordination.
+    *   `POST /api/move/named`: Move to predefined poses (e.g., `home`, `ready`) for all groups.
     *   `POST /api/gripper`: Control the left and right grippers.
 *   **WebSocket Streaming**: Low-latency joint state updates for UI visualization.
 
@@ -46,3 +49,21 @@ The launch file has been optimized to suppress redundant logs. You may still see
 ## 🛑 Clean Shutdown
 
 The system is configured for a clean exit. Use `Ctrl+C` once and wait for the "Shutting down..." logs to complete.
+
+
+ros2 launch moveit_api robot_api.launch.py \
+    use_api:=true \
+    use_moveit:=true \
+    use_controllers:=true \
+    use_rviz:=false
+
+
+ros2 launch moveit_api robot_api.launch.py \
+    use_api:=false \
+    use_moveit:=false \
+    use_controllers:=false \
+    use_rviz:=true \
+    use_rsp:=true
+
+
+
