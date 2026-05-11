@@ -3,6 +3,7 @@
     planning_pipelines:
       pipeline_names:
         - ompl
+        - pilz_industrial_motion_planner
     default_planning_pipeline: ompl
     ompl:
       planning_plugins:
@@ -14,24 +15,47 @@
         - default_planning_request_adapters/CheckStartStateCollision
       response_adapters:
         - default_planning_response_adapters/AddTimeOptimalParameterization
+        - default_planning_response_adapters/AddRuckigTrajectorySmoothing
         - default_planning_response_adapters/ValidateSolution
         - default_planning_response_adapters/DisplayMotionPath
       start_state_max_bounds_error: 0.1
-      planning_time: 10.0
+      planning_time: 5.0
       max_planning_threads: 8
       
       left_arm:
         planner_configs:
           - RRTConnectkConfigDefault
+          - LBKPIECEkConfigDefault
+          - RRTstarkConfigDefault
+          - TRRTkConfigDefault
       right_arm:
         planner_configs:
           - RRTConnectkConfigDefault
+          - LBKPIECEkConfigDefault
+          - RRTstarkConfigDefault
+          - TRRTkConfigDefault
       both_arms:
         planner_configs:
           - RRTConnectkConfigDefault
+          - LBKPIECEkConfigDefault
+          - RRTstarkConfigDefault
+          - TRRTkConfigDefault
           
       planner_configs:
         RRTConnectkConfigDefault:
           type: geometric::RRTConnect
-          range: 0.0  # Max step size; 0.0 means use default (automatically determined)
-          longest_valid_segment_fraction: 0.005 # Increased resolution for complex 14-DOF collision checking
+          range: 0.5
+          longest_valid_segment_fraction: 0.01
+        LBKPIECEkConfigDefault:
+          type: geometric::LBKPIECE
+          range: 0.5
+          longest_valid_segment_fraction: 0.01
+        RRTstarkConfigDefault:
+          type: geometric::RRTstar
+          range: 0.5
+          goal_bias: 0.05
+          delay_collision_checking: 1
+        TRRTkConfigDefault:
+          type: geometric::TRRT
+          range: 0.5
+          goal_bias: 0.05

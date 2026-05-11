@@ -61,6 +61,7 @@ def generate_launch_description():
     # ── MoveIt Config Files ──
     kinematics_yaml_path = os.path.join(moveit_config_pkg, "config", "kinematics.yaml")
     ompl_planning_yaml_path = os.path.join(moveit_config_pkg, "config", "ompl_planning.yaml")
+    pilz_planning_yaml_path = os.path.join(moveit_config_pkg, "config", "pilz_industrial_motion_planner_planning.yaml")
     joint_limits_yaml_path = os.path.join(moveit_config_pkg, "config", "joint_limits.yaml")
     moveit_controllers_yaml_path = os.path.join(moveit_config_pkg, "config", "moveit_controllers.yaml")
 
@@ -155,6 +156,7 @@ def generate_launch_description():
             robot_description_semantic,
             robot_description_kinematics,
             ompl_planning_yaml_path,
+            pilz_planning_yaml_path,
             joint_limits_yaml_path,
             moveit_controllers_yaml_path,
             trajectory_execution,
@@ -187,6 +189,8 @@ def generate_launch_description():
             robot_description,
             robot_description_semantic,
             robot_description_kinematics,
+            ompl_planning_yaml_path,
+            pilz_planning_yaml_path,
         ],
     )
 
