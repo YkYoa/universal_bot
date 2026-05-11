@@ -14,11 +14,10 @@ The API will be available at:
 
 import os
 
-# Set CycloneDDS as RMW and configure buffers
-os.environ.setdefault("RMW_IMPLEMENTATION", "rmw_cyclonedds_cpp")
-
 from launch import LaunchDescription
-from launch.substitutions import Command, FindExecutable, PathJoinSubstitution
+from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
+from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -27,6 +26,7 @@ from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
+    use_rviz = LaunchConfiguration("use_rviz")
 
     # ── Robot Description (URDF) ──
     robot_description_content = Command(
@@ -150,26 +150,27 @@ def generate_launch_description():
         ],
     )
 
-    # # ── REST API Server (Flask + ROS 2 node) ──
-    # robot_api_node = Node(
-    #     package="moveit_api",
-    #     executable="robot_api_server",
-    #     name="robot_api_server",
-    #     output="screen",
-    #     parameters=[
-    #         robot_description,
-    #         robot_description_semantic,
-    #     ],
-    # )
+    # ── REST API Server (Flask + ROS 2 node) ──
+    robot_api_node = Node(
+        package="moveit_api",
+        executable="robot_api_server",
+        name="robot_api_server",
+        output="screen",
+    )
 
     # ── RViz (optional, for monitoring) ──
     rviz_config_file = os.path.join(moveit_config_pkg, "config", "moveit.rviz")
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
-        name="rviz2",
+        name="rviz2_monitor",  # Renamed to avoid collision
+        condition=IfCondition(use_rviz),
         output="log",
-        arguments=["-d", rviz_config_file],
+        arguments=[
+            "-d", rviz_config_file,
+            "--ros-args", "--log-level", "class_loader:=ERROR",  # Suppress class_loader warnings
+            "--log-level", "rcl:=ERROR",
+        ],
         parameters=[
             robot_description,
             robot_description_semantic,
@@ -179,6 +180,11 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "use_rviz",
+                default_value="false",
+                description="Start RViz together with the robot API stack.",
+            ),
             # Core
             robot_state_publisher_node,
             ros2_control_node,
@@ -190,7 +196,9 @@ def generate_launch_description():
             right_gripper_controller_spawner,
             # MoveIt
             move_group_node,
-            # Visualization
+            # API
+            robot_api_node,
+            # Optional visualization
             rviz_node,
         ]
     )

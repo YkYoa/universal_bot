@@ -1,6 +1,4 @@
-# MoveIt controller configuration
-# Tells MoveIt which ros2_control controllers to use for trajectory execution
-/**:
+move_group:
   ros__parameters:
     moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 

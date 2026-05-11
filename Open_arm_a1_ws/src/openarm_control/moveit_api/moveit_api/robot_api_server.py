@@ -63,6 +63,19 @@ def add_cors_headers(response):
 
 
 # ─────────────────────────────────────────────
+# Root Redirect
+# ─────────────────────────────────────────────
+
+@app.route('/', methods=['GET'])
+def index():
+    """Root endpoint - redirect to documentation."""
+    return jsonify({
+        'message': 'Welcome to the OpenArm Robot API',
+        'documentation': '/api/docs'
+    })
+
+
+# ─────────────────────────────────────────────
 # Health Check
 # ─────────────────────────────────────────────
 
@@ -599,9 +612,18 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        controller.get_logger().info('Shutting down...')
-        controller.destroy_node()
-        rclpy.shutdown()
+        if controller:
+            controller.get_logger().info('Shutting down...')
+            # Stop the executor and join the ROS thread
+            executor.shutdown()
+            controller.destroy_node()
+        
+        # Shutdown ROS 2 context
+        if rclpy.ok():
+            rclpy.shutdown()
+        
+        if ros_thread.is_alive():
+            ros_thread.join(timeout=1.0)
 
 
 if __name__ == '__main__':

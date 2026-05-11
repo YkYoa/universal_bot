@@ -4,8 +4,11 @@ from launch_ros.actions import Node
 from launch.substitutions import Command, FindExecutable, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.parameter_descriptions import ParameterValue
+from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
+    moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
+
     # 1. Robot Description (URDF)
     robot_description_content = Command(
         [
@@ -40,6 +43,7 @@ def generate_launch_description():
         "config",
         "moveit.rviz"
     ])
+    kinematics_yaml_path = os.path.join(moveit_config_pkg, "config", "kinematics.yaml")
 
     return LaunchDescription([
         Node(
@@ -50,7 +54,8 @@ def generate_launch_description():
             arguments=["-d", rviz_config],
             parameters=[
                 robot_description,
-                {"robot_description_semantic": Command(["cat ", srdf_path])}
+                {"robot_description_semantic": Command(["cat ", srdf_path])},
+                kinematics_yaml_path,
             ],
         ),
     ])
