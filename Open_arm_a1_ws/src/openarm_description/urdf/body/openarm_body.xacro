@@ -28,40 +28,27 @@
       </joint>
     </xacro:if>
 
-    <!-- ========================================================================= -->
-    <!-- CHANGING THE BODY                                                         -->
-    <!-- ========================================================================= -->
-    <!-- If you design a new body (like an AGV, a new stand, etc.):                -->
-    <!-- 1. Drop the new meshes into meshes/body/v10/visual/ and collision/        -->
-    <!-- 2. Change the filename="..." below to match your new mesh names.          -->
-    <!-- 3. Update the mass and inertia directly in the <inertial> tag below.      -->
-    <!-- 4. Need wheels or extra links? Just add new <link> and <joint> tags here! -->
-    <!-- ========================================================================= -->
-
     <link name="${prefix}link0">
       <visual>
-        <origin xyz="0 0 0" rpy="0 0 0" />
+        <origin xyz="-0.251 0.1302 -0.210104" rpy="0 0 -1.5708" />
         <geometry>
-          <!-- Swap the visual mesh here -->
-          <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/body_link0.dae" scale="0.001 0.001 0.001" />
+          <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/body_link0.STL" scale="0.001 0.001 0.001" />
         </geometry>
       </visual>
 
       <collision>
-        <origin xyz="0 0 0" rpy="0 0 0" />
+        <origin xyz="-0.251 0.1302 -0.210104" rpy="0 0 -1.5708" />
         <geometry>
-          <!-- Swap the collision mesh here -->
-          <mesh filename="package://${description_pkg}/meshes/body/${body_type}/collision/body_link0_symp.stl" scale="0.001 0.001 0.001" />
+          <mesh filename="package://${description_pkg}/meshes/body/${body_type}/collision/body_link0_symp.STL" scale="0.001 0.001 0.001" />
         </geometry>
       </collision>
 
-      <!-- Mass and Inertia (from configuration/common_version/tomo_alpha style) -->
       <inertial>
-        <origin xyz="0 0 0" rpy="0 0 0" />
-        <mass value="13.89" />
-        <inertia ixx="1.653" ixy="0.0" ixz="0.0" 
-                 iyy="1.653" iyz="0.0" 
-                 izz="0.051" />
+        <origin xyz="-0.026141 4.0416E-06 0.40173" rpy="0 0 0" />
+        <mass value="3.0436" />
+        <inertia ixx="0.14438" ixy="1.054E-06" ixz="1.0507E-06" 
+                 iyy="0.14207" iyz="9.0865E-10" 
+                 izz="0.019727" />
       </inertial>
     </link>
 

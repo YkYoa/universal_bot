@@ -5,7 +5,7 @@
 
   <xacro:arg name="arm_type" default="v10" />
 
-  <xacro:arg name="body_type" default="v10" />
+  <xacro:arg name="body_type" default="v1" />
 
   <xacro:arg name="ee_type" default="openarm_hand" />
 
@@ -41,10 +41,10 @@
 
   <xacro:arg name="bimanual" default="false" />
 
-  <xacro:arg name="right_arm_base_xyz" default="0.0 -0.031 0.698" />
+  <xacro:arg name="right_arm_base_xyz" default="-0.0964262 -0.1302 0.836" />
   <xacro:arg name="right_arm_base_rpy" default="1.5708 0 0" />
 
-  <xacro:arg name="left_arm_base_xyz" default="0.0 0.031 0.698" />
+  <xacro:arg name="left_arm_base_xyz" default="-0.0964262 0.1302 0.836" />
   <xacro:arg name="left_arm_base_rpy" default="-1.5708 0 0" />
 
   <xacro:arg name="can_fd" default="true" />
@@ -54,20 +54,20 @@
   <xacro:arg name="mobile_base_arm_xyz" default="0 0 0" />
   <xacro:arg name="mobile_base_arm_rpy" default="0 0 0" />
   <xacro:arg name="mobile_base_body_xyz" default="0 0 0" />
-  <xacro:arg name="mobile_base_body_rpy" default="0 0 0" />
+  <xacro:arg name="mobile_base_body_rpy" default="0 0 3.14159" />
 
   <xacro:openarm_robot
   arm_type="v10"
-  body_type="v10"
+  body_type="v1"
   joint_limits="${xacro.load_yaml('$(find openarm_description)/config/arm/v10/joint_limits.yaml')}"
   control_gains="${xacro.load_yaml('$(find openarm_description)/config/arm/v10/control_gains.yaml')}"
   inertials="${xacro.load_yaml('$(find openarm_description)/config/arm/v10/inertials.yaml')}"
   kinematics="${xacro.load_yaml('$(find openarm_description)/config/arm/v10/kinematics.yaml')}"
   kinematics_link="${xacro.load_yaml('$(find openarm_description)/config/arm/v10/kinematics_link.yaml')}"
   kinematics_offset="${xacro.load_yaml('$(find openarm_description)/config/arm/v10/kinematics_offset.yaml')}"
-  body_inertials="${xacro.load_yaml('$(find openarm_description)/config/body/v10/inertials.yaml')}"
-  body_kinematics="${xacro.load_yaml('$(find openarm_description)/config/body/v10/kinematics.yaml')}"
-  body_kinematics_link="${xacro.load_yaml('$(find openarm_description)/config/body/v10/kinematics.yaml')}"
+  body_inertials="${xacro.load_yaml('$(find openarm_description)/config/body/v1/inertials.yaml')}"
+  body_kinematics="${xacro.load_yaml('$(find openarm_description)/config/body/v1/kinematics.yaml')}"
+  body_kinematics_link="${xacro.load_yaml('$(find openarm_description)/config/body/v1/kinematics_link.yaml')}"
   ee_kinematics_link="${xacro.load_yaml('$(find openarm_description)/config/hand/openarm_hand/kinematics_link.yaml')}"
   hand="$(arg hand)"
   ee_type="$(arg ee_type)"
