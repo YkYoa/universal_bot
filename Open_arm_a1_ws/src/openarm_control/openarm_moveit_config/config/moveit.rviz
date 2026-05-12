@@ -42,7 +42,7 @@ Visualization Manager:
       Planning Request:
         Planning Group: left_arm
         Interactive Marker Size: 0.2
-        Query Goal State: false
+        Query Goal State: true  
         Query Start State: false
       Scene Geometry:
         Scene Alpha: 0.9
@@ -61,7 +61,7 @@ Visualization Manager:
         Robot Alpha: 0.5
         Robot Color: 150; 250; 150
         Show Robot Collision: false
-        Show Robot Visual: false
+        Show Robot Visual: true
         Show Trail: false
         State Display Time: 0.05
         Trail Step Size: 1

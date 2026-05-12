@@ -192,7 +192,24 @@
 
   <!-- Base to body -->
   <disable_collisions link1="openarm_base_link" link2="openarm_body_link0" reason="Adjacent"/>
-  <disable_collisions link1="openarm_body_link0" link2="openarm_body_link0" reason="Adjacent"/>
+
+  <!-- Body to nearby arm links (arms mount on body, overlapping geometry) -->
+  <disable_collisions link1="openarm_body_link0" link2="openarm_left_link1" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_left_link2" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_right_link1" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_right_link2" reason="Never"/>
+
+  <!-- Body to base wheels/casters (body cage extends into base area) -->
+  <disable_collisions link1="openarm_body_link0" link2="openarm_base_right_drive_wheel_link" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_base_left_drive_wheel_link" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_base_fr_caster_link" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_base_fl_caster_link" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_base_br_caster_link" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_base_bl_caster_link" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_base_fr_wheel_link" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_base_fl_wheel_link" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_base_br_wheel_link" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_base_bl_wheel_link" reason="Never"/>
 
   <!-- Base wheels -->
   <disable_collisions link1="openarm_base_link" link2="openarm_base_right_drive_wheel_link" reason="Adjacent"/>
