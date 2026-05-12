@@ -1,0 +1,37 @@
+name: ROS 2 CI
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'Open_arm_a1_ws/src/**'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'Open_arm_a1_ws/src/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup ROS 2 Jazzy
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: jazzy
+
+      - name: Build and Test
+        uses: ros-tooling/action-ros-ci@v0.4
+        with:
+          target-ros2-distro: jazzy
+          package-name: >-
+            openarm_description
+            openarm_moveit_config
+            arm_control
+          colcon-defaults: |
+            {
+              "build": {
+                "cmake-args": ["-DCMAKE_BUILD_TYPE=Release"]
+              }
+            }
