@@ -24,7 +24,7 @@ from launch.substitutions import Command, FindExecutable, LaunchConfiguration, P
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 
 
 def generate_launch_description():
@@ -182,19 +182,39 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription(
-        [
-            DeclareLaunchArgument("use_rviz", default_value="false"),
-            DeclareLaunchArgument("use_moveit", default_value="true"),
-            DeclareLaunchArgument("use_api", default_value="true"),
-            DeclareLaunchArgument("use_controllers", default_value="true"),
-            DeclareLaunchArgument("use_rsp", default_value="true"),
-            
-            robot_state_publisher_node,
-            ros2_control_node,
-            *spawners,
-            move_group_node,
-            robot_api_node,
-            rviz_node,
-        ]
-    )
+    # 7. Foxglove Bridge Node (Only if package is installed)
+    has_foxglove = False
+    try:
+        get_package_share_directory("foxglove_bridge")
+        has_foxglove = True
+    except PackageNotFoundError:
+        print("[WARNING] 'foxglove_bridge' package is not installed on this system. Skipping Foxglove node.")
+
+    launch_entities = [
+        DeclareLaunchArgument("use_rviz", default_value="false"),
+        DeclareLaunchArgument("use_moveit", default_value="true"),
+        DeclareLaunchArgument("use_api", default_value="true"),
+        DeclareLaunchArgument("use_controllers", default_value="true"),
+        DeclareLaunchArgument("use_rsp", default_value="true"),
+        DeclareLaunchArgument("use_foxglove", default_value="true"),
+        
+        robot_state_publisher_node,
+        ros2_control_node,
+        *spawners,
+        move_group_node,
+        robot_api_node,
+        rviz_node,
+    ]
+
+    if has_foxglove:
+        foxglove_bridge_node = Node(
+            package="foxglove_bridge",
+            executable="foxglove_bridge",
+            name="foxglove_bridge",
+            parameters=[{"port": 8765}],
+            condition=IfCondition(LaunchConfiguration("use_foxglove")),
+            output="screen",
+        )
+        launch_entities.append(foxglove_bridge_node)
+
+    return LaunchDescription(launch_entities)

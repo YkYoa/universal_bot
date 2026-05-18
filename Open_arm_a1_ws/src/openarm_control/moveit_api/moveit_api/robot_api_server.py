@@ -451,6 +451,26 @@ def control_gripper():
 
 
 # ─────────────────────────────────────────────
+# Stop / Emergency Cancel Motion
+# ─────────────────────────────────────────────
+
+_stop_requested = False
+
+@app.route('/api/stop', methods=['POST'])
+def stop_motion():
+    """
+    Emergency stop. Cancels active sequence loop execution.
+    """
+    global _stop_requested
+    _stop_requested = True
+    app.logger.info("Emergency Stop triggered by user!")
+    return jsonify({
+        'success': True,
+        'message': 'Stop requested. Current sequences will abort immediately.'
+    })
+
+
+# ─────────────────────────────────────────────
 # Move Both Arms Simultaneously
 # ─────────────────────────────────────────────
 
@@ -531,8 +551,13 @@ def load_sequences():
                     SEQUENCES.clear()
                     # Parse the new compact format
                     for seq_name, speeds in data['speed'].items():
-                        pose_key = f"{seq_name}Poses"
-                        if pose_key in data:
+                        pose_key = None
+                        if f"{seq_name}Poses" in data:
+                            pose_key = f"{seq_name}Poses"
+                        elif f"{seq_name}Joints" in data:
+                            pose_key = f"{seq_name}Joints"
+                            
+                        if pose_key is not None:
                             steps = []
                             poses_dict = data[pose_key]
                             # Maintain order by iterating dict (Python 3.7+ preserves order)
@@ -582,6 +607,9 @@ def load_sequences():
                                             # We assume if the absolute value of any angle is > 2*PI, it's degrees.
                                             # But safely, let's just always assume degrees based on user request "auto convert degree to radian"
                                             step_dict['positions'] = [math.radians(p) for p in value]
+                                    elif len(value) == 14:
+                                        step_dict['type'] = 'joints'
+                                        step_dict['positions'] = [math.radians(p) for p in value]
                                     else:
                                         app.logger.warning(f"Invalid array length for {step_name}: {len(value)}")
                                         continue
@@ -624,9 +652,13 @@ def run_sequence():
     Request body:
     {
         "name": "wave",              // sequence name
-        "velocity_scaling": 0.5      // optional override
+        "velocity_scaling": 0.5,     // optional override
+        "loop_count": 1              // optional, number of loops (use -1 or 0 for infinite)
     }
     """
+    global _stop_requested
+    _stop_requested = False
+
     load_sequences()
     data = request.get_json()
     if not data:
@@ -642,66 +674,120 @@ def run_sequence():
 
     vel_override = data.get('velocity_scaling')
     seq = SEQUENCES[seq_name]
-    results = []
-
-    for i, step in enumerate(seq.get('steps', [])):
+    
+    # Extract loop configurations
+    loop_val = data.get('loop_count', 1)
+    infinite = False
+    if isinstance(loop_val, str):
+        if loop_val.lower() == 'infinite':
+            infinite = True
+            loop_count = 1
+        else:
+            try:
+                loop_count = int(loop_val)
+            except ValueError:
+                loop_count = 1
+    else:
         try:
-            vel = float(vel_override) if vel_override else float(step.get('velocity', 0.3))
-            
-            if step['type'] == 'named':
-                r = controller.move_to_named_pose(
-                    group_name=step['group'],
-                    pose_name=step['pose'],
-                    velocity_scaling=vel,
-                )
-            elif step['type'] == 'joints':
-                r = controller.move_to_joint_positions(
-                    group_name=step['group'],
-                    positions=step['positions'],
-                    duration=float(step.get('duration', 3.0)),
-                    velocity_scaling=vel,
-                )
-            elif step['type'] == 'pose':
-                target = {'position': step['position']}
-                if 'orientation' in step:
-                    target['orientation'] = step['orientation']
-                else:
-                    target['orientation'] = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0}
-                    
-                position_only = step.get('position_only', False)
-                if 'orientation' not in step:
-                    position_only = True
-                    
-                r = controller.move_to_pose(
-                    group_name=step['group'], 
-                    target_pose=target,
-                    velocity_scaling=vel, 
-                    position_only=position_only,
-                )
-            elif step['type'] == 'gripper':
-                if 'action' in step:
-                    pos = 0.044 if step['action'] == 'open' else 0.0
-                else:
-                    pos = step['position']
-                r = controller.move_gripper(step['side'], pos)
-            else:
-                r = {'success': False, 'message': f'Unknown step type: {step["type"]}'}
+            loop_count = int(loop_val)
+        except (ValueError, TypeError):
+            loop_count = 1
 
-            results.append({'step': i, 'name': step.get('name'), 'success': r.get('success', False)})
-            if not r.get('success', False):
+    if loop_count <= 0:
+        infinite = True
+
+    results = []
+    iteration = 0
+
+    while infinite or iteration < loop_count:
+        if _stop_requested:
+            app.logger.info("Sequence aborted by user request before starting iteration.")
+            break
+            
+        iter_suffix = f" (Iteration {iteration + 1})" if not infinite else f" (Infinite Iteration {iteration + 1})"
+        app.logger.info(f"Executing sequence: {seq_name}{iter_suffix}")
+
+        for i, step in enumerate(seq.get('steps', [])):
+            if _stop_requested:
+                break
+                
+            try:
+                vel = float(vel_override) if vel_override else float(step.get('velocity', 0.3))
+                
+                if step['type'] == 'named':
+                    r = controller.move_to_named_pose(
+                        group_name=step['group'],
+                        pose_name=step['pose'],
+                        velocity_scaling=vel,
+                    )
+                elif step['type'] == 'joints':
+                    r = controller.move_to_joint_positions(
+                        group_name=step['group'],
+                        positions=step['positions'],
+                        duration=float(step.get('duration', 3.0)),
+                        velocity_scaling=vel,
+                    )
+                elif step['type'] == 'pose':
+                    target = {'position': step['position']}
+                    if 'orientation' in step:
+                        target['orientation'] = step['orientation']
+                    else:
+                        target['orientation'] = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0}
+                        
+                    position_only = step.get('position_only', False)
+                    if 'orientation' not in step:
+                        position_only = True
+                        
+                    r = controller.move_to_pose(
+                        group_name=step['group'], 
+                        target_pose=target,
+                        velocity_scaling=vel, 
+                        position_only=position_only,
+                    )
+                elif step['type'] == 'gripper':
+                    if 'action' in step:
+                        pos = 0.044 if step['action'] == 'open' else 0.0
+                    else:
+                        pos = step['position']
+                    r = controller.move_gripper(step['side'], pos)
+                else:
+                    r = {'success': False, 'message': f'Unknown step type: {step["type"]}'}
+
+                results.append({
+                    'iteration': iteration + 1,
+                    'step': i,
+                    'name': step.get('name'),
+                    'success': r.get('success', False)
+                })
+
+                if not r.get('success', False):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Sequence failed at iteration {iteration + 1}, step {i}',
+                        'step_results': results,
+                    }), 422
+            except Exception as e:
                 return jsonify({
                     'success': False,
-                    'message': f'Sequence failed at step {i}',
+                    'message': f'Iteration {iteration + 1}, Step {i} error: {str(e)}',
                     'step_results': results,
-                }), 422
-        except Exception as e:
-            return jsonify({
-                'success': False,
-                'message': f'Step {i} error: {str(e)}',
-                'step_results': results,
-            }), 500
+                }), 500
+        
+        iteration += 1
 
-    return jsonify({'success': True, 'message': f'Sequence "{seq_name}" completed', 'step_results': results})
+    if _stop_requested:
+        _stop_requested = False # Reset flag for future runs
+        return jsonify({
+            'success': True,
+            'message': f'Sequence "{seq_name}" aborted by user stop request.',
+            'step_results': results
+        })
+
+    return jsonify({
+        'success': True,
+        'message': f'Sequence "{seq_name}" completed successfully for {iteration} loop(s).',
+        'step_results': results
+    })
 
 
 @app.route('/api/move/workspace', methods=['POST'])
