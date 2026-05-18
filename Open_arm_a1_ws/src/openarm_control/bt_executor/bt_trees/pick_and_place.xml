@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4" main_tree_to_execute="PickAndPlace">
+  <!-- ── Main tree ──────────────────────────────────────────────────────── -->
+  <BehaviorTree ID="PickAndPlace">
+    <Fallback name="root_fallback">
+      <!-- ── Branch 1: Happy path ────────────────────────────────────────── -->
+      <Sequence name="happy_path">
+        <!-- Gate: object must be visible -->
+        <IsObjectVisible object_label="{vla_target_object}" />
+
+        <!-- Move to ready pose -->
+        <SetPlannerConfig profile="safe_rrt" />
+        <PlanToNamedPose arm="{plan_active_arm}" pose_name="ready" duration="3.0" output_trajectory="{plan_trajectory}" />
+        <ExecuteTrajectory trajectory="{plan_trajectory}" />
+
+        <!-- Move to grasp pose -->
+        <SetPlannerConfig profile="linear_approach" />
+        <PlanToPose arm="{plan_active_arm}" target_pose="{vla_grasp_pose}" velocity_scaling="{plan_velocity_scaling}" position_only="false" output_trajectory="{plan_trajectory}" />
+        <ExecuteTrajectory trajectory="{plan_trajectory}" />
+
+        <!-- Close gripper -->
+        <CloseGripper arm="{plan_active_arm}" close_position="0.0" duration="1.5" />
+
+        <!-- Move to place pose -->
+        <SetPlannerConfig profile="fast_ptp" />
+        <PlanToPose arm="{plan_active_arm}" target_pose="{vla_place_pose}" velocity_scaling="{plan_velocity_scaling}" position_only="true" output_trajectory="{plan_trajectory}" />
+        <ExecuteTrajectory trajectory="{plan_trajectory}" />
+        
+        <!-- Open gripper and return home -->
+        <OpenGripper arm="{plan_active_arm}" open_position="0.044" duration="1.0" />
+        <PlanToNamedPose arm="{plan_active_arm}" pose_name="home" duration="3.0" output_trajectory="{plan_trajectory}" />
+        <ExecuteTrajectory trajectory="{plan_trajectory}" />
+      </Sequence>
+
+      <!-- ── Branch 2: Idle ─────────────────────── -->
+      <Sequence name="idle">
+        <Sleep msec="1000" />
+        <AlwaysFailure />
+      </Sequence>
+    </Fallback>
+  </BehaviorTree>
+</root>

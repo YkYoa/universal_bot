@@ -1,0 +1,60 @@
+# sequences.yaml
+# Concise format for defining robot sequences.
+#
+# Global speeds definition
+# speed:
+#   <sequence_name>: [speed_step1, speed_step2, ...]
+#
+# <sequence_name>Poses:
+#   <step_name>: [values...]
+#
+# Naming convention for step_name:
+# Prefix determines the arm:
+#   la* -> left_arm
+#   ra* -> right_arm
+#   ba* -> both_arms
+#   grip* -> grippers
+#
+# Value formats:
+#   Joints: [J1, J2, J3, J4, J5, J6, J7] (assumed DEGREES, will be auto-converted to radians)
+#   Pose:   [x, y, z, qx, qy, qz, qw]    (x,y,z in meters, q in quaternion)
+#   Named:  "home" or "ready"
+#   Gripper: "open" or "close" or [position_in_meters]
+
+speed:
+  wave: [0.5, 1.0, 1.0, 1.0, 1.0, 0.3]
+  greet: [0.5, 0.5, 0.3, 0.3]
+  home_both: [0.3, 0.3]
+  ready_both: [0.3, 0.3]
+  open_grippers: [1.0, 1.0]
+  close_grippers: [1.0, 1.0]
+
+wavePoses:
+  raReady: "ready"
+  raWave_1: [0.0, -17.18, 0.0, -45.8, 0.0, 68.75, -17.18]
+  raWave_2: [0.0, -40.0, 0.0, -45.8, 0.0, 68.75, -17.18]
+  raWave_3: [0.0, -17.18, 0.0, -45.8, 0.0, 68.75, -17.18]
+  raWave_4: [0.0, -40.0, 0.0, -45.8, 0.0, 68.75, -17.18]
+  raHome: "home"
+
+greetPoses:
+  laReady: "ready"
+  raReady: "ready"
+  laHome: "home"
+  raHome: "home"
+
+home_bothPoses:
+  laHome: "home"
+  raHome: "home"
+
+ready_bothPoses:
+  laReady: "ready"
+  raReady: "ready"
+
+open_grippersPoses:
+  gripLeft: "open"
+  gripRight: "open"
+
+close_grippersPoses:
+  gripLeft: "close"
+  gripRight: "close"

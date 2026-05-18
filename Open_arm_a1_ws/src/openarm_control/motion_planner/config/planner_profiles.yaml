@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# planner_profiles.yaml
+#
+# Named planner profiles for OpenArm VLA system.
+# Each profile maps to a MoveIt planning pipeline + planner + parameters.
+#
+# Usage in BT XML:
+#   <SetPlannerConfig profile="linear_approach" />
+#   <MoveToPose ... />
+#
+# The planner_interface library loads this file and resolves profile names
+# to concrete MoveIt parameters at runtime.
+# ─────────────────────────────────────────────────────────────────────────────
+
+profiles:
+
+  # ── Pilz planners (deterministic, industrial-grade) ──────────────────────
+
+  fast_ptp:
+    description: "Fast point-to-point. No obstacle avoidance. Best for retract/home moves."
+    pipeline_id: pilz_industrial_motion_planner
+    planner_id: PTP
+    velocity_scaling: 0.8
+    acceleration_scaling: 0.6
+    planning_time: 2.0
+    num_attempts: 1
+
+  linear_approach:
+    description: "Straight-line approach to grasp pose. Predictable and precise."
+    pipeline_id: pilz_industrial_motion_planner
+    planner_id: LIN
+    velocity_scaling: 0.3
+    acceleration_scaling: 0.3
+    planning_time: 2.0
+    num_attempts: 1
+
+  circular_move:
+    description: "Circular arc motion. For wiping, scooping, or arc-based tasks."
+    pipeline_id: pilz_industrial_motion_planner
+    planner_id: CIRC
+    velocity_scaling: 0.3
+    acceleration_scaling: 0.3
+    planning_time: 2.0
+    num_attempts: 1
+
+  # ── OMPL planners (sampling-based, obstacle-aware) ───────────────────────
+
+  safe_rrt:
+    description: "Default obstacle-aware planning. Good balance of speed and path quality."
+    pipeline_id: ompl
+    planner_id: RRTConnectkConfigDefault
+    velocity_scaling: 0.3
+    acceleration_scaling: 0.3
+    planning_time: 5.0
+    num_attempts: 10
+
+  optimal_rrt:
+    description: "Asymptotically optimal paths. Slower planning but shorter trajectories."
+    pipeline_id: ompl
+    planner_id: RRTstarkConfigDefault
+    velocity_scaling: 0.3
+    acceleration_scaling: 0.3
+    planning_time: 10.0
+    num_attempts: 5
+
+  realtime_rrt:
+    description: "Fast replanning profile. Short planning time for reactive scenarios."
+    pipeline_id: ompl
+    planner_id: RRTConnectkConfigDefault
+    velocity_scaling: 0.5
+    acceleration_scaling: 0.5
+    planning_time: 1.0
+    num_attempts: 3
+
+  exploration:
+    description: "TRRT for cost-aware exploration. Good for navigating energy landscapes."
+    pipeline_id: ompl
+    planner_id: TRRTkConfigDefault
+    velocity_scaling: 0.3
+    acceleration_scaling: 0.3
+    planning_time: 8.0
+    num_attempts: 5
+
+# Default profile used when no profile is specified
+default_profile: safe_rrt

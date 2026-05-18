@@ -75,7 +75,7 @@
       <xacro:configure_joint joint_name="openarm_${arm_prefix}joint1" initial_position="0.0"/>
       <xacro:configure_joint joint_name="openarm_${arm_prefix}joint2" initial_position="0.0"/>
       <xacro:configure_joint joint_name="openarm_${arm_prefix}joint3" initial_position="0.0"/>
-      <xacro:configure_joint joint_name="openarm_${arm_prefix}joint4" initial_position="-1.5"/>
+      <xacro:configure_joint joint_name="openarm_${arm_prefix}joint4" initial_position="0.0"/>
       <xacro:configure_joint joint_name="openarm_${arm_prefix}joint5" initial_position="0.0"/>
       <xacro:configure_joint joint_name="openarm_${arm_prefix}joint6" initial_position="0.0"/>
       <xacro:configure_joint joint_name="openarm_${arm_prefix}joint7" initial_position="0.0"/>

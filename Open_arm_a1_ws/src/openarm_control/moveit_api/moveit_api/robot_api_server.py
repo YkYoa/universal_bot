@@ -23,7 +23,25 @@ import sys
 import json
 import threading
 import time
+import math
+import yaml
+import os
 import signal
+from ament_index_python.packages import get_package_share_directory
+
+def euler_to_quaternion(roll, pitch, yaw):
+    cr = math.cos(roll * 0.5)
+    sr = math.sin(roll * 0.5)
+    cp = math.cos(pitch * 0.5)
+    sp = math.sin(pitch * 0.5)
+    cy = math.cos(yaw * 0.5)
+    sy = math.sin(yaw * 0.5)
+    return {
+        'w': cr * cp * cy + sr * sp * sy,
+        'x': sr * cp * cy - cr * sp * sy,
+        'y': cr * sp * cy + sr * cp * sy,
+        'z': cr * cp * sy - sr * sp * cy
+    }
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
@@ -288,7 +306,7 @@ def move_to_joints():
     Request body (JSON):
     {
         "group": "left_arm",
-        "positions": [0.0, -0.5, 0.0, -1.5, 0.0, 1.0, 0.0],  // 7 joint values (radians)
+        "positions": [0.0, -0.5, 0.0, 0.0, 0.0, 1.0, 0.0],  // 7 joint values (radians)
         "duration": 3.0,              // optional, seconds
         "velocity_scaling": 0.3       // optional
     }
@@ -443,8 +461,8 @@ def move_both_arms():
     
     Request body (JSON):
     {
-        "left_positions": [0.0, -0.5, 0.0, -1.5, 0.0, 1.0, 0.0],
-        "right_positions": [0.0, 0.5, 0.0, -1.5, 0.0, 1.0, 0.0],
+        "left_positions": [0.0, -0.5, 0.0, 0.0, 0.0, 1.0, 0.0],
+        "right_positions": [0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.0],
         "duration": 3.0,
         "velocity_scaling": 0.3
     }
@@ -493,6 +511,238 @@ def move_both_arms():
         'success': overall_success,
         'results': results,
     })
+
+
+# ─────────────────────────────────────────────
+# Hardcoded Pose Sequences (Android team)
+# ─────────────────────────────────────────────
+
+SEQUENCES = {}
+
+def load_sequences():
+    global SEQUENCES
+    try:
+        share_dir = get_package_share_directory('moveit_api')
+        yaml_path = os.path.join(share_dir, 'config', 'sequences.yaml')
+        if os.path.exists(yaml_path):
+            with open(yaml_path, 'r') as f:
+                data = yaml.safe_load(f)
+                if data and 'speed' in data:
+                    SEQUENCES.clear()
+                    # Parse the new compact format
+                    for seq_name, speeds in data['speed'].items():
+                        pose_key = f"{seq_name}Poses"
+                        if pose_key in data:
+                            steps = []
+                            poses_dict = data[pose_key]
+                            # Maintain order by iterating dict (Python 3.7+ preserves order)
+                            for step_idx, (step_name, value) in enumerate(poses_dict.items()):
+                                # Determine group from prefix
+                                group = 'both_arms'
+                                side = 'left'
+                                if step_name.startswith('la'):
+                                    group = 'left_arm'
+                                    side = 'left'
+                                elif step_name.startswith('ra'):
+                                    group = 'right_arm'
+                                    side = 'right'
+                                elif step_name.startswith('ba'):
+                                    group = 'both_arms'
+                                elif step_name.startswith('grip'):
+                                    group = 'grippers'
+                                    side = 'left' if 'Left' in step_name else 'right'
+                                    
+                                vel = speeds[step_idx] if step_idx < len(speeds) else 0.3
+                                
+                                step_dict = {'group': group, 'velocity': vel, 'name': step_name}
+                                
+                                if group == 'grippers':
+                                    step_dict['type'] = 'gripper'
+                                    step_dict['side'] = side
+                                    if isinstance(value, str):
+                                        step_dict['action'] = value
+                                    else:
+                                        step_dict['position'] = value[0] if isinstance(value, list) else value
+                                elif isinstance(value, str):
+                                    step_dict['type'] = 'named'
+                                    step_dict['pose'] = value
+                                elif isinstance(value, list):
+                                    if len(value) == 7:
+                                        # Auto-detect pose vs joints
+                                        # If the last 4 elements form a valid quaternion, treat as pose
+                                        qx, qy, qz, qw = value[3:]
+                                        norm = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
+                                        if 0.95 < norm < 1.05 and any(q != 0 for q in [qx, qy, qz]):
+                                            step_dict['type'] = 'pose'
+                                            step_dict['position'] = {'x': value[0], 'y': value[1], 'z': value[2]}
+                                            step_dict['orientation'] = {'x': qx, 'y': qy, 'z': qz, 'w': qw}
+                                        else:
+                                            step_dict['type'] = 'joints'
+                                            # AUTO-CONVERT degrees to radians
+                                            # We assume if the absolute value of any angle is > 2*PI, it's degrees.
+                                            # But safely, let's just always assume degrees based on user request "auto convert degree to radian"
+                                            step_dict['positions'] = [math.radians(p) for p in value]
+                                    else:
+                                        app.logger.warning(f"Invalid array length for {step_name}: {len(value)}")
+                                        continue
+                                
+                                steps.append(step_dict)
+                                
+                            SEQUENCES[seq_name] = {
+                                'description': f"Sequence {seq_name}",
+                                'group': "mixed",
+                                'steps': steps
+                            }
+                    app.logger.info(f"Loaded {len(SEQUENCES)} sequences from {yaml_path}")
+        else:
+            app.logger.warning(f"Sequences file not found: {yaml_path}")
+    except Exception as e:
+        app.logger.error(f"Failed to load sequences: {e}")
+
+# Call immediately
+load_sequences()
+
+@app.route('/api/sequences', methods=['GET'])
+def list_sequences():
+    """List all available named sequences."""
+    load_sequences()
+    result = {}
+    for name, seq in SEQUENCES.items():
+        result[name] = {
+            'description': seq.get('description', ''),
+            'group': seq.get('group', ''),
+            'num_steps': len(seq.get('steps', [])),
+        }
+    return jsonify({'success': True, 'sequences': result})
+
+
+@app.route('/api/sequence', methods=['POST'])
+def run_sequence():
+    """
+    Run a named pose sequence.
+
+    Request body:
+    {
+        "name": "wave",              // sequence name
+        "velocity_scaling": 0.5      // optional override
+    }
+    """
+    load_sequences()
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'message': 'JSON body required'}), 400
+
+    seq_name = data.get('name')
+    if seq_name not in SEQUENCES:
+        return jsonify({
+            'success': False,
+            'message': f'Unknown sequence: {seq_name}',
+            'available': list(SEQUENCES.keys()),
+        }), 400
+
+    vel_override = data.get('velocity_scaling')
+    seq = SEQUENCES[seq_name]
+    results = []
+
+    for i, step in enumerate(seq.get('steps', [])):
+        try:
+            vel = float(vel_override) if vel_override else float(step.get('velocity', 0.3))
+            
+            if step['type'] == 'named':
+                r = controller.move_to_named_pose(
+                    group_name=step['group'],
+                    pose_name=step['pose'],
+                    velocity_scaling=vel,
+                )
+            elif step['type'] == 'joints':
+                r = controller.move_to_joint_positions(
+                    group_name=step['group'],
+                    positions=step['positions'],
+                    duration=float(step.get('duration', 3.0)),
+                    velocity_scaling=vel,
+                )
+            elif step['type'] == 'pose':
+                target = {'position': step['position']}
+                if 'orientation' in step:
+                    target['orientation'] = step['orientation']
+                else:
+                    target['orientation'] = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0}
+                    
+                position_only = step.get('position_only', False)
+                if 'orientation' not in step:
+                    position_only = True
+                    
+                r = controller.move_to_pose(
+                    group_name=step['group'], 
+                    target_pose=target,
+                    velocity_scaling=vel, 
+                    position_only=position_only,
+                )
+            elif step['type'] == 'gripper':
+                if 'action' in step:
+                    pos = 0.044 if step['action'] == 'open' else 0.0
+                else:
+                    pos = step['position']
+                r = controller.move_gripper(step['side'], pos)
+            else:
+                r = {'success': False, 'message': f'Unknown step type: {step["type"]}'}
+
+            results.append({'step': i, 'name': step.get('name'), 'success': r.get('success', False)})
+            if not r.get('success', False):
+                return jsonify({
+                    'success': False,
+                    'message': f'Sequence failed at step {i}',
+                    'step_results': results,
+                }), 422
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Step {i} error: {str(e)}',
+                'step_results': results,
+            }), 500
+
+    return jsonify({'success': True, 'message': f'Sequence "{seq_name}" completed', 'step_results': results})
+
+
+@app.route('/api/move/workspace', methods=['POST'])
+def move_to_workspace_point():
+    """
+    Move an arm to a point in the robot workspace (simplified).
+    Uses position-only mode so orientation is unconstrained.
+
+    Request body:
+    {
+        "group": "left_arm",
+        "x": -0.3, "y": 0.15, "z": 0.8,
+        "velocity_scaling": 0.3
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'message': 'JSON body required'}), 400
+
+    group = data.get('group')
+    if group not in ('left_arm', 'right_arm'):
+        return jsonify({'success': False, 'message': 'group must be left_arm or right_arm'}), 400
+
+    for k in ('x', 'y', 'z'):
+        if k not in data:
+            return jsonify({'success': False, 'message': f'Missing coordinate: {k}'}), 400
+
+    vel = float(data.get('velocity_scaling', 0.3))
+    target = {
+        'position': {'x': float(data['x']), 'y': float(data['y']), 'z': float(data['z'])},
+        'orientation': {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0},
+    }
+
+    try:
+        result = controller.move_to_pose(
+            group_name=group, target_pose=target,
+            velocity_scaling=vel, position_only=True,
+        )
+        return jsonify(result), 200 if result['success'] else 422
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ─────────────────────────────────────────────
@@ -565,7 +815,10 @@ def api_docs():
             'POST /api/move/joints': 'Move joints {group, positions:[7 values]}',
             'POST /api/move/named': 'Named pose {group, pose:"home"/"ready"}',
             'POST /api/move/both': 'Move both arms {left_positions, right_positions}',
+            'POST /api/move/workspace': 'Move to workspace point {group, x, y, z} (position-only)',
             'POST /api/gripper': 'Gripper control {side, action:"open"/"close"} or {side, position:0.0-0.044}',
+            'GET /api/sequences': 'List available pose sequences',
+            'POST /api/sequence': 'Run a named pose sequence {name:"wave"/"greet"/...}',
             'GET /api/docs': 'This documentation',
         },
         'websocket': {
