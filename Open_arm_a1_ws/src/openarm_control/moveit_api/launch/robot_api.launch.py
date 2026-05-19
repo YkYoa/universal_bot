@@ -196,7 +196,7 @@ def generate_launch_description():
         DeclareLaunchArgument("use_api", default_value="true"),
         DeclareLaunchArgument("use_controllers", default_value="true"),
         DeclareLaunchArgument("use_rsp", default_value="true"),
-        DeclareLaunchArgument("use_foxglove", default_value="true"),
+        DeclareLaunchArgument("use_foxglove", default_value="false"),
         
         robot_state_publisher_node,
         ros2_control_node,
