@@ -1,0 +1,31 @@
+# ── Request ───────────────────────────────────────────────────
+string skill_name
+# Options: "move_to_pose" | "move_to_named_pose" | "cartesian_move"
+#          "open_gripper"  | "close_gripper"
+
+string arm
+# "left_arm" | "right_arm" | "both_arms"
+
+string planner_profile
+# maps to planner_profiles.yaml entry; empty = use default
+
+string planning_mode
+# "normal"   = pre-plan then execute (safe, default)
+# "realtime" = start executing with current plan, replan async on goal change
+
+geometry_msgs/PoseStamped target_pose     # for move_to_pose
+string named_pose                         # for move_to_named_pose
+geometry_msgs/PoseStamped[] waypoints     # for cartesian_move
+float64 velocity_override                 # 0 = use profile default
+bool position_only                        # skip orientation constraint
+---
+# ── Result ────────────────────────────────────────────────────
+bool success
+string error_message
+float64 planning_time_sec
+float64 execution_time_sec
+---
+# ── Feedback ──────────────────────────────────────────────────
+string status
+# "planning" | "plan_ok" | "executing" | "replanning" | "done"
+float32 progress    # 0.0 → 1.0

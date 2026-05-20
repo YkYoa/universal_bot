@@ -174,6 +174,7 @@ public:
     // Realtime replanning
     blackboard_->set(BB_GOAL_CHANGED,      false);
     blackboard_->set(BB_GOAL_STAMP,        0);
+    blackboard_->set(BB_PLANNING_MODE,     std::string("normal"));
 
     // ── Build the factory and register all node types ────────────────────────
     BT::RosNodeParams ros_params;
@@ -191,14 +192,14 @@ public:
     // Synchronous action nodes
     factory_.registerNodeType<SafeAbort>("SafeAbort");
     factory_.registerNodeType<SetPlannerConfig>("SetPlannerConfig");
-    factory_.registerNodeType<PlanToNamedPose>("PlanToNamedPose");
+    factory_.registerNodeType<ExecuteTrajectory>("ExecuteTrajectory");
 
     // Stateful action nodes (async but not ROS actions)
     factory_.registerNodeType<QueryVLA>("QueryVLA");
 
     // ROS action nodes (async — return RUNNING until done)
     factory_.registerNodeType<PlanToPose>     ("PlanToPose",      ros_params);
-    factory_.registerNodeType<ExecuteTrajectory>("ExecuteTrajectory", ros_params);
+    factory_.registerNodeType<PlanToNamedPose>("PlanToNamedPose", ros_params);
     factory_.registerNodeType<CloseGripper>   ("CloseGripper",    ros_params);
     factory_.registerNodeType<OpenGripper>    ("OpenGripper",     ros_params);
 

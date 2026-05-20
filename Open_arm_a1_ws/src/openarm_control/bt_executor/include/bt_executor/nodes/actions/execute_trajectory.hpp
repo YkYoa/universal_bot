@@ -1,42 +1,24 @@
 #pragma once
-// ─────────────────────────────────────────────────────────────────────────────
-// execute_trajectory.hpp
-//
-// Async action node: sends a moveit_msgs::msg::RobotTrajectory to the
-// /execute_trajectory action server.
-//
-// Inherits from BT::RosActionNode<moveit_msgs::action::ExecuteTrajectory>
-//
-// Input ports:
-//   trajectory moveit_msgs::msg::RobotTrajectory
-// ─────────────────────────────────────────────────────────────────────────────
-#include "behaviortree_ros2/bt_action_node.hpp"
-#include "moveit_msgs/action/execute_trajectory.hpp"
+
+#include "behaviortree_cpp/action_node.h"
 #include "moveit_msgs/msg/robot_trajectory.hpp"
 
 namespace bt_executor {
 
-class ExecuteTrajectory
-  : public BT::RosActionNode<moveit_msgs::action::ExecuteTrajectory>
+class ExecuteTrajectory : public BT::SyncActionNode
 {
 public:
-  using ExecuteTrajAction = moveit_msgs::action::ExecuteTrajectory;
-
-  ExecuteTrajectory(const std::string & name,
-                    const BT::NodeConfig & config,
-                    const BT::RosNodeParams & params)
-  : BT::RosActionNode<ExecuteTrajAction>(name, config, params) {}
+  ExecuteTrajectory(const std::string & name, const BT::NodeConfig & config)
+  : BT::SyncActionNode(name, config) {}
 
   static BT::PortsList providedPorts()
   {
-    return providedBasicPorts({
-      BT::InputPort<moveit_msgs::msg::RobotTrajectory>("trajectory", "The trajectory to execute"),
-    });
+    return {
+      BT::InputPort<moveit_msgs::msg::RobotTrajectory>("trajectory", "The trajectory (unused, since plan executes it directly)"),
+    };
   }
 
-  bool setGoal(Goal & goal) override;
-  BT::NodeStatus onResultReceived(const WrappedResult & result) override;
-  BT::NodeStatus onFailure(BT::ActionNodeErrorCode error) override;
+  BT::NodeStatus tick() override;
 };
 
 }  // namespace bt_executor

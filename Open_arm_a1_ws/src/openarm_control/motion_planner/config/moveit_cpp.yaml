@@ -1,0 +1,58 @@
+planning_scene_monitor_options:
+  name: "planning_scene_monitor"
+  robot_description: "robot_description"
+  joint_state_topic: "/joint_states"
+  attached_collision_object_topic: "/planning_scene_monitor"
+  publish_planning_scene_topic: "/planning_scene"
+  monitored_planning_scene_topic: "/monitored_planning_scene"
+  wait_for_initial_state_timeout: 10.0
+
+planning_pipelines:
+  # Load all 4 planning pipelines
+  pipeline_names: ["ompl", "pilz_industrial_motion_planner", "chomp", "stomp"]
+
+ompl:
+  planning_plugin: ompl_interface/OMPLPlanner
+  planning_plugins:
+    - ompl_interface/OMPLPlanner
+  request_adapters:
+    - default_planning_request_adapters/ResolveConstraintFrames
+    - default_planning_request_adapters/ValidateWorkspaceBounds
+    - default_planning_request_adapters/CheckStartStateBounds
+    - default_planning_request_adapters/CheckStartStateCollision
+  response_adapters:
+    - default_planning_response_adapters/AddTimeOptimalParameterization
+    - default_planning_response_adapters/ValidateSolution
+
+pilz_industrial_motion_planner:
+  planning_plugin: pilz_industrial_motion_planner/CommandPlanner
+  planning_plugins:
+    - pilz_industrial_motion_planner/CommandPlanner
+  request_adapters:
+    - default_planning_request_adapters/ResolveConstraintFrames
+    - default_planning_request_adapters/ValidateWorkspaceBounds
+    - default_planning_request_adapters/CheckStartStateBounds
+  response_adapters:
+    - default_planning_response_adapters/ValidateSolution
+
+chomp:
+  planning_plugin: chomp_interface/CHOMPPlanner
+  planning_plugins:
+    - chomp_interface/CHOMPPlanner
+  request_adapters:
+    - default_planning_request_adapters/ResolveConstraintFrames
+    - default_planning_request_adapters/ValidateWorkspaceBounds
+    - default_planning_request_adapters/CheckStartStateBounds
+  response_adapters:
+    - default_planning_response_adapters/ValidateSolution
+
+stomp:
+  planning_plugin: stomp_moveit/StompPlanner
+  planning_plugins:
+    - stomp_moveit/StompPlanner
+  request_adapters:
+    - default_planning_request_adapters/ResolveConstraintFrames
+    - default_planning_request_adapters/ValidateWorkspaceBounds
+    - default_planning_request_adapters/CheckStartStateBounds
+  response_adapters:
+    - default_planning_response_adapters/ValidateSolution

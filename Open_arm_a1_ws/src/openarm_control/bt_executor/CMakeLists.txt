@@ -22,7 +22,8 @@ find_package(control_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
-find_package(planner_interface REQUIRED)
+find_package(planning_interface REQUIRED)
+find_package(openarm_messages REQUIRED)
 
 set(DEPS
   behaviortree_cpp
@@ -36,9 +37,9 @@ set(DEPS
   sensor_msgs
   control_msgs
   trajectory_msgs
-  moveit_msgs
   moveit_ros_planning_interface
-  planner_interface
+  planning_interface
+  openarm_messages
 )
 
 # ── bt_executor node ──────────────────────────────────────────────────────────

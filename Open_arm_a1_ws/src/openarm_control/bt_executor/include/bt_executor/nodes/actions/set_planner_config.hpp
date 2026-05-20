@@ -27,7 +27,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 #include "behaviortree_cpp/behavior_tree.h"
 #include "rclcpp/rclcpp.hpp"
-#include "planner_interface/planner_profile.hpp"
+#include "planning_interface/planner_profile.hpp"
 #include "bt_executor/blackboard_keys.hpp"
 #include "ament_index_cpp/get_package_share_directory.hpp"
 namespace bt_executor {
@@ -40,8 +40,7 @@ public:
   {
     // Load profiles once at construction time.
     // The loader is shared across all SetPlannerConfig instances.
-    static auto loader = std::make_shared<planner_interface::PlannerProfileLoader>(
-      ament_index_cpp::get_package_share_directory("motion_planner") + "/config/planner_profiles.yaml");
+    static auto loader = planning_interface::PlannerProfileLoader::from_package("motion_planner");
     loader_ = loader;
   }
 
@@ -78,7 +77,7 @@ public:
   }
 
 private:
-  void apply_profile(const planner_interface::PlannerProfile & p)
+  void apply_profile(const planning_interface::PlannerProfile & p)
   {
     auto & bb = *config().blackboard;
     bb.set(BB_PIPELINE_ID,     p.pipeline_id);
@@ -95,7 +94,7 @@ private:
       p.velocity_scaling);
   }
 
-  std::shared_ptr<planner_interface::PlannerProfileLoader> loader_;
+  std::shared_ptr<planning_interface::PlannerProfileLoader> loader_;
 };
 
 }  // namespace bt_executor

@@ -17,6 +17,19 @@ controller_manager:
     right_gripper_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
+    # ── FUTURE CONTROLLER OPTIONS (STUBS FOR FORCE & VELOCITY CONTROL) ────────
+    # Uncomment and configure these as needed for your application.
+    # Note: To use these, your hardware interface (URDF/hardware_interface) 
+    # must export the corresponding command_interfaces ("velocity", "effort", etc.).
+    
+    # 1. Velocity Controller (e.g. for VLA real-time streaming joint velocities)
+    # left_arm_velocity_controller:
+    #   type: velocity_controllers/JointGroupVelocityController
+
+    # 2. Force/Admittance Controller (for compliance & force-controlled actions)
+    # left_arm_admittance_controller:
+    #   type: admittance_controller/AdmittanceController
+
 left_arm_controller:
   ros__parameters:
     joints:
@@ -68,3 +81,37 @@ right_gripper_controller:
     state_interfaces:
       - position
       - velocity
+
+# ── FUTURE CONTROLLERS PARAMETER TEMPLATES ──────────────────────────────────
+# left_arm_velocity_controller:
+#   ros__parameters:
+#     joints:
+#       - openarm_left_joint1
+#       - openarm_left_joint2
+#       - openarm_left_joint3
+#       - openarm_left_joint4
+#       - openarm_left_joint5
+#       - openarm_left_joint6
+#       - openarm_left_joint7
+#     interface_name: velocity
+
+# left_arm_admittance_controller:
+#   ros__parameters:
+#     joints:
+#       - openarm_left_joint1
+#       - openarm_left_joint2
+#       - openarm_left_joint3
+#       - openarm_left_joint4
+#       - openarm_left_joint5
+#       - openarm_left_joint6
+#       - openarm_left_joint7
+#     command_interfaces:
+#       - position
+#     state_interfaces:
+#       - position
+#       - velocity
+#     sensor_name: left_wrist_ft_sensor
+#     ft_sensor_ref_frame: openarm_left_hand_tcp
+#     mass: [1.0, 1.0, 1.0, 0.1, 0.1, 0.1]
+#     damping: [10.0, 10.0, 10.0, 1.0, 1.0, 1.0]
+#     stiffness: [100.0, 100.0, 100.0, 10.0, 10.0, 10.0]

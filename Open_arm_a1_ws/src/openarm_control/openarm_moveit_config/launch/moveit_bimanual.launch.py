@@ -47,6 +47,9 @@ def generate_launch_description():
     # ── OMPL Planning ──
     ompl_planning_yaml_path = os.path.join(moveit_config_pkg, "config", "ompl_planning.yaml")
 
+    # ── Pilz Industrial Planning ──
+    pilz_planning_yaml_path = os.path.join(moveit_config_pkg, "config", "pilz_industrial_motion_planner_planning.yaml")
+
     # ── Joint Limits ──
     joint_limits_yaml_path = os.path.join(moveit_config_pkg, "config", "joint_limits.yaml")
 
@@ -134,8 +137,27 @@ def generate_launch_description():
             robot_description_semantic,
             kinematics_yaml_path,
             ompl_planning_yaml_path,
+            pilz_planning_yaml_path,
             joint_limits_yaml_path,
             moveit_controllers_yaml_path,
+            trajectory_execution,
+            planning_scene_monitor,
+        ],
+    )
+
+    # ── Robot Skills Node (MoveItCpp in-process backend) ──
+    motion_planner_pkg = get_package_share_directory("motion_planner")
+    moveit_cpp_yaml_path = os.path.join(motion_planner_pkg, "config", "moveit_cpp.yaml")
+    robot_skills_node = Node(
+        package="robot_skills",
+        executable="robot_skills_node",
+        output="screen",
+        parameters=[
+            robot_description,
+            robot_description_semantic,
+            kinematics_yaml_path,
+            moveit_cpp_yaml_path,
+            joint_limits_yaml_path,
             trajectory_execution,
             planning_scene_monitor,
         ],
@@ -166,6 +188,7 @@ def generate_launch_description():
             left_gripper_controller_spawner,
             right_gripper_controller_spawner,
             move_group_node,
+            robot_skills_node,
             rviz_node,
         ]
     )

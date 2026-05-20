@@ -108,6 +108,9 @@ static constexpr const char* BB_GOAL_CHANGED      = "task_goal_changed";
 /// int — monotonically increasing counter; bumped each time a new goal arrives
 static constexpr const char* BB_GOAL_STAMP        = "task_goal_stamp";
 
+/// std::string — "normal" | "realtime"
+static constexpr const char* BB_PLANNING_MODE     = "plan_planning_mode";
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /// Force threshold (N) above which a gripper is considered "holding"

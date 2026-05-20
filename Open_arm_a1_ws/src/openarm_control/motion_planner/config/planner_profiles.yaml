@@ -81,5 +81,27 @@ profiles:
     planning_time: 8.0
     num_attempts: 5
 
+  # ── CHOMP planners (trajectory optimization, smooth / collision-free) ─────
+
+  smooth_chomp:
+    description: "CHOMP optimizer for generating smooth, collision-free trajectories."
+    pipeline_id: chomp
+    planner_id: CHOMP
+    velocity_scaling: 0.3
+    acceleration_scaling: 0.3
+    planning_time: 5.0
+    num_attempts: 1
+
+  # ── STOMP planners (stochastic trajectory optimization) ───────────────────
+
+  stochastic_stomp:
+    description: "STOMP optimizer for stochastic, obstacle-avoiding paths."
+    pipeline_id: stomp
+    planner_id: STOMP
+    velocity_scaling: 0.3
+    acceleration_scaling: 0.3
+    planning_time: 5.0
+    num_attempts: 1
+
 # Default profile used when no profile is specified
 default_profile: safe_rrt

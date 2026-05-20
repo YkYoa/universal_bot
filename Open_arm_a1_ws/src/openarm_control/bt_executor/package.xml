@@ -39,7 +39,8 @@
   <depend>moveit_core</depend>
 
   <!-- Planner profile loader (in-process library) -->
-  <depend>planner_interface</depend>
+  <depend>planning_interface</depend>
+  <depend>openarm_messages</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

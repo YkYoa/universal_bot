@@ -1,52 +1,42 @@
 #pragma once
-// ─────────────────────────────────────────────────────────────────────────────
-// plan_to_named_pose.hpp
-//
-// Synchronous action node: generates a joint-space trajectory (by name)
-// and outputs it as a RobotTrajectory.
-//
-// Inherits from BT::SyncActionNode
-//
-// Input ports:
-//   arm              "left_arm" | "right_arm"
-//   pose_name        std::string (the SRDF state name)
-//   duration         double (Trajectory duration [s])
-//
-// Output ports:
-//   output_trajectory moveit_msgs::msg::RobotTrajectory
-// ─────────────────────────────────────────────────────────────────────────────
-#include "behaviortree_cpp/action_node.h"
+
+#include "behaviortree_ros2/bt_action_node.hpp"
+#include "openarm_messages/action/execute_skill.hpp"
 #include "moveit_msgs/msg/robot_trajectory.hpp"
-#include "rclcpp/rclcpp.hpp"
 #include "bt_executor/blackboard_keys.hpp"
-#include <map>
-#include <vector>
 #include <string>
 
 namespace bt_executor {
 
-class PlanToNamedPose : public BT::SyncActionNode
+class PlanToNamedPose
+  : public BT::RosActionNode<openarm_messages::action::ExecuteSkill>
 {
 public:
-  PlanToNamedPose(const std::string & name, const BT::NodeConfig & config)
-  : BT::SyncActionNode(name, config) {}
+  using ExecuteSkillAction = openarm_messages::action::ExecuteSkill;
+
+  PlanToNamedPose(const std::string & name,
+                  const BT::NodeConfig & config,
+                  const BT::RosNodeParams & params)
+  : BT::RosActionNode<ExecuteSkillAction>(name, config, params) {}
 
   static BT::PortsList providedPorts()
   {
-    return {
+    return providedBasicPorts({
       BT::InputPort<std::string>("arm", "left_arm | right_arm"),
       BT::InputPort<std::string>("pose_name", "home | ready"),
       BT::InputPort<double>("duration", 3.0, "Trajectory duration [s]"),
-      BT::OutputPort<moveit_msgs::msg::RobotTrajectory>("output_trajectory", "The planned trajectory"),
-    };
+      BT::OutputPort<moveit_msgs::msg::RobotTrajectory>("output_trajectory", "Dummy trajectory for compat"),
+    });
   }
 
-  BT::NodeStatus tick() override;
-
-private:
-  // Named pose joint values — mirrors the SRDF group_states
-  static const std::map<std::string, std::map<std::string, std::vector<double>>>
-    named_poses_;
+  bool setGoal(Goal & goal) override;
+  BT::NodeStatus onResultReceived(const WrappedResult & result) override;
+  BT::NodeStatus onFailure(BT::ActionNodeErrorCode error) override;
+  
+  BT::NodeStatus onFeedback(const std::shared_ptr<const Feedback> /*feedback*/) override
+  {
+    return BT::NodeStatus::RUNNING;
+  }
 };
 
 }  // namespace bt_executor
