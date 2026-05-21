@@ -29,6 +29,7 @@
 #include "std_msgs/msg/string.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 
 // BehaviorTree.CPP v4
 #include "behaviortree_cpp/bt_factory.h"
@@ -37,6 +38,9 @@
 #include "behaviortree_cpp/loggers/groot2_publisher.h"
 // behaviortree_ros2 supplies RosNodeParams
 #include "behaviortree_ros2/ros_node_params.hpp"
+#include "ament_index_cpp/get_package_share_directory.hpp"
+#include <sstream>
+#include "behaviortree_cpp/loggers/abstract_logger.h"
 
 // Our blackboard key constants
 #include "bt_executor/blackboard_keys.hpp"
@@ -59,6 +63,39 @@
 
 using namespace std::chrono_literals;
 using namespace bt_executor;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BTTransitionPublisher — forwards BehaviorTree node status transitions to ROS 2
+// ─────────────────────────────────────────────────────────────────────────────
+class BTTransitionPublisher : public BT::StatusChangeLogger
+{
+public:
+  BTTransitionPublisher(const BT::Tree& tree, rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub)
+  : StatusChangeLogger(tree.rootNode()), pub_(pub)
+  {}
+
+  void callback(BT::Duration timestamp, const BT::TreeNode& node, BT::NodeStatus prev_status, BT::NodeStatus status) override
+  {
+    double seconds = std::chrono::duration<double>(timestamp).count();
+    std::stringstream ss;
+    ss << "{"
+       << "\"timestamp\":" << seconds << ","
+       << "\"node_name\":\"" << node.name() << "\","
+       << "\"registration_name\":\"" << node.registrationName() << "\","
+       << "\"prev_status\":\"" << BT::toStr(prev_status) << "\","
+       << "\"status\":\"" << BT::toStr(status) << "\""
+       << "}";
+    
+    std_msgs::msg::String msg;
+    msg.data = ss.str();
+    pub_->publish(msg);
+  }
+
+  void flush() override {}
+
+private:
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // StateMonitor — thin ROS node that writes joint / gripper state to the BB
@@ -118,6 +155,12 @@ public:
     status_pub_ = create_publisher<std_msgs::msg::String>(
       "~/status", rclcpp::SystemDefaultsQoS());
 
+    blackboard_pub_ = create_publisher<std_msgs::msg::String>(
+      "~/blackboard", rclcpp::SystemDefaultsQoS());
+
+    transition_pub_ = create_publisher<std_msgs::msg::String>(
+      "~/transitions", rclcpp::SystemDefaultsQoS());
+
     // ── Replan service (VLA bridge calls this to signal a new goal) ──────────
     replan_srv_ = create_service<std_srvs::srv::Trigger>(
       "~/replan",
@@ -139,6 +182,19 @@ public:
         blackboard_->set(BB_GOAL_STAMP, stamp + 1);
         resp->success = true;
         resp->message = "Goal change signaled";
+      });
+    
+    // ── Target pose subscription (updates blackboard key and signals goal changed) ──
+    target_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+      "~/vla_grasp_pose", rclcpp::SystemDefaultsQoS(),
+      [this](geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+        blackboard_->set(BB_GRASP_POSE, *msg);
+        blackboard_->set(BB_GOAL_CHANGED, true);
+        int stamp = 0;
+        blackboard_->get(BB_GOAL_STAMP, stamp);
+        blackboard_->set(BB_GOAL_STAMP, stamp + 1);
+        RCLCPP_INFO(get_logger(), "Received target pose update: (%.3f, %.3f, %.3f). Goal changed flagged.",
+                    msg->pose.position.x, msg->pose.position.y, msg->pose.position.z);
       });
 
     RCLCPP_INFO(get_logger(), "BTExecutorNode constructed");
@@ -176,9 +232,15 @@ public:
     blackboard_->set(BB_GOAL_STAMP,        0);
     blackboard_->set(BB_PLANNING_MODE,     std::string("normal"));
 
+    // Provide the shared node pointer so SyncActionNodes (e.g. SafeAbort) can
+    // publish ROS messages without creating their own rclcpp::Node instances,
+    // which would cause node-name collisions when the BT factory registers them.
+    blackboard_->set("ros_node", std::static_pointer_cast<rclcpp::Node>(shared_from_this()));
+
     // ── Build the factory and register all node types ────────────────────────
     BT::RosNodeParams ros_params;
     ros_params.nh = shared_from_this();
+    ros_params.default_port_value = "robot_skills_server/execute_skill";
     // All BT action nodes share one callback group on the main executor.
     ros_params.server_timeout = std::chrono::milliseconds(5000);
 
@@ -205,6 +267,12 @@ public:
 
     // ── Load tree from XML ───────────────────────────────────────────────────
     load_tree();
+
+    // ── Transition Publisher for Web UI ──────────────────────────────────────
+    if (tree_) {
+      transition_publisher_ = std::make_unique<BTTransitionPublisher>(*tree_, transition_pub_);
+      RCLCPP_INFO(get_logger(), "BTTransitionPublisher initialized");
+    }
 
     // ── Optional loggers ─────────────────────────────────────────────────────
     // cout_logger_ = std::make_unique<BT::StdCoutLogger>(*tree_); // Disabled to prevent console spam
@@ -239,17 +307,80 @@ public:
 private:
   void load_tree()
   {
-    if (bt_xml_path_.empty()) {
-      // Fall back to the inline default tree (useful for first-run / testing)
-      RCLCPP_WARN(get_logger(),
-        "bt_xml_path not set — loading built-in pick_and_place tree");
-      tree_ = std::make_unique<BT::Tree>(
-        factory_.createTreeFromText(default_tree_xml_, blackboard_));
+    std::string path_to_load = bt_xml_path_;
+    if (path_to_load.empty()) {
+      try {
+        path_to_load = ament_index_cpp::get_package_share_directory("bt_executor") + "/bt_trees/pick_and_place.xml";
+        RCLCPP_INFO(get_logger(), "bt_xml_path not set — loading default tree from share: %s", path_to_load.c_str());
+      } catch (const std::exception& e) {
+        RCLCPP_ERROR(get_logger(), "Failed to get share directory of bt_executor: %s", e.what());
+        return;
+      }
     } else {
-      RCLCPP_INFO(get_logger(), "Loading BT from: %s", bt_xml_path_.c_str());
-      tree_ = std::make_unique<BT::Tree>(
-        factory_.createTreeFromFile(bt_xml_path_, blackboard_));
+      RCLCPP_INFO(get_logger(), "Loading BT from: %s", path_to_load.c_str());
     }
+
+    try {
+      tree_ = std::make_unique<BT::Tree>(
+        factory_.createTreeFromFile(path_to_load, blackboard_));
+    } catch (const std::exception& e) {
+      RCLCPP_ERROR(get_logger(), "Failed to load behavior tree: %s", e.what());
+    }
+  }
+
+  void publish_blackboard()
+  {
+    std::string active_arm = "left_arm";
+    double vel_scale = 0.3, acc_scale = 0.3, confidence = 1.0;
+    bool replan_needed = false, new_goal_ready = false, left_holding = false, right_holding = false;
+    bool object_visible = false, plan_feasible = false, goal_changed = false;
+    int recovery_count = 0, goal_stamp = 0;
+    std::string status_msg = "idle", pipeline_id = "ompl", planner_id = "RRTConnectkConfigDefault", planner_profile = "safe_rrt", planning_mode = "normal";
+
+    blackboard_->get(BB_ACTIVE_ARM, active_arm);
+    blackboard_->get(BB_VEL_SCALE, vel_scale);
+    blackboard_->get(BB_ACC_SCALE, acc_scale);
+    blackboard_->get(BB_REPLAN_NEEDED, replan_needed);
+    blackboard_->get(BB_RECOVERY_COUNT, recovery_count);
+    blackboard_->get(BB_STATUS_MSG, status_msg);
+    blackboard_->get(BB_VLA_CONFIDENCE, confidence);
+    blackboard_->get(BB_NEW_GOAL_READY, new_goal_ready);
+    blackboard_->get(BB_LEFT_GRIP_HOLDING, left_holding);
+    blackboard_->get(BB_RIGHT_GRIP_HOLDING, right_holding);
+    blackboard_->get(BB_OBJECT_VISIBLE, object_visible);
+    blackboard_->get(BB_PLAN_FEASIBLE, plan_feasible);
+    blackboard_->get(BB_PIPELINE_ID, pipeline_id);
+    blackboard_->get(BB_PLANNER_ID, planner_id);
+    blackboard_->get(BB_PLANNER_PROFILE, planner_profile);
+    blackboard_->get(BB_GOAL_CHANGED, goal_changed);
+    blackboard_->get(BB_GOAL_STAMP, goal_stamp);
+    blackboard_->get(BB_PLANNING_MODE, planning_mode);
+
+    std::stringstream ss;
+    ss << "{"
+       << "\"plan_active_arm\":\"" << active_arm << "\","
+       << "\"plan_velocity_scaling\":" << vel_scale << ","
+       << "\"plan_accel_scaling\":" << acc_scale << ","
+       << "\"task_replan_needed\":" << (replan_needed ? "true" : "false") << ","
+       << "\"task_recovery_count\":" << recovery_count << ","
+       << "\"task_status_message\":\"" << status_msg << "\","
+       << "\"vla_confidence\":" << confidence << ","
+       << "\"vla_new_goal_ready\":" << (new_goal_ready ? "true" : "false") << ","
+       << "\"gripper_left_holding\":" << (left_holding ? "true" : "false") << ","
+       << "\"gripper_right_holding\":" << (right_holding ? "true" : "false") << ","
+       << "\"task_object_visible\":" << (object_visible ? "true" : "false") << ","
+       << "\"task_plan_feasible\":" << (plan_feasible ? "true" : "false") << ","
+       << "\"plan_pipeline_id\":\"" << pipeline_id << "\","
+       << "\"plan_planner_id\":\"" << planner_id << "\","
+       << "\"plan_planner_profile\":\"" << planner_profile << "\","
+       << "\"task_goal_changed\":" << (goal_changed ? "true" : "false") << ","
+       << "\"task_goal_stamp\":" << goal_stamp << ","
+       << "\"plan_planning_mode\":\"" << planning_mode << "\""
+       << "}";
+
+    std_msgs::msg::String msg;
+    msg.data = ss.str();
+    blackboard_pub_->publish(msg);
   }
 
   void tick_once()
@@ -268,6 +399,13 @@ private:
     }
     status_pub_->publish(msg);
 
+    // Throttle blackboard publishing to every 10 ticks (at 50 Hz, this is 5 Hz)
+    static int tick_count = 0;
+    if (++tick_count >= 10) {
+      publish_blackboard();
+      tick_count = 0;
+    }
+
     // On tree completion (SUCCESS or FAILURE) halt so it can restart cleanly
     if (status != BT::NodeStatus::RUNNING) {
       tree_->haltTree();
@@ -284,78 +422,16 @@ private:
   std::unique_ptr<BT::Groot2Publisher>  zmq_publisher_;
 
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr blackboard_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr transition_pub_;
+  std::unique_ptr<BTTransitionPublisher> transition_publisher_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr  replan_srv_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr  goal_update_srv_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr target_pose_sub_;
   rclcpp::TimerBase::SharedPtr tick_timer_;
 
   std::string bt_xml_path_;
   double tick_rate_hz_{50.0};
-
-  // ── Built-in fallback tree XML ────────────────────────────────────────────
-  // This is a minimal test tree.  In production load from file.
-  static constexpr const char* default_tree_xml_ = R"(
-<root BTCPP_format="4">
-  <BehaviorTree ID="PickAndPlace">
-    <Fallback name="root">
-
-      <!-- Happy path -->
-      <Sequence name="pick_and_place">
-        <IsObjectVisible object_label="{vla_target_object}" />
-        <SetPlannerConfig profile="safe_rrt" />
-        <MoveToNamedPose arm="{plan_active_arm}" pose_name="ready" />
-
-        <!-- Reactive approach: re-plans if goal changes mid-motion -->
-        <ReactiveSequence name="reactive_approach">
-          <Inverter>
-            <IsGoalChanged />
-          </Inverter>
-          <SetPlannerConfig profile="linear_approach" />
-          <MoveToPose
-            arm="{plan_active_arm}"
-            target_pose="{vla_grasp_pose}"
-            velocity_scaling="{plan_velocity_scaling}"
-            position_only="false" />
-        </ReactiveSequence>
-
-        <GraspObject arm="{plan_active_arm}" />
-        <IsGripperHolding arm="{plan_active_arm}" />
-
-        <SetPlannerConfig profile="fast_ptp" />
-        <MoveToPose
-          arm="{plan_active_arm}"
-          target_pose="{vla_place_pose}"
-          velocity_scaling="{plan_velocity_scaling}"
-          position_only="true" />
-        <ReleaseObject arm="{plan_active_arm}" />
-        <MoveToNamedPose arm="{plan_active_arm}" pose_name="home" />
-      </Sequence>
-
-      <!-- Recovery path -->
-      <Sequence name="recovery">
-        <IsReplanNeeded confidence_threshold="0.65" />
-        <QueryVLA task="{vla_task_name}" />
-        <RetryUntilSuccessful num_attempts="2">
-          <Sequence name="retry_pick">
-            <IsObjectVisible object_label="{vla_target_object}" />
-            <SetPlannerConfig profile="realtime_rrt" />
-            <MoveToPose
-              arm="{plan_active_arm}"
-              target_pose="{vla_grasp_pose}"
-              velocity_scaling="0.2"
-              position_only="false" />
-            <GraspObject arm="{plan_active_arm}" />
-            <IsGripperHolding arm="{plan_active_arm}" />
-          </Sequence>
-        </RetryUntilSuccessful>
-      </Sequence>
-
-      <!-- Last resort -->
-      <SafeAbort reason="all_recovery_failed" />
-
-    </Fallback>
-  </BehaviorTree>
-</root>
-)";
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

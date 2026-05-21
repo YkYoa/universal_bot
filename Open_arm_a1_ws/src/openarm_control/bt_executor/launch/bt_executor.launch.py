@@ -140,12 +140,16 @@ def generate_launch_description():
         }],
     )
 
-    # ── Optional REST API (Android team + UI telemetry) ──────────────────────
-    robot_api = Node(
-        package="moveit_api",
-        executable="robot_api_server",
-        name="robot_api_server",
+    # ── Optional Web UI Telemetry & Controls ──────────────────────────────────
+    bt_viewer = Node(
+        package="bt_viewer",
+        executable="bt_viewer_node",
+        name="bt_viewer",
         output="screen",
+        parameters=[{
+            "bt_xml_path": bt_xml_path,
+            "port": 5000,
+        }],
         condition=IfCondition(use_api),
     )
 
@@ -181,6 +185,6 @@ def generate_launch_description():
         *spawners,
         move_group,
         bt_executor,
-        robot_api,
+        bt_viewer,
         rviz,
     ])

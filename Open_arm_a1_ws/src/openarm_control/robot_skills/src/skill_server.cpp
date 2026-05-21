@@ -13,6 +13,11 @@ SkillServer::SkillServer(const std::shared_ptr<rclcpp::Node>& node,
 SkillServer::~SkillServer()
 {
     execution_active_ = false;
+    // Join both long-lived threads before destruction to avoid use-after-free.
+    // execute_thread_ captures 'this' so it MUST be joined before the object dies.
+    if (execute_thread_.joinable()) {
+        execute_thread_.join();
+    }
     if (replan_thread_.joinable()) {
         replan_thread_.join();
     }
@@ -37,6 +42,7 @@ bool SkillServer::start()
 void SkillServer::register_skill(const std::shared_ptr<RobotSkill>& skill)
 {
     if (skill) {
+        skill->initialize(node_, planner_);
         skills_[skill->name()] = skill;
         RCLCPP_INFO(node_->get_logger(), "Registered skill: %s", skill->name().c_str());
     }
@@ -77,8 +83,13 @@ rclcpp_action::CancelResponse SkillServer::handle_cancel(
 
 void SkillServer::handle_accepted(const std::shared_ptr<GoalHandleExecuteSkill>& goal_handle)
 {
-    // Execute async
-    std::thread{[this, goal_handle]() { execute_goal(goal_handle); }}.detach();
+    // Join any previously finished execute thread before starting a new one.
+    // We do NOT detach because the lambda captures 'this', and a detached thread
+    // would be a use-after-free if the node shuts down while executing.
+    if (execute_thread_.joinable()) {
+        execute_thread_.join();
+    }
+    execute_thread_ = std::thread([this, goal_handle]() { execute_goal(goal_handle); });
 }
 
 void SkillServer::execute_goal(const std::shared_ptr<GoalHandleExecuteSkill>& goal_handle)
@@ -295,8 +306,30 @@ SkillResult SkillServer::execute_trajectory(
 
     auto end_time = node_->now();
     result.execution_time_sec = (end_time - start_time).seconds();
-    result.success = true;
-    
+
+    // Check the actual final execution status — do NOT unconditionally return success.
+    // If the replan failed or TEM stopped with an error, propagate that to the BT.
+    auto tem_final = planner_->getMoveItCpp()->getTrajectoryExecutionManagerNonConst();
+    if (tem_final) {
+        auto final_status = tem_final->getLastExecutionStatus();
+        if (final_status == moveit_controller_manager::ExecutionStatus::SUCCEEDED ||
+            final_status == moveit_controller_manager::ExecutionStatus::RUNNING) {
+            // RUNNING means TEM finished the trajectory and is idle (last status is RUNNING
+            // when no trajectory is queued, which is normal post-completion).
+            result.success = true;
+        } else {
+            result.success = false;
+            result.error_message = "Realtime execution ended with status: " + final_status.asString();
+            RCLCPP_WARN(node_->get_logger(),
+                "[SkillServer] REALTIME execution finished with non-success status: %s",
+                final_status.asString().c_str());
+        }
+    } else {
+        // TEM unavailable post-execution — conservatively report failure.
+        result.success = false;
+        result.error_message = "TrajectoryExecutionManager unavailable after realtime execution.";
+    }
+
     return result;
 }
 

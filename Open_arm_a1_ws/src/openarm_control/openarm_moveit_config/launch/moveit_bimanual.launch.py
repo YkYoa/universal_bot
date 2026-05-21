@@ -157,6 +157,7 @@ def generate_launch_description():
             robot_description_semantic,
             kinematics_yaml_path,
             moveit_cpp_yaml_path,
+            moveit_controllers_yaml_path,
             joint_limits_yaml_path,
             trajectory_execution,
             planning_scene_monitor,

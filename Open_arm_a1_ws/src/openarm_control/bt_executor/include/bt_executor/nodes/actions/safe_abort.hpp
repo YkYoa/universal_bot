@@ -16,6 +16,11 @@
 // This node is synchronous (SyncActionNode) because once you decide to abort
 // there is no reason to yield — just execute the halt sequence blocking.
 //
+// The shared rclcpp::Node is provided via the blackboard key "ros_node"
+// (an rclcpp::Node::SharedPtr written by BTExecutorNode::initialize()).
+// This avoids creating a new Node per BT instance, which caused node-name
+// collisions when the BT factory registers multiple instances.
+//
 // XML usage:
 //   <SafeAbort reason="all_recovery_failed" />
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,15 +34,12 @@ namespace bt_executor {
 class SafeAbort : public BT::SyncActionNode
 {
 public:
+  // Blackboard key under which BTExecutorNode writes its shared node pointer.
+  static constexpr const char* BB_ROS_NODE = "ros_node";
+
   SafeAbort(const std::string & name, const BT::NodeConfig & config)
   : BT::SyncActionNode(name, config)
-  {
-    // Create a one-shot node handle for publishing the fault alert.
-    // In a full implementation, pass in the shared rclcpp::Node instead.
-    node_ = rclcpp::Node::make_shared("safe_abort_helper");
-    fault_pub_ = node_->create_publisher<std_msgs::msg::String>(
-      "/bt_executor/fault", rclcpp::SystemDefaultsQoS());
-  }
+  {}
 
   static BT::PortsList providedPorts()
   {
@@ -51,8 +53,28 @@ public:
     std::string reason = "unknown";
     getInput("reason", reason);
 
-    RCLCPP_ERROR(rclcpp::get_logger("SafeAbort"),
-      "═══ SAFE ABORT: %s ═══", reason.c_str());
+    // ── Resolve the shared ROS node ───────────────────────────────────────
+    rclcpp::Node::SharedPtr node;
+    if (!config().blackboard->get(BB_ROS_NODE, node) || !node) {
+      // Fallback: log via the global rclcpp logger so at least something is visible.
+      RCLCPP_ERROR(rclcpp::get_logger("SafeAbort"),
+        "═══ SAFE ABORT: %s ═══ (no ros_node on blackboard — fault topic not published)",
+        reason.c_str());
+    } else {
+      RCLCPP_ERROR(node->get_logger(),
+        "═══ SAFE ABORT: %s ═══", reason.c_str());
+
+      // Lazily create publisher (only once per node lifecycle).
+      if (!fault_pub_) {
+        fault_pub_ = node->create_publisher<std_msgs::msg::String>(
+          "/bt_executor/fault", rclcpp::SystemDefaultsQoS());
+      }
+
+      // ── Publish fault alert ─────────────────────────────────────────────
+      std_msgs::msg::String msg;
+      msg.data = reason;
+      fault_pub_->publish(msg);
+    }
 
     config().blackboard->set(BB_STATUS_MSG,
       std::string("ABORTED: ") + reason);
@@ -63,18 +85,12 @@ public:
     // action server.
     //
     // Example (requires a node handle):
-    //   auto cancel_client = node_->create_client<action_msgs::srv::CancelGoal>(
+    //   auto cancel_client = node->create_client<action_msgs::srv::CancelGoal>(
     //     "/left_arm_controller/follow_joint_trajectory/_action/cancel_goal");
     //   cancel_client->async_send_request(...);
 
     // ── TODO: Open grippers ───────────────────────────────────────────────
     // Send open position (0.044) to both gripper controllers directly.
-
-    // ── Publish fault alert ───────────────────────────────────────────────
-    std_msgs::msg::String msg;
-    msg.data = reason;
-    fault_pub_->publish(msg);
-    rclcpp::spin_some(node_);
 
     // Reset recovery counter for next task
     config().blackboard->set(BB_RECOVERY_COUNT, 0);
@@ -85,7 +101,7 @@ public:
   }
 
 private:
-  rclcpp::Node::SharedPtr node_;
+  // Publisher is created lazily so we don't need the node at construction time.
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr fault_pub_;
 };
 

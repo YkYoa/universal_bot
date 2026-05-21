@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenArm VLA Behavior Tree Viewer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Cytoscape.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+    <!-- Socket.IO -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        #cy {
+            width: 100%;
+            height: 100%;
+            background-color: #f8fafc;
+        }
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.05);
+                opacity: 0.8;
+            }
+        }
+        .pulse-glowing {
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 flex flex-col h-screen overflow-hidden font-sans">
+
+    <!-- Top Navbar -->
+    <header class="bg-slate-950 border-b border-slate-800 px-6 py-4 flex justify-between items-center shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="bg-blue-600 text-white p-2 rounded-lg flex items-center justify-center">
+                <i class="fa-solid fa-network-wired text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                    OpenArm <span class="text-blue-500 font-medium">VLA BT-Viewer</span>
+                </h1>
+                <p class="text-xs text-slate-400">Interactive BehaviorTree & State Machine telemetry dashboard</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+            <!-- Connection Status -->
+            <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs">
+                <span id="conn-indicator" class="h-2 w-2 rounded-full bg-red-500"></span>
+                <span id="conn-text" class="font-medium text-slate-300">Disconnected</span>
+            </div>
+            <!-- Overall BT status -->
+            <div class="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+                <span class="text-xs text-slate-400">Engine Status:</span>
+                <span id="overall-status" class="text-xs font-bold px-2 py-0.5 rounded uppercase bg-slate-800 text-slate-300">IDLE</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex flex-1 overflow-hidden">
+        <!-- Left: Cytoscape Graph Area -->
+        <section class="flex-1 relative flex flex-col border-r border-slate-800">
+            <div class="absolute top-4 left-4 z-10 flex gap-2">
+                <button onclick="resetGraphView()" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg border border-slate-700 text-xs flex items-center gap-1.5 shadow-lg transition">
+                    <i class="fa-solid fa-arrows-to-eye"></i> Fit view
+                </button>
+                <button onclick="reloadTreeStructure()" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg border border-slate-700 text-xs flex items-center gap-1.5 shadow-lg transition">
+                    <i class="fa-solid fa-arrows-rotate"></i> Reload XML
+                </button>
+            </div>
+            
+            <div class="absolute top-4 right-4 z-10 flex flex-col gap-1.5 bg-slate-950/90 border border-slate-800 rounded-lg p-3 text-xs shadow-lg backdrop-blur">
+                <div class="font-semibold text-slate-300 mb-1 border-b border-slate-800 pb-1">Legend</div>
+                <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded bg-[#3b82f6]"></span> Running</div>
+                <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded bg-[#10b981]"></span> Success</div>
+                <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded bg-[#ef4444]"></span> Failure</div>
+                <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded bg-[#e2e8f0] border border-slate-400"></span> Idle / Ready</div>
+            </div>
+
+            <!-- Graph Canvas -->
+            <div id="cy" class="flex-1"></div>
+        </section>
+
+        <!-- Right: telemetry/controls -->
+        <section class="w-96 bg-slate-950 flex flex-col h-full shrink-0 overflow-hidden">
+            <!-- Tabs Navigation -->
+            <div class="flex border-b border-slate-800 text-sm font-medium shrink-0 bg-slate-950">
+                <button onclick="switchTab('blackboard')" id="tab-btn-blackboard" class="flex-1 py-3 px-4 border-b-2 border-blue-500 text-blue-500 flex items-center justify-center gap-1.5 transition">
+                    <i class="fa-solid fa-table-list"></i> Blackboard
+                </button>
+                <button onclick="switchTab('controls')" id="tab-btn-controls" class="flex-1 py-3 px-4 border-b-2 border-transparent text-slate-400 hover:text-slate-300 flex items-center justify-center gap-1.5 transition">
+                    <i class="fa-solid fa-sliders"></i> Control Panel
+                </button>
+                <button onclick="switchTab('logs')" id="tab-btn-logs" class="flex-1 py-3 px-4 border-b-2 border-transparent text-slate-400 hover:text-slate-300 flex items-center justify-center gap-1.5 transition">
+                    <i class="fa-solid fa-terminal"></i> Log Stream
+                </button>
+            </div>
+
+            <!-- Tabs Content -->
+            <div class="flex-1 overflow-y-auto p-4 flex flex-col min-h-0">
+                
+                <!-- Blackboard Tab -->
+                <div id="tab-content-blackboard" class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Blackboard Variables</h3>
+                        <span class="text-[10px] text-slate-500 uppercase">Updates live at 5Hz</span>
+                    </div>
+                    <div id="bb-list" class="space-y-2 text-xs">
+                        <div class="text-center py-8 text-slate-500"><i class="fa-solid fa-spinner animate-spin text-lg mb-2 block"></i> Waiting for telemetry...</div>
+                    </div>
+                </div>
+
+                <!-- Control Panel Tab -->
+                <div id="tab-content-controls" class="hidden space-y-5">
+                    <div>
+                        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Service Actions</h3>
+                        <div class="grid grid-cols-1 gap-2">
+                            <button onclick="triggerService('replan')" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-lg border border-blue-500 text-xs flex items-center justify-center gap-2 transition shadow-md active:scale-[0.98]">
+                                <i class="fa-solid fa-rotate-right"></i> Trigger Replan Service
+                            </button>
+                            <button onclick="triggerService('goal_updated')" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg border border-indigo-500 text-xs flex items-center justify-center gap-2 transition shadow-md active:scale-[0.98]">
+                                <i class="fa-solid fa-bullseye"></i> Signal Goal Updated
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-800 pt-4">
+                        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Publish Grasp Pose</h3>
+                        <form id="pose-form" onsubmit="publishPose(event)" class="space-y-3 bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs">
+                            <div>
+                                <label class="block text-slate-400 font-medium mb-1">X Coordinate (m)</label>
+                                <input type="number" step="0.001" id="pose-x" value="-0.300" required class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded px-2.5 py-1.5 focus:border-blue-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-slate-400 font-medium mb-1">Y Coordinate (m)</label>
+                                <input type="number" step="0.001" id="pose-y" value="0.150" required class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded px-2.5 py-1.5 focus:border-blue-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-slate-400 font-medium mb-1">Z Coordinate (m)</label>
+                                <input type="number" step="0.001" id="pose-z" value="0.800" required class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded px-2.5 py-1.5 focus:border-blue-500 outline-none">
+                            </div>
+                            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded border border-emerald-500 text-xs flex items-center justify-center gap-1.5 transition mt-2">
+                                <i class="fa-solid fa-paper-plane"></i> Publish Target Pose
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Log Stream Tab -->
+                <div id="tab-content-logs" class="hidden flex flex-col flex-1 min-h-0 space-y-2">
+                    <div class="flex justify-between items-center shrink-0">
+                        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Transition Events</h3>
+                        <button onclick="clearLogs()" class="text-[10px] text-red-400 hover:text-red-300 hover:underline uppercase">Clear</button>
+                    </div>
+                    <div id="log-terminal" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg p-3 font-mono text-[10px] overflow-y-auto space-y-1.5 text-emerald-400 leading-relaxed scrollbar-thin">
+                        <div class="text-slate-500">Node transitions logger started...</div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <!-- JS Scripts -->
+    <script>
+        let cy = null;
+        let socket = null;
+        let activeTab = 'blackboard';
+        let registeredNodes = {}; // map of node_name -> status
+
+        // Connect socket
+        function initSocket() {
+            socket = io();
+
+            socket.on('connect', () => {
+                document.getElementById('conn-indicator').className = 'h-2 w-2 rounded-full bg-emerald-500';
+                document.getElementById('conn-text').textContent = 'Connected';
+                document.getElementById('conn-text').className = 'font-medium text-emerald-400';
+            });
+
+            socket.on('disconnect', () => {
+                document.getElementById('conn-indicator').className = 'h-2 w-2 rounded-full bg-red-500';
+                document.getElementById('conn-text').textContent = 'Disconnected';
+                document.getElementById('conn-text').className = 'font-medium text-slate-300';
+            });
+
+            socket.on('tree_status', (data) => {
+                const badge = document.getElementById('overall-status');
+                badge.textContent = data.status;
+                badge.className = 'text-xs font-bold px-2 py-0.5 rounded uppercase ' + getStatusClass(data.status);
+            });
+
+            socket.on('blackboard_update', (data) => {
+                updateBlackboardUI(data);
+            });
+
+            socket.on('transition_update', (data) => {
+                // Update graph status
+                updateNodeStatus(data.node_name, data.status);
+                // Append log
+                appendLog(data);
+            });
+        }
+
+        // Color mapper for overall status
+        function getStatusClass(status) {
+            switch(status) {
+                case 'RUNNING': return 'bg-blue-900/50 text-blue-300 border border-blue-700';
+                case 'SUCCESS': return 'bg-emerald-900/50 text-emerald-300 border border-emerald-700';
+                case 'FAILURE': return 'bg-red-900/50 text-red-300 border border-red-700';
+                default:        return 'bg-slate-800 text-slate-300 border border-slate-700';
+            }
+        }
+
+        // Tabs switcher
+        function switchTab(tabId) {
+            // Hide previous
+            document.getElementById(`tab-content-${activeTab}`).classList.add('hidden');
+            document.getElementById(`tab-btn-${activeTab}`).className = 'flex-1 py-3 px-4 border-b-2 border-transparent text-slate-400 hover:text-slate-300 flex items-center justify-center gap-1.5 transition';
+
+            // Show new
+            document.getElementById(`tab-content-${tabId}`).classList.remove('hidden');
+            document.getElementById(`tab-btn-${tabId}`).className = 'flex-1 py-3 px-4 border-b-2 border-blue-500 text-blue-500 flex items-center justify-center gap-1.5 transition';
+
+            activeTab = tabId;
+        }
+
+        // Render blackboard variables beautifully
+        function updateBlackboardUI(data) {
+            const list = document.getElementById('bb-list');
+            list.innerHTML = '';
+            
+            // Format category headings or human-readable names
+            const keys = Object.keys(data).sort();
+            
+            if (keys.length === 0) {
+                list.innerHTML = '<div class="text-center py-8 text-slate-500">No keys present on blackboard.</div>';
+                return;
+            }
+
+            keys.forEach(key => {
+                const val = data[key];
+                let displayVal = val;
+                let badgeClass = 'bg-slate-800 text-slate-300 border border-slate-700';
+
+                // Fancy styling based on value type or specific key names
+                if (typeof val === 'boolean') {
+                    displayVal = val ? 'TRUE' : 'FALSE';
+                    badgeClass = val ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold' : 'bg-slate-900 text-slate-400 border border-slate-800';
+                } else if (key.includes('confidence')) {
+                    displayVal = (val * 100).toFixed(1) + '%';
+                    badgeClass = val > 0.75 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800';
+                } else if (key.includes('profile')) {
+                    badgeClass = 'bg-blue-950 text-blue-300 border border-blue-800 font-mono';
+                }
+
+                const item = document.createElement('div');
+                item.className = 'flex justify-between items-center py-2 px-2.5 rounded-lg border border-slate-800 bg-slate-900/40 hover:bg-slate-900/70 transition';
+                item.innerHTML = `
+                    <span class="font-medium text-slate-400 truncate max-w-[160px]" title="${key}">${key}</span>
+                    <span class="text-[10px] font-semibold px-2 py-0.5 rounded font-mono border ${badgeClass}">${displayVal}</span>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        // Logs terminal
+        function appendLog(data) {
+            const term = document.getElementById('log-terminal');
+            const timeStr = new Date().toLocaleTimeString();
+            const logLine = document.createElement('div');
+            
+            let statusColor = 'text-slate-400';
+            if (data.status === 'RUNNING') statusColor = 'text-blue-400';
+            if (data.status === 'SUCCESS') statusColor = 'text-emerald-400';
+            if (data.status === 'FAILURE') statusColor = 'text-red-400';
+
+            logLine.innerHTML = `
+                <span class="text-slate-500">[${timeStr}]</span> 
+                <span class="text-slate-300 font-bold font-mono">${data.node_name}</span> 
+                (${data.registration_name}): 
+                <span class="${statusColor} font-bold">${data.prev_status} &rarr; ${data.status}</span>
+            `;
+            term.appendChild(logLine);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('log-terminal').innerHTML = '<div class="text-slate-500">Logs cleared. Logging transitions...</div>';
+        }
+
+        // Fetch behavior tree structure and render Cytoscape
+        function reloadTreeStructure() {
+            fetch('/api/tree')
+                .then(res => res.json())
+                .then(treeData => {
+                    if (!treeData) {
+                        console.error("Null tree data returned");
+                        return;
+                    }
+                    
+                    // Fetch current node states to color them correctly
+                    fetch('/api/node_states')
+                        .then(res => res.json())
+                        .then(states => {
+                            registeredNodes = states;
+                            renderCytoscape(treeData);
+                        });
+                })
+                .catch(err => {
+                    console.error("Error loading tree XML:", err);
+                    alert("Failed to parse behavior tree XML. Make sure the package share is built and XML path is valid.");
+                });
+        }
+
+        // Render tree structure in Cytoscape.js
+        function renderCytoscape(treeNode) {
+            const elements = [];
+            
+            // Build Cytoscape nodes and edges recursively
+            function parseElements(node, parentId = null) {
+                // Get style status
+                const status = registeredNodes[node.name] || 'IDLE';
+                
+                // Determine node classification
+                let nodeClass = 'unknown';
+                if (['Sequence', 'ReactiveSequence'].includes(node.type)) {
+                    nodeClass = 'sequence';
+                } else if (['Fallback'].includes(node.type)) {
+                    nodeClass = 'fallback';
+                } else if (['Inverter', 'RetryUntilSuccessful', 'ForceSuccess'].includes(node.type)) {
+                    nodeClass = 'decorator';
+                } else if (node.type.startsWith('Is') || node.type.includes('Condition')) {
+                    nodeClass = 'condition';
+                } else {
+                    nodeClass = 'action';
+                }
+
+                // Push current node
+                elements.push({
+                    data: {
+                        id: node.id,
+                        label: node.name,
+                        type: node.type,
+                        status: status
+                    },
+                    classes: `${nodeClass} ${status.toLowerCase()}`
+                });
+
+                // Push edge to parent
+                if (parentId) {
+                    elements.push({
+                        data: {
+                            id: `edge_${parentId}_${node.id}`,
+                            source: parentId,
+                            target: node.id
+                        }
+                    });
+                }
+
+                // Traverse children
+                if (node.children) {
+                    node.children.forEach(child => {
+                        parseElements(child, node.id);
+                    });
+                }
+            }
+
+            parseElements(treeNode);
+
+            // Initialize cytoscape
+            cy = cytoscape({
+                container: document.getElementById('cy'),
+                elements: elements,
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'label': 'data(label)',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'font-size': '10px',
+                            'color': '#334155',
+                            'background-color': '#e2e8f0',
+                            'border-width': '2px',
+                            'border-color': '#64748b',
+                            'width': '120px',
+                            'height': '36px',
+                            'transition-property': 'background-color, border-color, color, line-color, target-arrow-color',
+                            'transition-duration': '0.3s'
+                        }
+                    },
+                    {
+                        selector: 'node.sequence',
+                        style: {
+                            'shape': 'round-rectangle',
+                            'background-color': '#cbd5e1',
+                            'border-color': '#475569',
+                            'color': '#0f172a',
+                            'font-weight': 'bold',
+                            'width': '90px'
+                        }
+                    },
+                    {
+                        selector: 'node.fallback',
+                        style: {
+                            'shape': 'round-rectangle',
+                            'background-color': '#fca5a5',
+                            'border-color': '#dc2626',
+                            'color': '#7f1d1d',
+                            'font-weight': 'bold',
+                            'width': '90px'
+                        }
+                    },
+                    {
+                        selector: 'node.decorator',
+                        style: {
+                            'shape': 'diamond',
+                            'background-color': '#fed7aa',
+                            'border-color': '#ea580c',
+                            'color': '#7c2d12',
+                            'width': '70px',
+                            'height': '46px',
+                            'font-size': '8px'
+                        }
+                    },
+                    {
+                        selector: 'node.condition',
+                        style: {
+                            'shape': 'ellipse',
+                            'background-color': '#fef08a',
+                            'border-color': '#ca8a04',
+                            'color': '#713f12',
+                            'width': '100px'
+                        }
+                    },
+                    {
+                        selector: 'node.action',
+                        style: {
+                            'shape': 'rectangle',
+                            'background-color': '#bfdbfe',
+                            'border-color': '#2563eb',
+                            'color': '#1e3a8a',
+                            'width': '110px'
+                        }
+                    },
+                    // Status style classes override colors
+                    {
+                        selector: 'node.idle',
+                        style: {
+                            'color': '#475569'
+                        }
+                    },
+                    {
+                        selector: 'node.running',
+                        style: {
+                            'background-color': '#3b82f6',
+                            'border-color': '#1d4ed8',
+                            'color': '#ffffff'
+                        }
+                    },
+                    {
+                        selector: 'node.success',
+                        style: {
+                            'background-color': '#10b981',
+                            'border-color': '#047857',
+                            'color': '#ffffff'
+                        }
+                    },
+                    {
+                        selector: 'node.failure',
+                        style: {
+                            'background-color': '#ef4444',
+                            'border-color': '#b91c1c',
+                            'color': '#ffffff'
+                        }
+                    },
+                    // Edge Styling
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 2,
+                            'line-color': '#cbd5e1',
+                            'target-arrow-color': '#cbd5e1',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier'
+                        }
+                    }
+                ],
+                layout: {
+                    name: 'breadthfirst',
+                    directed: true,
+                    padding: 40,
+                    animate: true,
+                    animationDuration: 500
+                }
+            });
+        }
+
+        // Dynamically update node colors on state changes
+        function updateNodeStatus(nodeName, status) {
+            registeredNodes[nodeName] = status;
+            if (!cy) return;
+            
+            // Find all nodes in cytoscape canvas with this label/name
+            cy.nodes().forEach(node => {
+                if (node.data('label') === nodeName) {
+                    node.data('status', status);
+                    
+                    // Clear state classes and set new status class
+                    node.removeClass('idle running success failure');
+                    node.addClass(status.toLowerCase());
+                }
+            });
+        }
+
+        function resetGraphView() {
+            if (cy) {
+                cy.fit();
+                cy.center();
+            }
+        }
+
+        // Call HTTP API to trigger services
+        function triggerService(serviceName) {
+            const btn = document.querySelector(`button[onclick*="${serviceName}"]`);
+            const origHTML = btn.innerHTML;
+            btn.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i> Triggering...`;
+            btn.disabled = true;
+
+            fetch(`/api/${serviceName}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    btn.innerHTML = `<i class="fa-solid fa-check"></i> Success`;
+                    btn.className = btn.className.replace('bg-', 'bg-emerald-700 hover:bg-emerald-800 ');
+                    setTimeout(() => {
+                        btn.innerHTML = origHTML;
+                        btn.disabled = false;
+                        // Restore classes
+                        if (serviceName === 'replan') {
+                            btn.className = "bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-lg border border-blue-500 text-xs flex items-center justify-center gap-2 transition shadow-md active:scale-[0.98]";
+                        } else {
+                            btn.className = "bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg border border-indigo-500 text-xs flex items-center justify-center gap-2 transition shadow-md active:scale-[0.98]";
+                        }
+                    }, 1500);
+                })
+                .catch(err => {
+                    console.error(err);
+                    btn.innerHTML = `<i class="fa-solid fa-xmark"></i> Failed`;
+                    btn.className = btn.className.replace('bg-', 'bg-red-700 hover:bg-red-800 ');
+                    setTimeout(() => {
+                        btn.innerHTML = origHTML;
+                        btn.disabled = false;
+                        if (serviceName === 'replan') {
+                            btn.className = "bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-lg border border-blue-500 text-xs flex items-center justify-center gap-2 transition shadow-md active:scale-[0.98]";
+                        } else {
+                            btn.className = "bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg border border-indigo-500 text-xs flex items-center justify-center gap-2 transition shadow-md active:scale-[0.98]";
+                        }
+                    }, 1500);
+                });
+        }
+
+        // Call HTTP API to publish grasp pose
+        function publishPose(event) {
+            event.preventDefault();
+            const x = parseFloat(document.getElementById('pose-x').value);
+            const y = parseFloat(document.getElementById('pose-y').value);
+            const z = parseFloat(document.getElementById('pose-z').value);
+
+            const btn = event.target.querySelector('button[type="submit"]');
+            const origHTML = btn.innerHTML;
+            btn.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i> Publishing...`;
+            btn.disabled = true;
+
+            fetch('/api/publish_pose', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x, y, z })
+            })
+            .then(res => res.json())
+            .then(data => {
+                btn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Published!`;
+                btn.className = "w-full bg-emerald-700 hover:bg-emerald-800 text-white font-medium py-2 px-4 rounded border border-emerald-600 text-xs flex items-center justify-center gap-1.5 transition mt-2";
+                setTimeout(() => {
+                    btn.innerHTML = origHTML;
+                    btn.disabled = false;
+                    btn.className = "w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded border border-emerald-500 text-xs flex items-center justify-center gap-1.5 transition mt-2";
+                }, 1500);
+            })
+            .catch(err => {
+                console.error(err);
+                btn.innerHTML = `<i class="fa-solid fa-xmark"></i> Failed`;
+                btn.className = "w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded border border-red-500 text-xs flex items-center justify-center gap-1.5 transition mt-2";
+                setTimeout(() => {
+                    btn.innerHTML = origHTML;
+                    btn.disabled = false;
+                    btn.className = "w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded border border-emerald-500 text-xs flex items-center justify-center gap-1.5 transition mt-2";
+                }, 1500);
+            });
+        }
+
+        // Initialization
+        window.addEventListener('DOMContentLoaded', () => {
+            initSocket();
+            reloadTreeStructure();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <Fallback name="root_fallback">
+      <Sequence name="main_seq">
+        <!-- Wait 8 seconds to ensure all controllers are spawned and active -->
+        <Sleep msec="8000" />
+
+        <!-- Start by moving to the ready pose -->
+        <SetPlannerConfig profile="safe_rrt" />
+        <PlanToNamedPose arm="left_arm" pose_name="ready" />
+
+        <!-- Wait until the first target goal pose is published -->
+        <RetryUntilSuccessful num_attempts="1000">
+          <Fallback>
+            <IsGoalChanged />
+            <Sequence>
+              <Sleep msec="100" />
+              <AlwaysFailure />
+            </Sequence>
+          </Fallback>
+        </RetryUntilSuccessful>
+        
+        <!-- Keep trying reactive approach until it succeeds -->
+        <RetryUntilSuccessful num_attempts="5">
+          <ReactiveSequence name="reactive_approach">
+            <Inverter>
+              <IsGoalChanged />
+            </Inverter>
+            <PlanToPose 
+              arm="left_arm" 
+              target_pose="{vla_grasp_pose}" 
+              velocity_scaling="0.3" 
+              position_only="true" />
+          </ReactiveSequence>
+        </RetryUntilSuccessful>
+        
+        <!-- Wait 1s and return home -->
+        <Sleep msec="1000" />
+        <PlanToNamedPose arm="left_arm" pose_name="home" />
+      </Sequence>
+      
+      <SafeAbort reason="execution_failed" />
+    </Fallback>
+  </BehaviorTree>
+</root>

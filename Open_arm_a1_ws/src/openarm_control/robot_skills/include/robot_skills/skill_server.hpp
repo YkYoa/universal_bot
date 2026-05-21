@@ -53,6 +53,11 @@ namespace robot_skills
         
         rclcpp_action::Server<ExecuteSkill>::SharedPtr action_server_;
 
+        // Goal execution thread — must be joined (never detached) because
+        // it captures 'this'.  execute_thread_ is joined in the destructor
+        // and re-joined in handle_accepted before launching the next goal.
+        std::thread execute_thread_;
+
         // Realtime execution tracking variables
         std::atomic<bool> execution_active_{false};
         std::atomic<bool> goal_changed_{false};

@@ -151,10 +151,17 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         goal_state.update();
         planning_component->setGoal(goal_state);
     } else if (!request.getWaypoints().empty()) {
-        // Cartesian path request (if needed in the future)
-        // MoveItCpp doesn't have a direct computeCartesianPath in PlanningComponent, 
-        // but we can compute it using RobotState / PlanningScene or path planning.
-        RCLCPP_WARN(node_->get_logger(), "[MoveItCppPlannerManager] Waypoints Cartesian planning not fully implemented.");
+        // Cartesian path planning is not yet implemented via PlanningComponent.
+        // computeCartesianPath must be done via moveit::core::RobotState directly.
+        // Returning failure here is intentional — do NOT fall through with no goal set,
+        // as that would cause MoveIt to plan vacuously or crash.
+        RCLCPP_ERROR(node_->get_logger(),
+            "[MoveItCppPlannerManager] Waypoint/Cartesian planning is not yet implemented. "
+            "Use CartesianMoveSkill with a single target_pose instead, or implement "
+            "computeCartesianPath via moveit::core::RobotState.");
+        response.success = false;
+        response.error_message = "Waypoint/Cartesian planning not yet implemented.";
+        return response;
     } else {
         response.success = false;
         response.error_message = "No valid goal (pose or joints) specified in request.";
