@@ -6,29 +6,15 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(std_srvs REQUIRED)
+find_package(computation REQUIRED)
 
-add_executable(test_realtime_node src/test_realtime_node.cpp)
-ament_target_dependencies(test_realtime_node
-  rclcpp
-  geometry_msgs
-  std_msgs
-  std_srvs
+add_executable(sequence_to_bt src/sequence_to_bt.cpp)
+ament_target_dependencies(sequence_to_bt
+  computation
 )
 
 install(TARGETS
-  test_realtime_node
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-# Install the YAML→BT XML converter so it's runnable after colcon build:
-#   ros2 run openarm_demo sequence_to_bt --yaml <path> --out <path>
-install(PROGRAMS
-  src/sequence_to_bt.py
-  RENAME sequence_to_bt
+  sequence_to_bt
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -9,6 +9,11 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>yaml-cpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2</depend>
+  <depend>eigen</depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>
