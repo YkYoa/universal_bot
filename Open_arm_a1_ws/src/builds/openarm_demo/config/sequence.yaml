@@ -23,3 +23,9 @@ homePoses:
 graspPoses: 
   laPreGraspAngle: 0, 0, 0, 0, 0, 0, 90
   raPreGraspAngle: 0, 0, 0, 0, 0, 0, -90
+
+wavePoses:
+  laPreWaveJoint:  
+
+greetPoses:
+  laPreGreetJoint: 
