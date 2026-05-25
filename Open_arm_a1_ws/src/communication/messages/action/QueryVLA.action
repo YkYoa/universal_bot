@@ -1,0 +1,10 @@
+# ── Goal ──────────────────────────────────────────────────────
+string task
+---
+# ── Result ────────────────────────────────────────────────────
+bool success
+string error_message
+geometry_msgs/PoseStamped target_pose
+---
+# ── Feedback ──────────────────────────────────────────────────
+string status

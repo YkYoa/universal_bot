@@ -37,12 +37,16 @@ target_link_libraries(computation PUBLIC Eigen3::Eigen)
 ament_target_dependencies(computation PUBLIC
   geometry_msgs
   tf2
+  tf2_geometry_msgs
+  tf2_ros
 )
 
 ament_export_targets(computationTargets HAS_LIBRARY_TARGET)
 ament_export_dependencies(
   geometry_msgs
   tf2
+  tf2_geometry_msgs
+  tf2_ros
   Eigen3
 )
 ament_export_include_directories(include)

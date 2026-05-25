@@ -71,6 +71,11 @@ install(TARGETS bt_executor_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/vla_bridge.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(DIRECTORY
   include/
   DESTINATION include

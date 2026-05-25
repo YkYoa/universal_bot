@@ -8,6 +8,7 @@ find_package(moveit_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecuteSkill.action"
+  "action/QueryVLA.action"
   DEPENDENCIES geometry_msgs moveit_msgs
 )
 

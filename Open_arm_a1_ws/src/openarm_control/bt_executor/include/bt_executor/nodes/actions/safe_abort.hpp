@@ -38,7 +38,7 @@ public:
   static constexpr const char* BB_ROS_NODE = "ros_node";
 
   SafeAbort(const std::string & name, const BT::NodeConfig & config)
-  : BT::SyncActionNode(name, config)
+  : BT::SyncActionNode(name, config), last_seen_stamp_(-1), logged_(false)
   {}
 
   static BT::PortsList providedPorts()
@@ -53,27 +53,39 @@ public:
     std::string reason = "unknown";
     getInput("reason", reason);
 
-    // ── Resolve the shared ROS node ───────────────────────────────────────
-    rclcpp::Node::SharedPtr node;
-    if (!config().blackboard->get(BB_ROS_NODE, node) || !node) {
-      // Fallback: log via the global rclcpp logger so at least something is visible.
-      RCLCPP_ERROR(rclcpp::get_logger("SafeAbort"),
-        "═══ SAFE ABORT: %s ═══ (no ros_node on blackboard — fault topic not published)",
-        reason.c_str());
-    } else {
-      RCLCPP_ERROR(node->get_logger(),
-        "═══ SAFE ABORT: %s ═══", reason.c_str());
-
-      // Lazily create publisher (only once per node lifecycle).
-      if (!fault_pub_) {
-        fault_pub_ = node->create_publisher<std_msgs::msg::String>(
-          "/bt_executor/fault", rclcpp::SystemDefaultsQoS());
+    // ── Check if a new goal stamp has been set ───────────────────────────
+    int current_stamp = 0;
+    if (config().blackboard->get(BB_GOAL_STAMP, current_stamp)) {
+      if (current_stamp != last_seen_stamp_) {
+        last_seen_stamp_ = current_stamp;
+        logged_ = false;
       }
+    }
 
-      // ── Publish fault alert ─────────────────────────────────────────────
-      std_msgs::msg::String msg;
-      msg.data = reason;
-      fault_pub_->publish(msg);
+    if (!logged_) {
+      // ── Resolve the shared ROS node ───────────────────────────────────────
+      rclcpp::Node::SharedPtr node;
+      if (!config().blackboard->get(BB_ROS_NODE, node) || !node) {
+        // Fallback: log via the global rclcpp logger so at least something is visible.
+        RCLCPP_ERROR(rclcpp::get_logger("SafeAbort"),
+          "═══ SAFE ABORT: %s ═══ (no ros_node on blackboard — fault topic not published)",
+          reason.c_str());
+      } else {
+        RCLCPP_ERROR(node->get_logger(),
+          "═══ SAFE ABORT: %s ═══", reason.c_str());
+
+        // Lazily create publisher (only once per node lifecycle).
+        if (!fault_pub_) {
+          fault_pub_ = node->create_publisher<std_msgs::msg::String>(
+            "/bt_executor/fault", rclcpp::SystemDefaultsQoS());
+        }
+
+        // ── Publish fault alert ─────────────────────────────────────────────
+        std_msgs::msg::String msg;
+        msg.data = reason;
+        fault_pub_->publish(msg);
+      }
+      logged_ = true;
     }
 
     config().blackboard->set(BB_STATUS_MSG,
@@ -88,7 +100,7 @@ public:
     //   auto cancel_client = node->create_client<action_msgs::srv::CancelGoal>(
     //     "/left_arm_controller/follow_joint_trajectory/_action/cancel_goal");
     //   cancel_client->async_send_request(...);
-
+    // 
     // ── TODO: Open grippers ───────────────────────────────────────────────
     // Send open position (0.044) to both gripper controllers directly.
 
@@ -103,6 +115,8 @@ public:
 private:
   // Publisher is created lazily so we don't need the node at construction time.
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr fault_pub_;
+  int last_seen_stamp_;
+  bool logged_;
 };
 
 }  // namespace bt_executor

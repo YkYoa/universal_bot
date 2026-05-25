@@ -33,6 +33,7 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     moveit_cfg = get_package_share_directory("openarm_moveit_config")
     bt_cfg     = get_package_share_directory("bt_executor")
+    motion_planner_cfg = get_package_share_directory("motion_planner")
 
     # ── Launch arguments ─────────────────────────────────────────────────────
     use_rviz    = LaunchConfiguration("use_rviz")
@@ -127,6 +128,24 @@ def generate_launch_description():
         ],
     )
 
+    # ── Robot Skills Server (MoveItCpp action server backend) ─────────────────
+    moveit_cpp_yaml = os.path.join(motion_planner_cfg, "config", "moveit_cpp.yaml")
+    robot_skills = Node(
+        package="robot_skills",
+        executable="robot_skills_node",
+        output="screen",
+        parameters=[
+            robot_description,
+            robot_description_semantic,
+            robot_description_kinematics,
+            moveit_cpp_yaml,
+            moveit_ctrl,
+            joint_limits,
+            trajectory_execution,
+            planning_scene_monitor,
+        ],
+    )
+
     # ── BT executor ──────────────────────────────────────────────────────────
     bt_executor = Node(
         package="bt_executor",
@@ -184,6 +203,7 @@ def generate_launch_description():
         ros2_ctrl,
         *spawners,
         move_group,
+        robot_skills,
         bt_executor,
         bt_viewer,
         rviz,

@@ -29,6 +29,17 @@ public:
                const BT::RosNodeParams & params)
   : BT::RosActionNode<FJT>(name, config, params) {}
 
+  BT::NodeStatus tick() override
+  {
+    std::string arm;
+    getInput("arm", arm);
+    std::string target_action = (arm == "right_arm")
+      ? "right_gripper_controller/follow_joint_trajectory"
+      : "left_gripper_controller/follow_joint_trajectory";
+    setActionName(target_action);
+    return BT::RosActionNode<FJT>::tick();
+  }
+
   static BT::PortsList providedPorts()
   {
     return providedBasicPorts({
@@ -94,6 +105,17 @@ public:
                 const BT::NodeConfig & config,
                 const BT::RosNodeParams & params)
   : BT::RosActionNode<FJT>(name, config, params) {}
+
+  BT::NodeStatus tick() override
+  {
+    std::string arm;
+    getInput("arm", arm);
+    std::string target_action = (arm == "right_arm")
+      ? "right_gripper_controller/follow_joint_trajectory"
+      : "left_gripper_controller/follow_joint_trajectory";
+    setActionName(target_action);
+    return BT::RosActionNode<FJT>::tick();
+  }
 
   static BT::PortsList providedPorts()
   {

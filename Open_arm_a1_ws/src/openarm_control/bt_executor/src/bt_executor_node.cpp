@@ -219,6 +219,7 @@ public:
     blackboard_->set(BB_RIGHT_GRIP_HOLDING,false);
     blackboard_->set(BB_OBJECT_VISIBLE,    false);
     blackboard_->set(BB_PLAN_FEASIBLE,     false);
+    blackboard_->set(BB_TASK_NAME,         std::string("Push the apple to the block"));
 
     // Planner defaults (safe_rrt equivalent)
     blackboard_->set(BB_PIPELINE_ID,       std::string("ompl"));
@@ -244,6 +245,16 @@ public:
     // All BT action nodes share one callback group on the main executor.
     ros_params.server_timeout = std::chrono::milliseconds(5000);
 
+    BT::RosNodeParams gripper_params;
+    gripper_params.nh = shared_from_this();
+    gripper_params.default_port_value = ""; // Avoid default port conflict
+    gripper_params.server_timeout = std::chrono::milliseconds(5000);
+
+    BT::RosNodeParams vla_params;
+    vla_params.nh = shared_from_this();
+    vla_params.default_port_value = "/vla_bridge/query";
+    vla_params.server_timeout = std::chrono::milliseconds(5000);
+
     // Condition nodes (synchronous — never block)
     factory_.registerNodeType<IsObjectVisible>("IsObjectVisible");
     factory_.registerNodeType<IsGripperHolding>("IsGripperHolding");
@@ -257,13 +268,13 @@ public:
     factory_.registerNodeType<ExecuteTrajectory>("ExecuteTrajectory");
 
     // Stateful action nodes (async but not ROS actions)
-    factory_.registerNodeType<QueryVLA>("QueryVLA");
 
     // ROS action nodes (async — return RUNNING until done)
+    factory_.registerNodeType<QueryVLA>       ("QueryVLA",        vla_params);
     factory_.registerNodeType<PlanToPose>     ("PlanToPose",      ros_params);
     factory_.registerNodeType<PlanToNamedPose>("PlanToNamedPose", ros_params);
-    factory_.registerNodeType<CloseGripper>   ("CloseGripper",    ros_params);
-    factory_.registerNodeType<OpenGripper>    ("OpenGripper",     ros_params);
+    factory_.registerNodeType<CloseGripper>   ("CloseGripper",    gripper_params);
+    factory_.registerNodeType<OpenGripper>    ("OpenGripper",     gripper_params);
 
     // ── Load tree from XML ───────────────────────────────────────────────────
     load_tree();
