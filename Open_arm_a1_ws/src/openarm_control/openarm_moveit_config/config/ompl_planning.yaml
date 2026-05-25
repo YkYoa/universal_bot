@@ -4,6 +4,8 @@
       pipeline_names:
         - ompl
         - pilz_industrial_motion_planner
+        - chomp
+        - stomp
     default_planning_pipeline: ompl
     ompl:
       planning_plugins:

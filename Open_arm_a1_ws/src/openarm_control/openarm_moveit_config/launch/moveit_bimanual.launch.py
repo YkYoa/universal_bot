@@ -50,6 +50,12 @@ def generate_launch_description():
     # ── Pilz Industrial Planning ──
     pilz_planning_yaml_path = os.path.join(moveit_config_pkg, "config", "pilz_industrial_motion_planner_planning.yaml")
 
+    # ── CHOMP Planning ──
+    chomp_planning_yaml_path = os.path.join(moveit_config_pkg, "config", "chomp_planning.yaml")
+
+    # ── STOMP Planning ──
+    stomp_planning_yaml_path = os.path.join(moveit_config_pkg, "config", "stomp_planning.yaml")
+
     # ── Joint Limits ──
     joint_limits_yaml_path = os.path.join(moveit_config_pkg, "config", "joint_limits.yaml")
 
@@ -138,6 +144,8 @@ def generate_launch_description():
             kinematics_yaml_path,
             ompl_planning_yaml_path,
             pilz_planning_yaml_path,
+            chomp_planning_yaml_path,
+            stomp_planning_yaml_path,
             joint_limits_yaml_path,
             moveit_controllers_yaml_path,
             trajectory_execution,
