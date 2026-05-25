@@ -11,8 +11,15 @@ find_package(sensor_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
-add_executable(get_robot_state src/get_robot_state.cpp)
+add_executable(get_robot_state
+  src/get_robot_state.cpp
+  src/get_robot_state_node.cpp
+)
 target_compile_features(get_robot_state PRIVATE cxx_std_17)
+target_include_directories(get_robot_state PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 ament_target_dependencies(get_robot_state
   rclcpp
   sensor_msgs

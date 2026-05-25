@@ -1,7 +1,4 @@
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/joint_state.hpp>
-#include <tf2_ros/transform_listener.h>
-#include <tf2_ros/buffer.h>
+#include "arm_control/get_robot_state.hpp"
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <cmath>
 #include <iomanip>
@@ -11,42 +8,6 @@
 #include <chrono>
 #include <algorithm>
 
-class GetRobotStateNode : public rclcpp::Node
-{
-public:
-  GetRobotStateNode()
-  : Node("get_robot_state_node")
-  {
-    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
-
-    joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-      "/joint_states", 10,
-      std::bind(&GetRobotStateNode::jointStateCallback, this, std::placeholders::_1));
-  }
-
-  void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
-  {
-    joint_names_ = msg->name;
-    joint_positions_ = msg->position;
-    joint_state_received_ = true;
-  }
-
-  bool hasJointState() const { return joint_state_received_; }
-  const std::vector<std::string>& getJointNames() const { return joint_names_; }
-  const std::vector<double>& getJointPositions() const { return joint_positions_; }
-
-  std::unique_ptr<tf2_ros::Buffer>& getTfBuffer() { return tf_buffer_; }
-
-private:
-  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
-  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
-
-  bool joint_state_received_ = false;
-  std::vector<std::string> joint_names_;
-  std::vector<double> joint_positions_;
-};
 
 int main(int argc, char ** argv)
 {
@@ -148,7 +109,7 @@ int main(int argc, char ** argv)
   }
 
   std::cout << "\n==================================================\n";
-  std::cout << "      ROBOT CURRENT STATE FOR SEQUENCE.YAML\n";
+  std::cout << "      ROBOT CURRENT STATE                           \n";
   std::cout << "==================================================\n\n";
 
   std::cout << std::fixed << std::setprecision(2);
