@@ -2,6 +2,7 @@
 build/
 install/
 log/
+plan/
 
 # Compiled Python files
 __pycache__/
