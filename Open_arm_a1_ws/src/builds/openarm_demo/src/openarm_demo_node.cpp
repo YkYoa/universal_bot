@@ -37,6 +37,9 @@ namespace openarm_demo
                 std::thread(&OpenArmDemoNode::handleCommand, this, msg->data).detach();
             });
 
+        status_pub_ = this->create_publisher<std_msgs::msg::String>(
+            "/openarm_demo/status", 10);
+
         // Spawn Console thread
         console_thread_ = std::thread(&OpenArmDemoNode::runConsole, this);
     }
@@ -463,6 +466,12 @@ namespace openarm_demo
             cancel_flag_ = false;
             executing_ = true;
 
+            {
+                std_msgs::msg::String status_msg;
+                status_msg.data = "executing:" + args[0];
+                status_pub_->publish(status_msg);
+            }
+
             execution_thread_ = std::thread([this, args]() {
                 if ((args[0] == "l" || args[0] == "loop")) {
                     if (args.size() < 3) {
@@ -499,6 +508,12 @@ namespace openarm_demo
                 }
                 executing_ = false;
                 current_state_ = DemoState::IDLE;
+
+                {
+                    std_msgs::msg::String status_msg;
+                    status_msg.data = "idle";
+                    status_pub_->publish(status_msg);
+                }
             });
         }
     }

@@ -66,6 +66,9 @@ namespace openarm_demo
         // Command subscriber for non-blocking trigger support
         rclcpp::Subscription<std_msgs::msg::String>::SharedPtr command_sub_;
 
+        // Status publisher to publish execution status
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
+
         // Threading & state control
         std::thread console_thread_;
         bool running_;
