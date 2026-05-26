@@ -191,28 +191,6 @@ namespace openarm_demo
         }
     }
 
-    void OpenArmDemoNode::runWavingJointSequence()
-    {
-        RCLCPP_INFO(DEMO_LOG, "=== Starting Joint Waving Sequence ===");
-        bool success = moveArmToJoints("left_arm", "laPreWaveAngle");
-        if (!success) return;
-
-        // Wave back and forth only if wave1 and wave2 angles are defined
-        std::vector<double> wave1 = getWaypoint("laWave1Angle");
-        std::vector<double> wave2 = getWaypoint("laWave2Angle");
-        if (!wave1.empty() && !wave2.empty()) {
-            for (int i = 0; i < 2; ++i) {
-                RCLCPP_INFO(DEMO_LOG, "Wave cycle %d/2...", i + 1);
-                if (!moveArmToJoints("left_arm", "laWave1Angle")) return;
-                if (!moveArmToJoints("left_arm", "laWave2Angle")) return;
-            }
-            moveArmToJoints("left_arm", "laPreWaveAngle");
-            RCLCPP_INFO(DEMO_LOG, "=== Joint Waving Sequence completed! ===");
-        } else {
-            RCLCPP_INFO(DEMO_LOG, "=== Joint Waving Sequence completed! (Only pre-wave executed since wave1/wave2 angles are not defined) ===");
-        }
-    }
-
     void OpenArmDemoNode::runWavingCartesianSequence()
     {
         RCLCPP_INFO(DEMO_LOG, "=== Starting Cartesian Waving Sequence ===");
@@ -407,9 +385,6 @@ namespace openarm_demo
         if (cmd == "h") {
             current_state_ = DemoState::HOMING;
             runHomingSequence();
-        } else if (cmd == "wj") {
-            current_state_ = DemoState::WAVING_JOINT;
-            runWavingJointSequence();
         } else if (cmd == "wc") {
             current_state_ = DemoState::WAVING_CARTESIAN;
             runWavingCartesianSequence();
@@ -538,7 +513,6 @@ namespace openarm_demo
             std::cout << "\033[1;36m==================================================\033[0m\n";
             std::cout << "Select state/sequence to execute:\n";
             std::cout << "  \033[1;32mh\033[0m   : Homing (Send left/right arms to pre-grasp angles)\n";
-            std::cout << "  \033[1;32mwj\033[0m  : Run Waving sequence (Joint-space)\n";
             std::cout << "  \033[1;32mwc\033[0m  : Run Waving sequence (Cartesian-space)\n";
             std::cout << "  \033[1;32mgj\033[0m  : Run Greeting sequence (Joint-space)\n";
             std::cout << "  \033[1;32mgc\033[0m  : Run Greeting sequence (Cartesian-space)\n";
