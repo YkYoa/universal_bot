@@ -121,6 +121,36 @@ namespace computation
 		quat[2] = input[5];
 		quat[3] = input[6];
 	}
+	
+	tf2::Transform vecToTfTransform(const std::vector<double>& input)
+	{
+		if(input.size() < 7) {
+			std::cerr << "vecToTfTransform: input vector size error" << std::endl;
+			return tf2::Transform::getIdentity();
+		};
+		tf2::Vector3 pos(input[0], input[1], input[2]);
+		tf2::Quaternion quat(input[3], input[4], input[5], input[6]);
+		return tf2::Transform(quat, pos);
+	}
+
+	Eigen::Matrix4d vecToEigenMatrix(const std::vector<double>& input)
+	{
+		if(input.size() < 7) {
+			std::cerr << "vecToEigenMatrix: input vector size error" << std::endl;
+			return Eigen::Matrix4d::Identity();
+		};
+		tf2::Vector3 pos(input[0], input[1], input[2]);
+		tf2::Quaternion q(input[3], input[4], input[5], input[6]);
+		tf2::Matrix3x3 rotationMatrix(q);
+		Eigen::Matrix4d mat = Eigen::Matrix4d::Identity();
+		for(int i = 0; i < 3; i++)
+			for(int j = 0; j < 3; j++)
+				mat(i, j) = rotationMatrix[i][j];
+		mat(0, 3) = pos.x();
+		mat(1, 3) = pos.y();
+		mat(2, 3) = pos.z();
+		return mat;
+	}
 	Eigen::VectorXd vecToEigenVec(std::vector<double> vec)
 	{
 		return Eigen::Map<Eigen::VectorXd>(vec.data(), vec.size());

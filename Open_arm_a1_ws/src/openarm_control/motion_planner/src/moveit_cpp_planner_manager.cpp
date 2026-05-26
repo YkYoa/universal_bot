@@ -1,5 +1,113 @@
 #include "motion_planner/moveit_cpp_planner_manager.hpp"
 #include <moveit/robot_state/conversions.hpp>
+#include <moveit/robot_state/cartesian_interpolator.hpp>
+#include <moveit/robot_trajectory/robot_trajectory.hpp>
+#include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
+#include <filesystem>
+#include <fstream>
+#include <yaml-cpp/yaml.h>
+#include <iomanip>
+#include <sstream>
+
+namespace {
+
+const double TOLERANCE = 0.001;
+
+const std::string PLAN_DIR = "/home/hans/universal_bot/plan";
+
+std::string get_plan_filename(const planning_interface::PlannerRequest& request)
+{
+    std::stringstream ss;
+    ss << request.getGroupName();
+    if (request.getTargetPose().has_value()) {
+        const auto& pose = request.getTargetPose().value().pose;
+        ss << "_pose_" 
+           << std::fixed << std::setprecision(4)
+           << pose.position.x << "_" << pose.position.y << "_" << pose.position.z << "_"
+           << pose.orientation.x << "_" << pose.orientation.y << "_" << pose.orientation.z << "_" << pose.orientation.w;
+    } else if (!request.getJointTargets().empty()) {
+        ss << "_joints";
+        for (double val : request.getJointTargets()) {
+            ss << "_" << std::fixed << std::setprecision(4) << val;
+        }
+    } else if (!request.getWaypoints().empty()) {
+        ss << "_waypoints_" << request.getWaypoints().size();
+        const auto& first = request.getWaypoints().front().pose;
+        const auto& last = request.getWaypoints().back().pose;
+        ss << "_from_" << std::fixed << std::setprecision(4) << first.position.x << "_" << first.position.y << "_" << first.position.z
+           << "_to_" << last.position.x << "_" << last.position.y << "_" << last.position.z;
+    }
+    std::string s = ss.str();
+    for (char& c : s) {
+        if (c == ' ' || c == ',' || c == '/' || c == '\\' || c == ':') {
+            c = '_';
+        }
+    }
+    return s + ".yaml";
+}
+
+YAML::Node serialize_trajectory(const moveit_msgs::msg::RobotTrajectory& trajectory)
+{
+    YAML::Node node;
+    for (const auto& name : trajectory.joint_trajectory.joint_names) {
+        node["joint_names"].push_back(name);
+    }
+    for (const auto& pt : trajectory.joint_trajectory.points) {
+        YAML::Node pt_node;
+        for (double p : pt.positions) pt_node["positions"].push_back(p);
+        for (double v : pt.velocities) pt_node["velocities"].push_back(v);
+        for (double a : pt.accelerations) pt_node["accelerations"].push_back(a);
+        for (double e : pt.effort) pt_node["effort"].push_back(e);
+        pt_node["time_from_start"]["sec"] = pt.time_from_start.sec;
+        pt_node["time_from_start"]["nanosec"] = pt.time_from_start.nanosec;
+        node["points"].push_back(pt_node);
+    }
+    return node;
+}
+
+moveit_msgs::msg::RobotTrajectory deserialize_trajectory(const YAML::Node& node)
+{
+    moveit_msgs::msg::RobotTrajectory trajectory;
+    if (node["joint_names"] && node["joint_names"].IsSequence()) {
+        for (size_t i = 0; i < node["joint_names"].size(); ++i) {
+            trajectory.joint_trajectory.joint_names.push_back(node["joint_names"][i].as<std::string>());
+        }
+    }
+    if (node["points"] && node["points"].IsSequence()) {
+        for (size_t i = 0; i < node["points"].size(); ++i) {
+            YAML::Node pt_node = node["points"][i];
+            trajectory_msgs::msg::JointTrajectoryPoint pt;
+            if (pt_node["positions"]) {
+                for (size_t j = 0; j < pt_node["positions"].size(); ++j) {
+                    pt.positions.push_back(pt_node["positions"][j].as<double>());
+                }
+            }
+            if (pt_node["velocities"]) {
+                for (size_t j = 0; j < pt_node["velocities"].size(); ++j) {
+                    pt.velocities.push_back(pt_node["velocities"][j].as<double>());
+                }
+            }
+            if (pt_node["accelerations"]) {
+                for (size_t j = 0; j < pt_node["accelerations"].size(); ++j) {
+                    pt.accelerations.push_back(pt_node["accelerations"][j].as<double>());
+                }
+            }
+            if (pt_node["effort"]) {
+                for (size_t j = 0; j < pt_node["effort"].size(); ++j) {
+                    pt.effort.push_back(pt_node["effort"][j].as<double>());
+                }
+            }
+            if (pt_node["time_from_start"]) {
+                pt.time_from_start.sec = pt_node["time_from_start"]["sec"].as<int32_t>();
+                pt.time_from_start.nanosec = pt_node["time_from_start"]["nanosec"].as<uint32_t>();
+            }
+            trajectory.joint_trajectory.points.push_back(pt);
+        }
+    }
+    return trajectory;
+}
+
+} // namespace
 
 namespace motion_planner
 {
@@ -56,6 +164,72 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         return response;
     }
 
+    std::string filename = get_plan_filename(request);
+    std::filesystem::path plan_filepath = std::filesystem::path(PLAN_DIR) / filename;
+
+    // Check if the plan is already cached
+    if (std::filesystem::exists(plan_filepath)) {
+        try {
+            YAML::Node plan_node = YAML::LoadFile(plan_filepath.string());
+            moveit_msgs::msg::RobotTrajectory traj = deserialize_trajectory(plan_node);
+            bool start_state_matches = true;
+            if (!traj.joint_trajectory.points.empty()) {
+                const auto& traj_start_pts = traj.joint_trajectory.points[0].positions;
+                const auto& traj_joint_names = traj.joint_trajectory.joint_names;
+                if (traj_start_pts.size() == traj_joint_names.size()) {
+                    moveit::core::RobotStatePtr start_state;
+                    if (request.getStartState()) {
+                        start_state = std::make_shared<moveit::core::RobotState>(*request.getStartState());
+                    } else {
+                        start_state = moveit_cpp_->getCurrentState();
+                    }
+                    if (start_state) {
+                        for (size_t i = 0; i < traj_joint_names.size(); ++i) {
+                            if (start_state->getRobotModel()->hasJointModel(traj_joint_names[i])) {
+                                double traj_val = traj_start_pts[i];
+                                double current_val = start_state->getVariablePosition(traj_joint_names[i]);
+                                if (std::abs(traj_val - current_val) > TOLERANCE) { // 0.009 rad tolerance (slightly tighter than MoveIt's 0.01)
+                                    RCLCPP_WARN(node_->get_logger(),
+                                        "[MoveItCppPlannerManager] Start state discrepancy for joint %s: traj_val=%.4f, current_val=%.4f. Bypassing cached plan.",
+                                        traj_joint_names[i].c_str(), traj_val, current_val);
+                                    start_state_matches = false;
+                                    break;
+                                }
+                            } else {
+                                start_state_matches = false;
+                                break;
+                            }
+                        }
+                    } else {
+                        start_state_matches = false;
+                    }
+                } else {
+                    start_state_matches = false;
+                }
+            } else {
+                start_state_matches = false;
+            }
+
+            if (start_state_matches) {
+                response.trajectory = traj;
+                response.success = true;
+                response.planning_time = 0.001;
+                RCLCPP_INFO(node_->get_logger(),
+                    "[MoveItCppPlannerManager] Loaded saved plan from: %s", 
+                    plan_filepath.string().c_str());
+                return response;
+            } else {
+                RCLCPP_INFO(node_->get_logger(),
+                    "[MoveItCppPlannerManager] Cached plan in %s start state does not match. Will replan.",
+                    plan_filepath.string().c_str());
+            }
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(node_->get_logger(),
+                "[MoveItCppPlannerManager] Failed to load saved plan '%s': %s. Will replan.",
+                plan_filepath.string().c_str(), e.what());
+        }
+    }
+
     // 1. Load the planner profile
     std::string profile_name = request.getProfileName();
     planning_interface::PlannerProfile profile;
@@ -102,6 +276,25 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
     plan_params.planning_time = profile.planning_time;
     plan_params.max_velocity_scaling_factor = profile.velocity_scaling;
     plan_params.max_acceleration_scaling_factor = profile.acceleration_scaling;
+
+    // RCLCPP_INFO(node_->get_logger(),
+    //     "[MoveItCppPlannerManager] Planning request details:\n"
+    //     "  - Group: %s\n"
+    //     "  - Profile Name: %s\n"
+    //     "  - Profile Pipeline ID: %s\n"
+    //     "  - Profile Planner ID: %s\n"
+    //     "  - Parameter override Pipeline ID: %s\n"
+    //     "  - Parameter override Planner ID: %s\n"
+    //     "  - Selected Pipeline ID: %s\n"
+    //     "  - Selected Planner ID: %s",
+    //     request.getGroupName().c_str(),
+    //     profile_name.c_str(),
+    //     profile.pipeline_id.c_str(),
+    //     profile.planner_id.c_str(),
+    //     overrides.pipeline_id.c_str(),
+    //     overrides.planner_id.c_str(),
+    //     plan_params.planning_pipeline.c_str(),
+    //     plan_params.planner_id.c_str());
 
     // 5. Configure start state
     if (request.getStartState()) {
@@ -151,16 +344,105 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         goal_state.update();
         planning_component->setGoal(goal_state);
     } else if (!request.getWaypoints().empty()) {
-        // Cartesian path planning is not yet implemented via PlanningComponent.
-        // computeCartesianPath must be done via moveit::core::RobotState directly.
-        // Returning failure here is intentional — do NOT fall through with no goal set,
-        // as that would cause MoveIt to plan vacuously or crash.
-        RCLCPP_ERROR(node_->get_logger(),
-            "[MoveItCppPlannerManager] Waypoint/Cartesian planning is not yet implemented. "
-            "Use CartesianMoveSkill with a single target_pose instead, or implement "
-            "computeCartesianPath via moveit::core::RobotState.");
-        response.success = false;
-        response.error_message = "Waypoint/Cartesian planning not yet implemented.";
+        std::string ee_link = ee_link_for_group(request.getGroupName());
+        if (ee_link.empty()) {
+            response.success = false;
+            response.error_message = "Could not resolve end-effector link for group " + request.getGroupName();
+            return response;
+        }
+
+        auto jmg = moveit_cpp_->getRobotModel()->getJointModelGroup(request.getGroupName());
+        if (!jmg) {
+            response.success = false;
+            response.error_message = "Could not find joint model group " + request.getGroupName();
+            return response;
+        }
+
+        auto link_model = moveit_cpp_->getRobotModel()->getLinkModel(ee_link);
+        if (!link_model) {
+            response.success = false;
+            response.error_message = "Could not find link model " + ee_link;
+            return response;
+        }
+
+        moveit::core::RobotStatePtr start_state;
+        if (request.getStartState()) {
+            start_state = std::make_shared<moveit::core::RobotState>(*request.getStartState());
+        } else {
+            start_state = moveit_cpp_->getCurrentState();
+        }
+
+        if (!start_state) {
+            response.success = false;
+            response.error_message = "Failed to acquire starting RobotState.";
+            return response;
+        }
+
+        EigenSTL::vector_Isometry3d eigen_waypoints;
+        eigen_waypoints.reserve(request.getWaypoints().size());
+        for (const auto& ps : request.getWaypoints()) {
+            Eigen::Isometry3d t = Eigen::Isometry3d::Identity();
+            t.translation() = Eigen::Vector3d(ps.pose.position.x, ps.pose.position.y, ps.pose.position.z);
+            t.linear() = Eigen::Quaterniond(ps.pose.orientation.w, ps.pose.orientation.x, ps.pose.orientation.y, ps.pose.orientation.z).toRotationMatrix();
+            eigen_waypoints.push_back(t);
+        }
+
+        std::vector<moveit::core::RobotStatePtr> traj_states;
+        moveit::core::MaxEEFStep max_step(0.01);
+        moveit::core::CartesianPrecision precision;
+
+        double fraction = moveit::core::CartesianInterpolator::computeCartesianPath(
+            start_state.get(),
+            jmg,
+            traj_states,
+            link_model,
+            eigen_waypoints,
+            true,
+            max_step,
+            precision
+        );
+
+        if (fraction <= 0.0 || traj_states.empty()) {
+            response.success = false;
+            response.error_message = "Cartesian planning failed completely (fraction: " + std::to_string(fraction) + ")";
+            return response;
+        }
+
+        auto rt = std::make_shared<robot_trajectory::RobotTrajectory>(moveit_cpp_->getRobotModel(), request.getGroupName());
+        for (const auto& state : traj_states) {
+            rt->addSuffixWayPoint(state, 0.0);
+        }
+
+        trajectory_processing::TimeOptimalTrajectoryGeneration totg;
+        if (!totg.computeTimeStamps(*rt, profile.velocity_scaling, profile.acceleration_scaling)) {
+            response.success = false;
+            response.error_message = "Time parameterization failed for Cartesian path.";
+            return response;
+        }
+
+        response.success = true;
+        rt->getRobotTrajectoryMsg(response.trajectory);
+        response.planning_time = 0.01;
+
+        // Save successfully run Cartesian plan
+        try {
+            std::filesystem::path plan_dir(PLAN_DIR);
+            if (!std::filesystem::exists(plan_dir)) {
+                std::filesystem::create_directories(plan_dir);
+            }
+            YAML::Node plan_node = serialize_trajectory(response.trajectory);
+            std::ofstream fout(plan_filepath.string());
+            fout << plan_node;
+            fout.close();
+            RCLCPP_INFO(node_->get_logger(),
+                "[MoveItCppPlannerManager] Saved successfully run plan to: %s",
+                plan_filepath.string().c_str());
+        } catch (const std::exception& e) {
+            RCLCPP_WARN(node_->get_logger(),
+                "[MoveItCppPlannerManager] Failed to save plan to '%s': %s",
+                plan_filepath.string().c_str(), e.what());
+        }
+
         return response;
     } else {
         response.success = false;
@@ -174,6 +456,25 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         response.success = true;
         plan_solution.trajectory->getRobotTrajectoryMsg(response.trajectory);
         response.planning_time = plan_solution.planning_time;
+
+        // Save successfully run standard plan
+        try {
+            std::filesystem::path plan_dir(PLAN_DIR);
+            if (!std::filesystem::exists(plan_dir)) {
+                std::filesystem::create_directories(plan_dir);
+            }
+            YAML::Node plan_node = serialize_trajectory(response.trajectory);
+            std::ofstream fout(plan_filepath.string());
+            fout << plan_node;
+            fout.close();
+            RCLCPP_INFO(node_->get_logger(),
+                "[MoveItCppPlannerManager] Saved successfully run plan to: %s",
+                plan_filepath.string().c_str());
+        } catch (const std::exception& e) {
+            RCLCPP_WARN(node_->get_logger(),
+                "[MoveItCppPlannerManager] Failed to save plan to '%s': %s",
+                plan_filepath.string().c_str(), e.what());
+        }
     } else {
         response.success = false;
         response.error_message = "Planning failed for group " + request.getGroupName();

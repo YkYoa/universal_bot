@@ -19,13 +19,24 @@ speed:
 
 homePoses:
   headHome: 0
+  laHomeAngle: 0, 0, 0, 0, 0, 0, 0
+  raHomeAngle: 0, 0, 0, 0, 0, 0, 0
 
 graspPoses: 
   laPreGraspAngle: 0, 0, 0, 0, 0, 0, 90
   raPreGraspAngle: 0, 0, 0, 0, 0, 0, -90
 
 wavePoses:
-  laPreWaveJoint:  
+  laPreWaveJoint: 0.34236, 0.32436, 1.33896, 0.00304, 0.07106, 0.99352, -0.08869
+  laEndWaveJoint: 0.34085, 0.13239, 1.31470, 0.02744, -0.12550, 0.98132, 0.14323
+  # laWave1Joint: 0.34236, 0.42436, 1.33896, 0.00304, 0.07106, 0.99352, -0.08869
+  # laWave2Joint: 0.34236, 0.22436, 1.33896, 0.00304, 0.07106, 0.99352, -0.08869
+  # laPreWaveAngle: 0, -30, 0, -60, 0, 30, 0
+  # laWave1Angle: 0, -30, 0, -60, -20, 30, 0
+  # laWave2Angle: 0, -30, 0, -60, 20, 30, 0
 
 greetPoses:
-  laPreGreetJoint: 
+  laPreGreetJoint: 0.40, 0.20, 1.10, 0.0, -0.7071, 0.0, 0.7071
+#   laGreetJoint: 0.50, 0.20, 0.90, 0.0, -0.7071, 0.0, 0.7071
+#   laPreGreetAngle: 0, -10, 0, -30, 0, 10, 0
+#   laGreetAngle: 0, -45, 0, -90, 0, 45, 0

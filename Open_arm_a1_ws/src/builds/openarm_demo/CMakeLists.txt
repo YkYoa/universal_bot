@@ -6,15 +6,39 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(yaml-cpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(computation REQUIRED)
+find_package(common REQUIRED)
+find_package(openarm_messages REQUIRED)
 
 add_executable(sequence_to_bt src/sequence_to_bt.cpp)
 ament_target_dependencies(sequence_to_bt
   computation
 )
 
+add_executable(openarm_demo_node src/openarm_demo_node.cpp)
+target_include_directories(openarm_demo_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(openarm_demo_node yaml-cpp)
+ament_target_dependencies(openarm_demo_node
+  rclcpp
+  geometry_msgs
+  std_msgs
+  std_srvs
+  computation
+  common
+  openarm_messages
+)
+
 install(TARGETS
   sequence_to_bt
+  openarm_demo_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -23,3 +47,4 @@ install(DIRECTORY config launch
 )
 
 ament_package()
+

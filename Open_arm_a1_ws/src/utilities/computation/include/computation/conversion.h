@@ -53,6 +53,8 @@ std::vector<double> quatToVec(const tf2::Quaternion& quat);
 std::vector<double> poseQuatToVec(const tf2::Vector3& pos, const tf2::Quaternion& quat);
 geometry_msgs::msg::Pose poseQuatToPoseMsgs(const tf2::Vector3& pos, const tf2::Quaternion& quat);
 void vecToPoseQuat(const std::vector<double>& input, tf2::Vector3& pos, tf2::Quaternion& quat);
+tf2::Transform vecToTfTransform(const std::vector<double>& input);
+Eigen::Matrix4d vecToEigenMatrix(const std::vector<double>& input);
 
 Eigen::VectorXd vecToEigenVec(std::vector<double> vec);
 std::vector<double> eigenVecToVec(Eigen::VectorXd eigenVec);

@@ -14,6 +14,7 @@ find_package(moveit_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(moveit_ros_planning REQUIRED)
 find_package(planning_interface REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 # ── Library ──────────────────────────────────────────────────────────────────
 add_library(motion_planner SHARED
@@ -25,6 +26,10 @@ target_include_directories(motion_planner PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
+target_include_directories(motion_planner PRIVATE ${YAML_CPP_INCLUDE_DIRS})
+
+target_link_libraries(motion_planner ${YAML_CPP_LIBRARIES})
+
 ament_target_dependencies(motion_planner
   rclcpp
   geometry_msgs
@@ -32,6 +37,7 @@ ament_target_dependencies(motion_planner
   moveit_core
   moveit_ros_planning
   planning_interface
+  yaml-cpp
 )
 
 # ── Install targets and headers ──────────────────────────────────────────────
@@ -59,6 +65,7 @@ ament_export_dependencies(
   moveit_core
   moveit_ros_planning
   planning_interface
+  yaml-cpp
 )
 
 ament_package()

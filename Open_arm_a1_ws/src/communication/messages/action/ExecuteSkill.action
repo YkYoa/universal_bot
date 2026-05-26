@@ -18,6 +18,7 @@ string named_pose                         # for move_to_named_pose
 geometry_msgs/PoseStamped[] waypoints     # for cartesian_move
 float64 velocity_override                 # 0 = use profile default
 bool position_only                        # skip orientation constraint
+float64[] joint_targets                   # for move_to_joint
 ---
 # ── Result ────────────────────────────────────────────────────
 bool success
