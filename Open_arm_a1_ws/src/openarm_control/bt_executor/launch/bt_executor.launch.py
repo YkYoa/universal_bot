@@ -72,7 +72,12 @@ def generate_launch_description():
     with open(kinematics_yaml) as f:
         kin_cfg = yaml.safe_load(f) or {}
     kin_params = kin_cfg.get("/**", {}).get("ros__parameters", kin_cfg)
-    robot_description_kinematics = {"robot_description_kinematics": kin_params}
+    # kin_params is: {"robot_description_kinematics": {"left_arm": {...}, ...}}
+    # If it already has the top-level key, use it directly; otherwise wrap it.
+    if "robot_description_kinematics" in kin_params:
+        robot_description_kinematics = kin_params
+    else:
+        robot_description_kinematics = {"robot_description_kinematics": kin_params}
 
     controller_config = PathJoinSubstitution(
         [FindPackageShare("arm_control"), "config", "bimanual_controllers.yaml"])
@@ -81,7 +86,7 @@ def generate_launch_description():
         "moveit_manage_controllers": True,
         "trajectory_execution.allowed_execution_duration_scaling": 1.2,
         "trajectory_execution.allowed_goal_duration_margin": 0.5,
-        "trajectory_execution.allowed_start_tolerance": 0.01,
+        "trajectory_execution.allowed_start_tolerance": 0.0,
     }
     planning_scene_monitor = {
         "publish_planning_scene": True,

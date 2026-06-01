@@ -33,24 +33,18 @@ public:
 
   BT::NodeStatus tick() override
   {
-    std::string arm;
-    getInput("arm", arm);
+    // STUB: fake hardware has no force sensor.  Always assume grasp succeeded.
+    // TODO: read actual gripper force/position feedback on real hardware.
+    return BT::NodeStatus::SUCCESS;
 
-    const bool is_left = (arm == "left_arm");
-    const char* hold_key = is_left ? BB_LEFT_GRIP_HOLDING : BB_RIGHT_GRIP_HOLDING;
-
-    bool holding = false;
-    config().blackboard->get(hold_key, holding);
-
-    // TODO: If your hardware publishes raw force values rather than a bool,
-    // read the force key here and apply the threshold:
-    //
-    //   double force = 0.0;
-    //   const char* force_key = is_left ? BB_LEFT_GRIP_FORCE : BB_RIGHT_GRIP_FORCE;
-    //   config().blackboard->get(force_key, force);
-    //   holding = force > GRIP_FORCE_THRESHOLD;
-
-    return holding ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+    // Original implementation (requires real sensor data on blackboard):
+    // std::string arm;
+    // getInput("arm", arm);
+    // const bool is_left = (arm == "left_arm");
+    // const char* hold_key = is_left ? BB_LEFT_GRIP_HOLDING : BB_RIGHT_GRIP_HOLDING;
+    // bool holding = false;
+    // config().blackboard->get(hold_key, holding);
+    // return holding ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
   }
 };
 

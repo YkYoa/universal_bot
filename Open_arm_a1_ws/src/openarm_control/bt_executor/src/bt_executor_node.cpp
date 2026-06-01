@@ -22,6 +22,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
@@ -398,6 +399,15 @@ private:
   {
     if (!tree_) return;
 
+    // Cooldown: after tree completion, wait before restarting to prevent spam
+    if (restart_cooldown_until_.has_value()) {
+      if (now() < restart_cooldown_until_.value()) {
+        return;  // Still cooling down
+      }
+      restart_cooldown_until_.reset();
+      RCLCPP_INFO(get_logger(), "BT cooldown expired. Restarting tree...");
+    }
+
     const BT::NodeStatus status = tree_->tickOnce();
 
     // Publish status string for UI / debugging
@@ -417,9 +427,12 @@ private:
       tick_count = 0;
     }
 
-    // On tree completion (SUCCESS or FAILURE) halt so it can restart cleanly
+    // On tree completion (SUCCESS or FAILURE) halt and apply cooldown
     if (status != BT::NodeStatus::RUNNING) {
       tree_->haltTree();
+      restart_cooldown_until_ = now() + std::chrono::seconds(2);
+      RCLCPP_INFO(get_logger(), "BT tree completed with status %s. Cooldown 2s before restart.",
+                  msg.data.c_str());
     }
   }
 
@@ -443,6 +456,7 @@ private:
 
   std::string bt_xml_path_;
   double tick_rate_hz_{50.0};
+  std::optional<rclcpp::Time> restart_cooldown_until_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
