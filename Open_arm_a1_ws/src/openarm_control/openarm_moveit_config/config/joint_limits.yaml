@@ -79,7 +79,17 @@
           max_velocity: 10.0
           has_acceleration_limits: true
           max_acceleration: 20.0
+        openarm_left_finger_joint2:
+          has_velocity_limits: true
+          max_velocity: 10.0
+          has_acceleration_limits: true
+          max_acceleration: 20.0
         openarm_right_finger_joint1:
+          has_velocity_limits: true
+          max_velocity: 10.0
+          has_acceleration_limits: true
+          max_acceleration: 20.0
+        openarm_right_finger_joint2:
           has_velocity_limits: true
           max_velocity: 10.0
           has_acceleration_limits: true

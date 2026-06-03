@@ -46,6 +46,11 @@ int main(int argc, char** argv)
     executor.add_node(node);
     executor.spin();
 
+    // Reset shared pointers before shutdown to ensure correct destruction order while ROS is still active
+    server.reset();
+    planner.reset();
+    node.reset();
+
     rclcpp::shutdown();
     return 0;
 }

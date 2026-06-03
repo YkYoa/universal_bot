@@ -1,6 +1,8 @@
 import os
 from launch import LaunchDescription
-from launch.substitutions import Command, FindExecutable, PathJoinSubstitution
+from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
+from launch.substitutions import Command, FindExecutable, PathJoinSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -13,6 +15,21 @@ os.environ["CYCLONEDDS_URI"] = "<CycloneDDS><Domain><General><MaxMessageSize>10M
 def generate_launch_description():
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
 
+    # Declare launch arguments
+    use_fake_hardware_arg = DeclareLaunchArgument(
+        "use_fake_hardware",
+        default_value="true",
+        description="Whether to run with fake/mock hardware (true) or real hardware (false).",
+    )
+    use_rviz_arg = DeclareLaunchArgument(
+        "use_rviz",
+        default_value="true",
+        description="Whether to launch RViz (true) or not (false).",
+    )
+
+    use_fake_hardware = LaunchConfiguration("use_fake_hardware")
+    use_rviz = LaunchConfiguration("use_rviz")
+
     # ── Robot Description (URDF) ──
     robot_description_content = Command(
         [
@@ -24,7 +41,8 @@ def generate_launch_description():
             " ",
             "ros2_control:=true",
             " ",
-            "use_fake_hardware:=true",
+            "use_fake_hardware:=",
+            use_fake_hardware,
             " ",
             "mobile_base:=true",
             " ",
@@ -185,10 +203,13 @@ def generate_launch_description():
             robot_description_semantic,
             kinematics_yaml_path,
         ],
+        condition=IfCondition(use_rviz),
     )
 
     return LaunchDescription(
         [
+            use_fake_hardware_arg,
+            use_rviz_arg,
             robot_state_publisher_node,
             ros2_control_node,
             joint_state_broadcaster_spawner,

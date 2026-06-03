@@ -18,7 +18,7 @@ os.environ["CYCLONEDDS_URI"] = "<CycloneDDS><Domain><General><MaxMessageSize>655
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, RegisterEventHandler
-from launch.event_handlers import OnProcessExit
+from launch.event_handlers import OnProcessExit, OnProcessStart
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, PathJoinSubstitution, LaunchConfiguration, PythonExpression
 from launch.conditions import IfCondition, UnlessCondition
@@ -95,7 +95,11 @@ def generate_launch_description():
     # ── MÔI TRƯỜNG GAZEBO (Chỉ chạy khi use_fake_hardware:=false và gazebo:=true) ──
     gazebo_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')
+            PathJoinSubstitution([
+                FindPackageShare('ros_gz_sim'),
+                'launch',
+                'gz_sim.launch.py'
+            ])
         ),
         launch_arguments={'gz_args': '-r empty.sdf'}.items(),
         condition=IfCondition(run_gazebo)
@@ -226,9 +230,9 @@ def generate_launch_description():
     )
 
     load_controllers_event_standalone = RegisterEventHandler(
-        event_handler=OnProcessExit(
-            target_action=robot_state_publisher_node,
-            on_exit=[
+        event_handler=OnProcessStart(
+            target_action=ros2_control_node,
+            on_start=[
                 joint_state_broadcaster_spawner,
                 left_arm_controller_spawner,
                 right_arm_controller_spawner,
