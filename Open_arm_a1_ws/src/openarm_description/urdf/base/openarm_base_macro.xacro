@@ -29,6 +29,7 @@
       <parent link="${prefix}link" />
       <child link="${prefix}${corner}_caster_link" />
       <axis xyz="0 0 1" />
+      <dynamics damping="0.01" friction="0.0"/>
     </joint>
 
     <link name="${prefix}${corner}_wheel_link">
@@ -57,7 +58,17 @@
       <parent link="${prefix}${corner}_caster_link" />
       <child link="${prefix}${corner}_wheel_link" />
       <axis xyz="0 0 1" />
+      <dynamics damping="0.005" friction="0.0"/>
     </joint>
+
+    <!-- Gazebo: caster wheel có ma sát thấp để trượt dễ dàng -->
+    <gazebo reference="${prefix}${corner}_wheel_link">
+      <mu1>0.1</mu1>
+      <mu2>0.1</mu2>
+      <kp>1000000.0</kp>
+      <kd>100.0</kd>
+      <minDepth>0.001</minDepth>
+    </gazebo>
   </xacro:macro>
 
 </robot>

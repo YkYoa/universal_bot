@@ -38,6 +38,7 @@
             left_arm_prefix:='left_'
             right_arm_prefix:='right_'
             can_fd:='true'
+            gazebo:=false
             mobile_base:=false
             mobile_base_xyz:='0 0 0'
             mobile_base_rpy:='0 0 0'
@@ -68,7 +69,7 @@
     <xacro:if value="${mobile_base}">
         <xacro:openarm_base
         description_pkg="openarm_description"
-        connected_to="${body_connected_to}"
+        connected_to=""
         xyz="${mobile_base_xyz}"
         rpy="${mobile_base_rpy}" />
     </xacro:if>
@@ -130,6 +131,7 @@
             fake_sensor_commands="${fake_sensor_commands}"
             left_arm_prefix="${left_arm_prefix}"
             right_arm_prefix="${right_arm_prefix}"
+            gazebo="${gazebo}"
             hand="${hand}"/>
         </xacro:if>
 

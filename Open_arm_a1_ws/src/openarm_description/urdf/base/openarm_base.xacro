@@ -102,7 +102,7 @@
       <origin xyz="-0.00217793050105813 0.218879130112312 -0.224330452201204" rpy="-1.5707963267949 0 0" />
       <parent link="${prefix}link" />
       <child link="${prefix}left_drive_wheel_link" />
-      <axis xyz="0 0.000125537276710988 -0.999999992120196" />
+      <axis xyz="0 0.000125537276710988 0.999999992120196" />
     </joint>
 
     <xacro:base_caster prefix="${prefix}" description_pkg="${description_pkg}" corner="fr"
@@ -117,6 +117,22 @@
     <xacro:base_caster prefix="${prefix}" description_pkg="${description_pkg}" corner="bl"
                        caster_xyz="-0.152199376082463 0.0939770926972477 -0.2186"
                        wheel_z="5.79435111003335E-12" />
+
+    <!-- Gazebo: drive wheels có ma sát cao để bám đường -->
+    <gazebo reference="${prefix}right_drive_wheel_link">
+      <mu1>1.5</mu1>
+      <mu2>1.5</mu2>
+      <kp>1000000.0</kp>
+      <kd>100.0</kd>
+      <minDepth>0.001</minDepth>
+    </gazebo>
+    <gazebo reference="${prefix}left_drive_wheel_link">
+      <mu1>1.5</mu1>
+      <mu2>1.5</mu2>
+      <kp>1000000.0</kp>
+      <kd>100.0</kd>
+      <minDepth>0.001</minDepth>
+    </gazebo>
 
   </xacro:macro>
 

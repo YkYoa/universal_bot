@@ -78,7 +78,8 @@
       <origin xyz="0 0.006 0.015" rpy="0 0 0" />
       <axis xyz="0 1 0" />
       <limit effort="333" lower="0.0" upper="0.044" velocity="10.0" />
-      <mimic joint="${ee_prefix}finger_joint1" />
+      <!-- mimic removed: DART physics in Gazebo Sim does not support mimic constraints.
+           finger_joint2 is controlled directly via ros2_control gripper controller instead. -->
     </joint>
 
   </xacro:macro>

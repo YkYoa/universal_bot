@@ -50,6 +50,7 @@
   <xacro:arg name="left_arm_base_rpy" default="-1.5708 0 3.14159" />
 
   <xacro:arg name="can_fd" default="true" />
+  <xacro:arg name="gazebo" default="false" />
   <xacro:arg name="mobile_base" default="false" />
   <xacro:arg name="mobile_base_xyz" default="0 0 0.31" />
   <xacro:arg name="mobile_base_rpy" default="0 0 0" />
@@ -93,6 +94,7 @@
   right_arm_base_rpy="$(arg right_arm_base_rpy)"
   left_arm_base_rpy="$(arg left_arm_base_rpy)"
   can_fd="$(arg can_fd)"
+  gazebo="$(arg gazebo)"
   mobile_base="$(arg mobile_base)"
   mobile_base_xyz="$(arg mobile_base_xyz)"
   mobile_base_rpy="$(arg mobile_base_rpy)"

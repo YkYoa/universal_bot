@@ -1,6 +1,6 @@
 controller_manager:
   ros__parameters:
-    update_rate: 100  # Hz
+    update_rate: 100  # Hz (Giữ nguyên 100Hz từ cấu hình cũ của bạn)
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
@@ -17,18 +17,13 @@ controller_manager:
     right_gripper_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
-    # ── FUTURE CONTROLLER OPTIONS (STUBS FOR FORCE & VELOCITY CONTROL) ────────
-    # Uncomment and configure these as needed for your application.
-    # Note: To use these, your hardware interface (URDF/hardware_interface) 
-    # must export the corresponding command_interfaces ("velocity", "effort", etc.).
-    
-    # 1. Velocity Controller (e.g. for VLA real-time streaming joint velocities)
-    # left_arm_velocity_controller:
-    #   type: velocity_controllers/JointGroupVelocityController
+    # --- KHAI BÁO BASE CONTROLLER VÀO MANAGER ---
+    base_controller:
+      type: diff_drive_controller/DiffDriveController  
 
-    # 2. Force/Admittance Controller (for compliance & force-controlled actions)
-    # left_arm_admittance_controller:
-    #   type: admittance_controller/AdmittanceController
+# ====================================================
+# CẤU HÌNH CHI TIẾT CHO TỪNG CONTROLLER
+# ====================================================
 
 left_arm_controller:
   ros__parameters:
@@ -66,6 +61,7 @@ left_gripper_controller:
   ros__parameters:
     joints:
       - openarm_left_finger_joint1
+      - openarm_left_finger_joint2
     command_interfaces:
       - position
     state_interfaces:
@@ -76,11 +72,57 @@ right_gripper_controller:
   ros__parameters:
     joints:
       - openarm_right_finger_joint1
+      - openarm_right_finger_joint2
     command_interfaces:
       - position
     state_interfaces:
       - position
       - velocity
+
+# --- CẤU HÌNH CHI TIẾT BASE CONTROLLER ---
+base_controller:
+  ros__parameters:
+    # Tên các joint từ file Xacro
+    left_wheel_names: ["openarm_base_left_drive_wheel_joint"]
+    right_wheel_names: ["openarm_base_right_drive_wheel_joint"]
+
+    publish_wheel_joint_state: true
+    use_stamped_vel: false
+
+    # Khai báo interface để controller gán vào phần cứng
+    command_interfaces:
+      - velocity
+    state_interfaces:
+      - velocity
+
+    # Các thông số hình học (Cần đo đạc chính xác lại trên robot thật)
+    wheel_separation: 0.45   # Khoảng cách tâm 2 bánh xe (mét)
+    wheel_radius: 0.08       # Bán kính bánh xe (mét)
+
+    # Hệ số điều chỉnh (để mặc định 1.0)
+    wheel_separation_multiplier: 1.0
+    left_wheel_radius_multiplier: 1.0
+    right_wheel_radius_multiplier: 1.0
+
+    # Cấu hình Tọa độ và Odometry (TF)
+    odom_frame_id: odom
+    base_frame_id: openarm_base_link
+    pose_covariance_diagonal: [0.001, 0.001, 0.0, 0.0, 0.0, 0.01]
+    twist_covariance_diagonal: [0.001, 0.0, 0.0, 0.0, 0.0, 0.001]
+
+    open_loop: false
+    enable_odom_tf: true
+    publish_limited_velocity: false
+
+    cmd_vel_timeout: 0.5
+    publish_rate: 50.0
+
+    # Khớp nối chính xác với trạng thái interface từ URDF
+    position_feedback: false
+    velocity_feedback: true
+
+    use_sim_time: true
+
 
 # ── FUTURE CONTROLLERS PARAMETER TEMPLATES ──────────────────────────────────
 # left_arm_velocity_controller:

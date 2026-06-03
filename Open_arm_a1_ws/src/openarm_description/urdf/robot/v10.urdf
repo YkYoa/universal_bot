@@ -59,10 +59,10 @@
     </collision>
   </link>
   <joint name="openarm_base_right_drive_wheel_joint" type="continuous">
-    <origin rpy="-1.5707963267949 0 0" xyz="-0.00217824370780602 -0.218924944717817 -0.224330452201286"/>
+    <origin rpy="1.5707963267949 0 0" xyz="-0.00217824370780602 -0.218924944717817 -0.224330452201286"/>
     <parent link="openarm_base_link"/>
     <child link="openarm_base_right_drive_wheel_link"/>
-    <axis xyz="0 0.000125537276711018 0.999999992120196"/>
+    <axis xyz="0 0 1"/>
   </joint>
   <link name="openarm_base_left_drive_wheel_link">
     <inertial>
@@ -936,4 +936,10 @@
     <limit effort="333" lower="0.0" upper="0.044" velocity="10.0"/>
     <mimic joint="openarm_right_finger_joint1"/>
   </joint>
+
+  <gazebo>
+        <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+            <parameters>$(find arm_control)/config/bimanual_controllers.yaml</parameters>
+        </plugin>
+    </gazebo>
 </robot>
