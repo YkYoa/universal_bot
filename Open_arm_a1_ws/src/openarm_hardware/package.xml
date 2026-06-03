@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>openarm_hardware</name>
+  <version>0.1.0</version>
+  <description>Open Arm Hardware Package</description>
+  <maintainer email="hans@openarm.dev">hans</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>hardware_interface</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp</depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

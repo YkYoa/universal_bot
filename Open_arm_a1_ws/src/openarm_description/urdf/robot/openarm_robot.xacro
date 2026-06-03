@@ -21,6 +21,7 @@
             ros2_control:=false
             can_interface:=''
             use_fake_hardware:=false
+            use_isaac_sim:=false
             fake_sensor_commands:=false
             no_prefix:='false'
             arm_prefix:=''
@@ -125,6 +126,7 @@
             left_can_interface="${left_can_interface}"
             right_can_interface="${right_can_interface}"
             use_fake_hardware="${use_fake_hardware}"
+            use_isaac_sim="${use_isaac_sim}"
             fake_sensor_commands="${fake_sensor_commands}"
             left_arm_prefix="${left_arm_prefix}"
             right_arm_prefix="${right_arm_prefix}"
