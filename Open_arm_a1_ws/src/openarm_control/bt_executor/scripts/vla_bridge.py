@@ -15,6 +15,7 @@ from geometry_msgs.msg import PoseStamped, Quaternion
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from rclpy.action import ActionServer, GoalResponse, CancelResponse
 from openarm_messages.action import QueryVLA
 
@@ -41,6 +42,7 @@ class VLABridgeNode(Node):
         self.declare_parameter('predict_mode', 'batch') # 'batch' or 'stream'
         self.declare_parameter('front_camera_topic', '/camera_front/image_raw')
         self.declare_parameter('left_camera_topic', '/camera_left/image_raw')
+        self.declare_parameter('joint_states_topic', '/joint_states')
         
         self.vla_host = self.get_parameter('vla_host').value
         self.vla_port = self.get_parameter('vla_port').value
@@ -52,6 +54,7 @@ class VLABridgeNode(Node):
         self.predict_mode = self.get_parameter('predict_mode').value
         self.front_camera_topic = self.get_parameter('front_camera_topic').value
         self.left_camera_topic = self.get_parameter('left_camera_topic').value
+        self.joint_states_topic = self.get_parameter('joint_states_topic').value
         
         # TF2 buffer and listener to track end effector pose
         self.tf_buffer = Buffer()
@@ -70,26 +73,46 @@ class VLABridgeNode(Node):
         self.left_image_msg = None
         
         # Subscriptions & Publishers
+        # Isaac Sim publishes joint_states with BEST_EFFORT QoS.
+        # Using RELIABLE (depth=10) causes zero DDS matches → current_joints is always None.
+        joint_states_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
         self.joint_states_sub = self.create_subscription(
             JointState,
-            '/joint_states',
+            self.joint_states_topic,
             self.joint_states_callback,
-            10
+            joint_states_qos
         )
         
+        # Isaac Sim publishes camera images with BEST_EFFORT reliability and VOLATILE durability.
+        # Using RELIABLE QoS (default depth=10) would cause zero matches → fallback to dummy.
+        # Must use BEST_EFFORT to match Isaac Sim's publisher QoS.
+        camera_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+
         self.front_image_sub = self.create_subscription(
             Image,
             self.front_camera_topic,
             self.front_image_callback,
-            10
+            camera_qos
         )
         
         self.left_image_sub = self.create_subscription(
             Image,
             self.left_camera_topic,
             self.left_image_callback,
-            10
+            camera_qos
         )
+        self.get_logger().info(f"Subscribed to front camera: '{self.front_camera_topic}' (BEST_EFFORT QoS)")
+        self.get_logger().info(f"Subscribed to left camera:  '{self.left_camera_topic}' (BEST_EFFORT QoS)")
         
         self.pose_pub = self.create_publisher(
             PoseStamped,
@@ -114,7 +137,7 @@ class VLABridgeNode(Node):
         self.query_active = False
 
         # Timer to trigger query for testing (or you can trigger it via a service)
-        # Ticks once after 5 seconds to run a demo query
+        # Retries every 5 seconds until camera images are available, then fires once.
         self.trigger_timer = self.create_timer(5.0, self.test_trigger_callback)
         self.trigger_timer_fired = False
 
@@ -124,9 +147,13 @@ class VLABridgeNode(Node):
         self.current_joints = msg.position
 
     def front_image_callback(self, msg):
+        if self.front_image_msg is None:
+            self.get_logger().info(f"First front camera frame received! Encoding: {msg.encoding}, size: {msg.width}x{msg.height}")
         self.front_image_msg = msg
 
     def left_image_callback(self, msg):
+        if self.left_image_msg is None:
+            self.get_logger().info(f"First left camera frame received! Encoding: {msg.encoding}, size: {msg.width}x{msg.height}")
         self.left_image_msg = msg
 
     def get_arm_joints(self):
@@ -610,8 +637,17 @@ class VLABridgeNode(Node):
 
     def test_trigger_callback(self):
         if not self.trigger_timer_fired:
+            # Wait until both cameras have published at least one frame
+            cameras_ready = (self.front_image_msg is not None and self.left_image_msg is not None)
+            if not cameras_ready:
+                front_ok = "✓" if self.front_image_msg is not None else "✗"
+                left_ok  = "✓" if self.left_image_msg  is not None else "✗"
+                self.get_logger().info(
+                    f"Waiting for cameras... front={front_ok}, left={left_ok}. Retrying in 5s."
+                )
+                return  # Timer is recurring, will retry in 5 seconds
             self.trigger_timer_fired = True
-            self.get_logger().info("Demo startup timer fired. Simulating query...")
+            self.get_logger().info("Both cameras ready! Starting demo query...")
             self.query_vla_model()
 
 def main(args=None):

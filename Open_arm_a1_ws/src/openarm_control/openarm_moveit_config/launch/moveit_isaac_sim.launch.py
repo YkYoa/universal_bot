@@ -7,7 +7,9 @@ from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
 
 # Fix CycloneDDS buffer for large URDFs
-os.environ["CYCLONEDDS_URI"] = "<CycloneDDS><Domain><General><MaxMessageSize>10MB</MaxMessageSize><FragmentSize>4000B</FragmentSize></General></Domain></CycloneDDS>"
+if "CYCLONEDDS_URI" not in os.environ:
+    os.environ["CYCLONEDDS_URI"] = "<CycloneDDS><Domain><General><MaxMessageSize>10MB</MaxMessageSize><FragmentSize>1300B</FragmentSize></General></Domain></CycloneDDS>"
+
 
 
 def generate_launch_description():
@@ -74,7 +76,14 @@ def generate_launch_description():
         "moveit_manage_controllers": True,
         "trajectory_execution.allowed_execution_duration_scaling": 1.2,
         "trajectory_execution.allowed_goal_duration_margin": 0.5,
-        "trajectory_execution.allowed_start_tolerance": 0.01,
+        # Relaxed to 0.05 to tolerate Isaac Sim gripper joint numerical drift (~0.002 rad)
+        "trajectory_execution.allowed_start_tolerance": 0.05,
+    }
+
+    # Tolerance for CheckStartStateBounds adapter (applied at move_group level)
+    # Isaac Sim gripper joints drift ~0.001 rad beyond hard limits at both ends
+    bounds_tolerances = {
+        "start_state_max_bounds_error": 0.05,
     }
 
     planning_scene_monitor = {
@@ -94,14 +103,14 @@ def generate_launch_description():
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="both",
-        parameters=[robot_description],
+        parameters=[robot_description, {"use_sim_time": True}],
         arguments=cyclonedds_log_args,
     )
 
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[controller_config],
+        parameters=[controller_config, {"use_sim_time": True}],
         remappings=[
             ("~/robot_description", "/robot_description"),
         ],
@@ -148,6 +157,7 @@ def generate_launch_description():
             robot_description,
             robot_description_semantic,
             kinematics_yaml_path,
+            {"default_planning_pipeline": "ompl"},
             ompl_planning_yaml_path,
             pilz_planning_yaml_path,
             chomp_planning_yaml_path,
@@ -156,6 +166,8 @@ def generate_launch_description():
             moveit_controllers_yaml_path,
             trajectory_execution,
             planning_scene_monitor,
+            bounds_tolerances,
+            {"use_sim_time": True},
         ],
         arguments=cyclonedds_log_args,
     )
@@ -176,6 +188,7 @@ def generate_launch_description():
             joint_limits_yaml_path,
             trajectory_execution,
             planning_scene_monitor,
+            {"use_sim_time": True},
         ],
         arguments=cyclonedds_log_args,
     )
@@ -192,6 +205,12 @@ def generate_launch_description():
             robot_description,
             robot_description_semantic,
             kinematics_yaml_path,
+            {"default_planning_pipeline": "ompl"},
+            ompl_planning_yaml_path,
+            pilz_planning_yaml_path,
+            chomp_planning_yaml_path,
+            stomp_planning_yaml_path,
+            {"use_sim_time": True},
         ],
     )
 

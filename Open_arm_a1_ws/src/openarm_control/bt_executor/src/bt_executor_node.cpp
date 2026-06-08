@@ -148,6 +148,7 @@ public:
     declare_parameter("tick_rate_hz", 50.0);       // BT tick frequency
     declare_parameter("log_to_file", false);       // enable FileLogger
     declare_parameter("log_path", "/tmp/bt_log");  // FileLogger output path
+    declare_parameter("vla_task_name", "Push the apple to the block");
 
     bt_xml_path_ = get_parameter("bt_xml_path").as_string();
     tick_rate_hz_ = get_parameter("tick_rate_hz").as_double();
@@ -220,7 +221,8 @@ public:
     blackboard_->set(BB_RIGHT_GRIP_HOLDING,false);
     blackboard_->set(BB_OBJECT_VISIBLE,    false);
     blackboard_->set(BB_PLAN_FEASIBLE,     false);
-    blackboard_->set(BB_TASK_NAME,         std::string("Push the apple to the block"));
+    std::string task_name = get_parameter("vla_task_name").as_string();
+    blackboard_->set(BB_TASK_NAME,         task_name);
 
     // Planner defaults (safe_rrt equivalent)
     blackboard_->set(BB_PIPELINE_ID,       std::string("ompl"));

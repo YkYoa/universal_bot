@@ -312,7 +312,7 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
             return response;
         }
 
-        if (request.isPositionOnly()) {
+        if (request.isPositionOnly() && plan_params.planning_pipeline != "pilz_industrial_motion_planner") {
             // Apply position-only constraint using moveit Constraints manually if needed, 
             // or we can set it and rely on position constraints.
             // MoveItCpp PlanningComponent lets us set goal with constraint region.

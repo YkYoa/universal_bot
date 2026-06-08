@@ -67,6 +67,12 @@ left_gripper_controller:
     state_interfaces:
       - position
       - velocity
+    # Hold last commanded position after trajectory finishes (prevents auto-close)
+    allow_partial_joints_goal: true
+    open_loop_control: true
+    allow_integration_in_goal_trajectories: true
+    goal_time: 5.0
+    stopped_velocity_tolerance: 0.01
 
 right_gripper_controller:
   ros__parameters:
@@ -78,6 +84,12 @@ right_gripper_controller:
     state_interfaces:
       - position
       - velocity
+    # Hold last commanded position after trajectory finishes (prevents auto-close)
+    allow_partial_joints_goal: true
+    open_loop_control: true
+    allow_integration_in_goal_trajectories: true
+    goal_time: 5.0
+    stopped_velocity_tolerance: 0.01
 
 # --- CẤU HÌNH CHI TIẾT BASE CONTROLLER ---
 base_controller:

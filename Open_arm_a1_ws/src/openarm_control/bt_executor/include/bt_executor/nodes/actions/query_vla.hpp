@@ -82,7 +82,7 @@ public:
       config().blackboard->set(BB_GRASP_POSE, result.result->target_pose);
       config().blackboard->set(BB_NEW_GOAL_READY, false); // Consumed
       config().blackboard->set(BB_RECOVERY_COUNT, 0);    // Reset count on success
-      config().blackboard->set(BB_GOAL_CHANGED, true);
+      config().blackboard->set(BB_GOAL_CHANGED, false);
       
       int stamp = 0;
       config().blackboard->get(BB_GOAL_STAMP, stamp);

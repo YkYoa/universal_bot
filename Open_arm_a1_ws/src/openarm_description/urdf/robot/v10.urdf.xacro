@@ -57,7 +57,7 @@
   <xacro:arg name="mobile_base_arm_xyz" default="0 0 0" />
   <xacro:arg name="mobile_base_arm_rpy" default="0 0 0" />
   <xacro:arg name="mobile_base_body_xyz" default="0 0 0" />
-  <xacro:arg name="mobile_base_body_rpy" default="0 0 3.14159" />
+  <xacro:arg name="mobile_base_body_rpy" default="0 0 0" />
 
   <xacro:openarm_robot
   arm_type="v10"

@@ -13,7 +13,9 @@ for env_var in ["GZ_SIM_RESOURCE_PATH", "IGN_GAZEBO_RESOURCE_PATH", "GZ_SIM_MODE
     else:
         os.environ[env_var] = _extra_paths
 # Automatically fix CycloneDDS buffer issues for large URDFs
-os.environ["CYCLONEDDS_URI"] = "<CycloneDDS><Domain><General><MaxMessageSize>65535B</MaxMessageSize><FragmentSize>4000B</FragmentSize></General></Domain></CycloneDDS>"
+if "CYCLONEDDS_URI" not in os.environ:
+    os.environ["CYCLONEDDS_URI"] = "<CycloneDDS><Domain><General><MaxMessageSize>65535B</MaxMessageSize><FragmentSize>1300B</FragmentSize></General></Domain></CycloneDDS>"
+
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription

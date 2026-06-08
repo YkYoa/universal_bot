@@ -31,7 +31,7 @@
               arm="{plan_active_arm}"
               target_pose="{vla_grasp_pose}"
               velocity_scaling="{plan_velocity_scaling}"
-              position_only="false"
+              position_only="true"
               output_trajectory="{plan_trajectory}" />
             <ExecuteTrajectory trajectory="{plan_trajectory}" />
           </Sequence>
@@ -69,7 +69,7 @@
               arm="{plan_active_arm}"
               target_pose="{vla_grasp_pose}"
               velocity_scaling="0.2"
-              position_only="false"
+              position_only="true"
               output_trajectory="{plan_trajectory}" />
             <ExecuteTrajectory trajectory="{plan_trajectory}" />
             <CloseGripper arm="{plan_active_arm}" close_position="0.0" duration="1.5" />

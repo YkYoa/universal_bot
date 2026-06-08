@@ -9,7 +9,9 @@ from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
 
 # Fix CycloneDDS buffer for large URDFs
-os.environ["CYCLONEDDS_URI"] = "<CycloneDDS><Domain><General><MaxMessageSize>10MB</MaxMessageSize><FragmentSize>4000B</FragmentSize></General></Domain></CycloneDDS>"
+if "CYCLONEDDS_URI" not in os.environ:
+    os.environ["CYCLONEDDS_URI"] = "<CycloneDDS><Domain><General><MaxMessageSize>10MB</MaxMessageSize><FragmentSize>4000B</FragmentSize></General></Domain></CycloneDDS>"
+
 
 
 def generate_launch_description():
@@ -160,6 +162,7 @@ def generate_launch_description():
             robot_description,
             robot_description_semantic,
             kinematics_yaml_path,
+            {"default_planning_pipeline": "ompl"},
             ompl_planning_yaml_path,
             pilz_planning_yaml_path,
             chomp_planning_yaml_path,
@@ -202,6 +205,11 @@ def generate_launch_description():
             robot_description,
             robot_description_semantic,
             kinematics_yaml_path,
+            {"default_planning_pipeline": "ompl"},
+            ompl_planning_yaml_path,
+            pilz_planning_yaml_path,
+            chomp_planning_yaml_path,
+            stomp_planning_yaml_path,
         ],
         condition=IfCondition(use_rviz),
     )

@@ -49,14 +49,9 @@ public:
     bool changed = false;
     config().blackboard->get(BB_GOAL_CHANGED, changed);
 
-    // Also check the stamp counter for a more robust signal
-    int current_stamp = 0;
-    config().blackboard->get(BB_GOAL_STAMP, current_stamp);
-
-    if (changed || current_stamp > last_seen_stamp_) {
+    if (changed) {
       // Consume the flag so we don't re-trigger
       config().blackboard->set(BB_GOAL_CHANGED, false);
-      last_seen_stamp_ = current_stamp;
       return BT::NodeStatus::SUCCESS;  // Goal HAS changed
     }
 

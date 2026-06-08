@@ -1,0 +1,71 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenArm VLA Bridge — docker-compose cho SERVER Ubuntu 22.04
+#
+# Cách dùng:
+#   docker compose -f docker/docker-compose.yml up vla_bridge
+#
+# Thay VLA_INSTRUCTION và VLA_HOST bên dưới hoặc truyền qua env:
+#   VLA_INSTRUCTION="push the lemon to the box" docker compose up vla_bridge
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Build image (dùng để build lại khi source thay đổi) ──────────────────
+  builder:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: openarm-humble:latest
+    command: bash -c "echo 'Build done.'"
+    network_mode: host
+
+  # ── VLA Bridge Node ───────────────────────────────────────────────────────
+  vla_bridge:
+    image: openarm-humble:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # host network: cùng DDS domain với Isaac Sim trên server
+    network_mode: host
+    ipc: host
+    environment:
+      - ROS_DOMAIN_ID=42
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///openarm_ws/cyclonedds.xml
+      # Tuỳ chỉnh instruction tại đây hoặc truyền từ shell
+      - VLA_INSTRUCTION=${VLA_INSTRUCTION:-push the lemon to the box}
+      - VLA_HOST=${VLA_HOST:-192.168.1.122}
+      - VLA_PORT=${VLA_PORT:-10000}
+      - VLA_ARM=${VLA_ARM:-left}
+    command: >-
+      bash -c
+      "python3 /openarm_ws/src/openarm_control/bt_executor/scripts/vla_bridge.py
+      --ros-args
+      -p arm:=$$VLA_ARM
+      -p vla_host:=$$VLA_HOST
+      -p vla_port:=$$VLA_PORT
+      -p mode:=real
+      -p predict_mode:=$${VLA_PREDICT_MODE:-batch}
+      -p instruction:=\"$$VLA_INSTRUCTION\"
+      -p front_camera_topic:=/camera_front/image_raw
+      -p left_camera_topic:=/camera_left/image_raw
+      -p joint_states_topic:=/isaac_$${VLA_ARM}_arm/joint_states"
+    restart: unless-stopped
+
+  # ── Interactive shell (debug) ─────────────────────────────────────────────
+  shell:
+    image: openarm-humble:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    network_mode: host
+    ipc: host
+    environment:
+      - ROS_DOMAIN_ID=42
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///openarm_ws/cyclonedds.xml
+    stdin_open: true
+    tty: true
+    command: bash

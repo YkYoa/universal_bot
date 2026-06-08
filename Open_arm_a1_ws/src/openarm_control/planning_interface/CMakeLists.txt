@@ -26,7 +26,7 @@ target_include_directories(planning_interface PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 target_include_directories(planning_interface PRIVATE ${YAML_CPP_INCLUDE_DIRS})
-target_link_libraries(planning_interface ${YAML_CPP_LIBRARIES})
+target_link_libraries(planning_interface ${YAML_CPP_LIBRARIES} moveit_core::moveit_robot_state)
 
 
 ament_target_dependencies(planning_interface

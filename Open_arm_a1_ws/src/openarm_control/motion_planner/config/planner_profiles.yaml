@@ -69,8 +69,8 @@ profiles:
     planner_id: RRTConnectkConfigDefault
     velocity_scaling: 0.5
     acceleration_scaling: 0.5
-    planning_time: 1.0
-    num_attempts: 3
+    planning_time: 3.0
+    num_attempts: 5
 
   exploration:
     description: "TRRT for cost-aware exploration. Good for navigating energy landscapes."

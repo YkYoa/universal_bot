@@ -1,0 +1,25 @@
+# Build artifacts
+build/
+install/
+log/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+*.egg-info/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.cursor/
+.codegraph/
+
+# Logs
+*.log
+
+# Isaac Sim scripts (không cần trong container)
+src/openarm_control/arm_control/scripts/isaac_sim_*.py

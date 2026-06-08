@@ -128,6 +128,7 @@ def generate_launch_description():
             robot_description,
             robot_description_semantic,
             robot_description_kinematics,
+            {"default_planning_pipeline": "ompl"},
             ompl_yaml, pilz_yaml, joint_limits, moveit_ctrl,
             trajectory_execution, planning_scene_monitor,
         ],
@@ -189,7 +190,9 @@ def generate_launch_description():
             robot_description,
             robot_description_semantic,
             robot_description_kinematics,
+            {"default_planning_pipeline": "ompl"},
             ompl_yaml,
+            pilz_yaml,
         ],
         condition=IfCondition(use_rviz),
     )
