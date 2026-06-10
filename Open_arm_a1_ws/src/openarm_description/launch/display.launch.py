@@ -19,7 +19,7 @@ def generate_launch_description():
     declared_arguments.append(DeclareLaunchArgument("mobile_base_arm_xyz", default_value="0 0 0.31", description="Single-arm mount offset on the mobile base."))
     declared_arguments.append(DeclareLaunchArgument("mobile_base_arm_rpy", default_value="0 0 0", description="Single-arm mount rotation on the mobile base."))
     declared_arguments.append(DeclareLaunchArgument("mobile_base_body_xyz", default_value="0 0 0", description="Bimanual body mount offset on the mobile base."))
-    declared_arguments.append(DeclareLaunchArgument("mobile_base_body_rpy", default_value="0 0 0", description="Bimanual body mount rotation on the mobile base."))
+    declared_arguments.append(DeclareLaunchArgument("mobile_base_body_rpy", default_value="0 0 3.14159", description="Bimanual body mount rotation on the mobile base."))
 
     arm_type = LaunchConfiguration("arm_type")
     ee_type = LaunchConfiguration("ee_type")

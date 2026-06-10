@@ -1,11 +1,21 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 def generate_launch_description():
     openarm_test_pkg = get_package_share_directory("openarm_test")
     bt_xml_path = os.path.join(openarm_test_pkg, "config", "test_bt.xml")
+
+    use_sim_time = LaunchConfiguration("use_sim_time")
+
+    use_sim_time_arg = DeclareLaunchArgument(
+        "use_sim_time",
+        default_value="false",
+        description="Use simulation clock if true"
+    )
 
     bt_executor_node = Node(
         package="bt_executor",
@@ -17,6 +27,7 @@ def generate_launch_description():
                 "bt_xml_path": bt_xml_path,
                 "tick_rate_hz": 50.0,
                 "log_to_file": False,
+                "use_sim_time": use_sim_time,
             }
         ],
     )
@@ -26,9 +37,17 @@ def generate_launch_description():
         executable="openarm_demo_node",
         name="some_demo",
         output="screen",
+        emulate_tty=True,
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+            }
+        ],
     )
 
     return LaunchDescription([
+        use_sim_time_arg,
         bt_executor_node,
         demo_node,
     ])
+

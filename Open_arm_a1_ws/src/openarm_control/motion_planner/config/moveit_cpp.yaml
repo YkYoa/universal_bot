@@ -25,6 +25,7 @@
       response_adapters:
         - default_planning_response_adapters/AddTimeOptimalParameterization
         - default_planning_response_adapters/ValidateSolution
+      start_state_max_bounds_error: 2.0
 
     pilz_industrial_motion_planner:
       planning_plugin: pilz_industrial_motion_planner/CommandPlanner
@@ -36,6 +37,7 @@
         - default_planning_request_adapters/CheckStartStateBounds
       response_adapters:
         - default_planning_response_adapters/ValidateSolution
+      start_state_max_bounds_error: 2.0
 
     chomp:
       planning_plugin: chomp_interface/CHOMPPlanner
@@ -47,6 +49,7 @@
         - default_planning_request_adapters/CheckStartStateBounds
       response_adapters:
         - default_planning_response_adapters/ValidateSolution
+      start_state_max_bounds_error: 2.0
 
     stomp:
       planning_plugin: stomp_moveit/StompPlanner
@@ -58,3 +61,4 @@
         - default_planning_request_adapters/CheckStartStateBounds
       response_adapters:
         - default_planning_response_adapters/ValidateSolution
+      start_state_max_bounds_error: 2.0

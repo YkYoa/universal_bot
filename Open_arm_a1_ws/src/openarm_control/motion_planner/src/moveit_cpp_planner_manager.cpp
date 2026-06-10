@@ -3,11 +3,13 @@
 #include <moveit/robot_state/cartesian_interpolator.hpp>
 #include <moveit/robot_trajectory/robot_trajectory.hpp>
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
+#include <moveit/planning_scene_monitor/planning_scene_monitor.hpp>
 #include <filesystem>
 #include <fstream>
 #include <yaml-cpp/yaml.h>
 #include <iomanip>
 #include <sstream>
+#include <Eigen/Geometry>
 
 namespace {
 
@@ -123,10 +125,19 @@ bool MoveItCppPlannerManager::initialize(const std::shared_ptr<rclcpp::Node>& no
 
     RCLCPP_INFO(node_->get_logger(), "[MoveItCppPlannerManager] Initializing MoveItCpp...");
     moveit_cpp_ = std::make_shared<moveit_cpp::MoveItCpp>(node_, opts);
-    moveit_cpp_->getPlanningSceneMonitorNonConst()->providePlanningSceneService();
+    auto psm = moveit_cpp_->getPlanningSceneMonitorNonConst();
+    if (psm) {
+        psm->startSceneMonitor();
+        psm->startWorldGeometryMonitor();
+        psm->providePlanningSceneService();
+    }
 
     RCLCPP_INFO(node_->get_logger(), "[MoveItCppPlannerManager] Loading planner profiles...");
     profile_loader_ = planning_interface::PlannerProfileLoader::from_package("motion_planner");
+
+    target_marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>("/motion_planner/target_pose_marker", 10);
+    trajectory_marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>("/motion_planner/planned_trajectory_markers", 10);
+    display_pub_ = node_->create_publisher<moveit_msgs::msg::DisplayTrajectory>("/display_planned_path", 10);
 
     RCLCPP_INFO(node_->get_logger(), "[MoveItCppPlannerManager] Initialization complete.");
     return true;
@@ -161,6 +172,8 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
     if (!moveit_cpp_) {
         response.success = false;
         response.error_message = "MoveItCpp is not initialized.";
+        publish_target_marker_for_request(request, false);
+        publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
         return response;
     }
 
@@ -173,16 +186,17 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
             YAML::Node plan_node = YAML::LoadFile(plan_filepath.string());
             moveit_msgs::msg::RobotTrajectory traj = deserialize_trajectory(plan_node);
             bool start_state_matches = true;
+            moveit::core::RobotStatePtr start_state;
+            if (request.getStartState()) {
+                start_state = std::make_shared<moveit::core::RobotState>(*request.getStartState());
+            } else {
+                start_state = moveit_cpp_->getCurrentState();
+            }
+
             if (!traj.joint_trajectory.points.empty()) {
                 const auto& traj_start_pts = traj.joint_trajectory.points[0].positions;
                 const auto& traj_joint_names = traj.joint_trajectory.joint_names;
                 if (traj_start_pts.size() == traj_joint_names.size()) {
-                    moveit::core::RobotStatePtr start_state;
-                    if (request.getStartState()) {
-                        start_state = std::make_shared<moveit::core::RobotState>(*request.getStartState());
-                    } else {
-                        start_state = moveit_cpp_->getCurrentState();
-                    }
                     if (start_state) {
                         for (size_t i = 0; i < traj_joint_names.size(); ++i) {
                             if (start_state->getRobotModel()->hasJointModel(traj_joint_names[i])) {
@@ -211,16 +225,52 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
             }
 
             if (start_state_matches) {
-                response.trajectory = traj;
-                response.success = true;
-                response.planning_time = 0.001;
+                // Check if the cached trajectory is still valid (collision-free) in the current planning scene.
+                bool trajectory_valid = true;
+                if (moveit_cpp_->getPlanningSceneMonitorNonConst()) {
+                    planning_scene_monitor::LockedPlanningSceneRO planning_scene(moveit_cpp_->getPlanningSceneMonitorNonConst());
+                    if (planning_scene) {
+                        robot_trajectory::RobotTrajectory robot_traj(moveit_cpp_->getRobotModel(), request.getGroupName());
+                        robot_traj.setRobotTrajectoryMsg(*start_state, traj);
+                        if (!planning_scene->isPathValid(robot_traj, request.getGroupName())) {
+                            RCLCPP_WARN(node_->get_logger(),
+                                "[MoveItCppPlannerManager] Cached plan in %s is in collision or invalid in current planning scene. Bypassing cached plan.",
+                                plan_filepath.string().c_str());
+                            trajectory_valid = false;
+                        }
+                    }
+                }
+
+                if (trajectory_valid) {
+                    response.trajectory = traj;
+                    response.success = true;
+                    response.planning_time = 0.001;
+                    RCLCPP_INFO(node_->get_logger(),
+                        "[MoveItCppPlannerManager] Loaded saved plan from: %s", 
+                        plan_filepath.string().c_str());
+                    publish_target_marker_for_request(request, true);
+                    publish_trajectory_markers(response.trajectory, request.getGroupName(), true);
+
+                    // Publish display trajectory
+                    moveit_msgs::msg::DisplayTrajectory display_msg;
+                    display_msg.model_id = moveit_cpp_->getRobotModel()->getName();
+                    display_msg.trajectory.push_back(response.trajectory);
+                    if (start_state) {
+                        moveit::core::robotStateToRobotStateMsg(*start_state, display_msg.trajectory_start);
+                    }
+                    if (display_pub_) {
+                        display_pub_->publish(display_msg);
+                    }
+
+                    return response;
+                } else {
+                    start_state_matches = false;
+                }
+            }
+
+            if (!start_state_matches) {
                 RCLCPP_INFO(node_->get_logger(),
-                    "[MoveItCppPlannerManager] Loaded saved plan from: %s", 
-                    plan_filepath.string().c_str());
-                return response;
-            } else {
-                RCLCPP_INFO(node_->get_logger(),
-                    "[MoveItCppPlannerManager] Cached plan in %s start state does not match. Will replan.",
+                    "[MoveItCppPlannerManager] Cached plan in %s start state does not match or is invalid. Will replan.",
                     plan_filepath.string().c_str());
             }
         } catch (const std::exception& e) {
@@ -277,25 +327,6 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
     plan_params.max_velocity_scaling_factor = profile.velocity_scaling;
     plan_params.max_acceleration_scaling_factor = profile.acceleration_scaling;
 
-    // RCLCPP_INFO(node_->get_logger(),
-    //     "[MoveItCppPlannerManager] Planning request details:\n"
-    //     "  - Group: %s\n"
-    //     "  - Profile Name: %s\n"
-    //     "  - Profile Pipeline ID: %s\n"
-    //     "  - Profile Planner ID: %s\n"
-    //     "  - Parameter override Pipeline ID: %s\n"
-    //     "  - Parameter override Planner ID: %s\n"
-    //     "  - Selected Pipeline ID: %s\n"
-    //     "  - Selected Planner ID: %s",
-    //     request.getGroupName().c_str(),
-    //     profile_name.c_str(),
-    //     profile.pipeline_id.c_str(),
-    //     profile.planner_id.c_str(),
-    //     overrides.pipeline_id.c_str(),
-    //     overrides.planner_id.c_str(),
-    //     plan_params.planning_pipeline.c_str(),
-    //     plan_params.planner_id.c_str());
-
     // 5. Configure start state
     if (request.getStartState()) {
         planning_component->setStartState(*request.getStartState());
@@ -309,6 +340,8 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         if (ee_link.empty()) {
             response.success = false;
             response.error_message = "Could not resolve end-effector link for group " + request.getGroupName();
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
             return response;
         }
 
@@ -348,6 +381,8 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         if (ee_link.empty()) {
             response.success = false;
             response.error_message = "Could not resolve end-effector link for group " + request.getGroupName();
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
             return response;
         }
 
@@ -355,6 +390,8 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         if (!jmg) {
             response.success = false;
             response.error_message = "Could not find joint model group " + request.getGroupName();
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
             return response;
         }
 
@@ -362,6 +399,8 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         if (!link_model) {
             response.success = false;
             response.error_message = "Could not find link model " + ee_link;
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
             return response;
         }
 
@@ -375,6 +414,8 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         if (!start_state) {
             response.success = false;
             response.error_message = "Failed to acquire starting RobotState.";
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
             return response;
         }
 
@@ -405,6 +446,8 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         if (fraction <= 0.0 || traj_states.empty()) {
             response.success = false;
             response.error_message = "Cartesian planning failed completely (fraction: " + std::to_string(fraction) + ")";
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
             return response;
         }
 
@@ -417,6 +460,8 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         if (!totg.computeTimeStamps(*rt, profile.velocity_scaling, profile.acceleration_scaling)) {
             response.success = false;
             response.error_message = "Time parameterization failed for Cartesian path.";
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
             return response;
         }
 
@@ -443,10 +488,32 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
                 plan_filepath.string().c_str(), e.what());
         }
 
+        publish_target_marker_for_request(request, true);
+        publish_trajectory_markers(response.trajectory, request.getGroupName(), true);
+
+        // Publish display trajectory
+        moveit_msgs::msg::DisplayTrajectory display_msg;
+        display_msg.model_id = moveit_cpp_->getRobotModel()->getName();
+        display_msg.trajectory.push_back(response.trajectory);
+        moveit::core::RobotStatePtr start_state_ptr;
+        if (request.getStartState()) {
+            start_state_ptr = std::make_shared<moveit::core::RobotState>(*request.getStartState());
+        } else {
+            start_state_ptr = moveit_cpp_->getCurrentState();
+        }
+        if (start_state_ptr) {
+            moveit::core::robotStateToRobotStateMsg(*start_state_ptr, display_msg.trajectory_start);
+        }
+        if (display_pub_) {
+            display_pub_->publish(display_msg);
+        }
+
         return response;
     } else {
         response.success = false;
         response.error_message = "No valid goal (pose or joints) specified in request.";
+        publish_target_marker_for_request(request, false);
+        publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
         return response;
     }
 
@@ -480,7 +547,164 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         response.error_message = "Planning failed for group " + request.getGroupName();
     }
 
+    publish_target_marker_for_request(request, response.success);
+    publish_trajectory_markers(response.trajectory, request.getGroupName(), response.success);
+
+    if (response.success) {
+        moveit_msgs::msg::DisplayTrajectory display_msg;
+        display_msg.model_id = moveit_cpp_->getRobotModel()->getName();
+        display_msg.trajectory.push_back(response.trajectory);
+        moveit::core::RobotStatePtr start_state_ptr = request.getStartState() ? 
+            std::make_shared<moveit::core::RobotState>(*request.getStartState()) : 
+            moveit_cpp_->getCurrentState();
+        if (start_state_ptr) {
+            moveit::core::robotStateToRobotStateMsg(*start_state_ptr, display_msg.trajectory_start);
+        }
+        if (display_pub_) {
+            display_pub_->publish(display_msg);
+        }
+    }
+
     return response;
+}
+
+void MoveItCppPlannerManager::publish_target_marker_for_request(const planning_interface::PlannerRequest& request, bool visible)
+{
+    if (!target_marker_pub_) return;
+
+    visualization_msgs::msg::Marker marker;
+    marker.ns = "planning_target";
+    marker.id = 0;
+    marker.type = visualization_msgs::msg::Marker::SPHERE;
+
+    if (!visible) {
+        marker.header.frame_id = "world";
+        marker.action = visualization_msgs::msg::Marker::DELETE;
+        target_marker_pub_->publish(marker);
+        return;
+    }
+
+    std::optional<geometry_msgs::msg::PoseStamped> target_pose;
+    if (request.getTargetPose().has_value()) {
+        target_pose = request.getTargetPose().value();
+    } else if (!request.getWaypoints().empty()) {
+        target_pose = request.getWaypoints().back();
+    } else if (!request.getJointTargets().empty()) {
+        if (moveit_cpp_ && moveit_cpp_->getRobotModel()) {
+            moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
+            goal_state.setToDefaultValues();
+            goal_state.setJointGroupPositions(request.getGroupName(), request.getJointTargets());
+            goal_state.update();
+
+            std::string ee_link = ee_link_for_group(request.getGroupName());
+            if (!ee_link.empty()) {
+                const Eigen::Isometry3d& ee_state = goal_state.getGlobalLinkTransform(ee_link);
+                geometry_msgs::msg::PoseStamped pose;
+                pose.header.frame_id = moveit_cpp_->getRobotModel()->getModelFrame();
+                pose.header.stamp = node_->get_clock()->now();
+
+                Eigen::Vector3d translation = ee_state.translation();
+                Eigen::Quaterniond rotation(ee_state.linear());
+                pose.pose.position.x = translation.x();
+                pose.pose.position.y = translation.y();
+                pose.pose.position.z = translation.z();
+                pose.pose.orientation.x = rotation.x();
+                pose.pose.orientation.y = rotation.y();
+                pose.pose.orientation.z = rotation.z();
+                pose.pose.orientation.w = rotation.w();
+
+                target_pose = pose;
+            }
+        }
+    }
+
+    if (target_pose.has_value()) {
+        marker.header = target_pose.value().header;
+        marker.action = visualization_msgs::msg::Marker::ADD;
+        marker.pose = target_pose.value().pose;
+        marker.scale.x = 0.05; // 5 cm sphere
+        marker.scale.y = 0.05;
+        marker.scale.z = 0.05;
+        // Sleek green color for successful plan target
+        marker.color.r = 0.0f;
+        marker.color.g = 1.0f;
+        marker.color.b = 0.0f;
+        marker.color.a = 0.8f; // slightly transparent
+        
+        target_marker_pub_->publish(marker);
+    } else {
+        marker.header.frame_id = "world";
+        marker.action = visualization_msgs::msg::Marker::DELETE;
+        target_marker_pub_->publish(marker);
+    }
+}
+
+void MoveItCppPlannerManager::publish_trajectory_markers(const moveit_msgs::msg::RobotTrajectory& trajectory, const std::string& group, bool visible)
+{
+    if (!trajectory_marker_pub_) return;
+
+    visualization_msgs::msg::Marker spheres_marker;
+    spheres_marker.header.frame_id = moveit_cpp_->getRobotModel()->getModelFrame();
+    spheres_marker.header.stamp = node_->get_clock()->now();
+    spheres_marker.ns = "planned_trajectory";
+    spheres_marker.id = 0;
+    spheres_marker.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+
+    visualization_msgs::msg::Marker line_marker;
+    line_marker.header = spheres_marker.header;
+    line_marker.ns = "planned_trajectory";
+    line_marker.id = 1;
+    line_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+
+    if (!visible || trajectory.joint_trajectory.points.empty()) {
+        spheres_marker.action = visualization_msgs::msg::Marker::DELETE;
+        line_marker.action = visualization_msgs::msg::Marker::DELETE;
+        trajectory_marker_pub_->publish(spheres_marker);
+        trajectory_marker_pub_->publish(line_marker);
+        return;
+    }
+
+    std::string ee_link = ee_link_for_group(group);
+    if (ee_link.empty()) return;
+
+    spheres_marker.action = visualization_msgs::msg::Marker::ADD;
+    line_marker.action = visualization_msgs::msg::Marker::ADD;
+
+    // Green sphere list for waypoints
+    spheres_marker.scale.x = 0.02; // 2 cm diameter dots
+    spheres_marker.scale.y = 0.02;
+    spheres_marker.scale.z = 0.02;
+    spheres_marker.color.r = 0.0f;
+    spheres_marker.color.g = 1.0f;
+    spheres_marker.color.b = 0.0f;
+    spheres_marker.color.a = 0.8f;
+
+    // Green line strip to connect waypoints
+    line_marker.scale.x = 0.005; // 5 mm thick line
+    line_marker.color.r = 0.0f;
+    line_marker.color.g = 0.8f;
+    line_marker.color.b = 0.0f;
+    line_marker.color.a = 0.6f;
+
+    moveit::core::RobotState state(moveit_cpp_->getRobotModel());
+    
+    for (const auto& point : trajectory.joint_trajectory.points) {
+        state.setVariablePositions(trajectory.joint_trajectory.joint_names, point.positions);
+        state.update();
+        const Eigen::Isometry3d& ee_state = state.getGlobalLinkTransform(ee_link);
+        Eigen::Vector3d translation = ee_state.translation();
+
+        geometry_msgs::msg::Point pt;
+        pt.x = translation.x();
+        pt.y = translation.y();
+        pt.z = translation.z();
+
+        spheres_marker.points.push_back(pt);
+        line_marker.points.push_back(pt);
+    }
+
+    trajectory_marker_pub_->publish(spheres_marker);
+    trajectory_marker_pub_->publish(line_marker);
 }
 
 } // namespace motion_planner

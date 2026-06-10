@@ -10,9 +10,9 @@
         <IsObjectVisible object_label="{vla_target_object}" />
 
         <!-- Move to ready pose -->
-        <SetPlannerConfig profile="safe_rrt" />
+        <!-- <SetPlannerConfig profile="safe_rrt" />
         <PlanToNamedPose arm="{plan_active_arm}" pose_name="ready" duration="3.0" output_trajectory="{plan_trajectory}" />
-        <ExecuteTrajectory trajectory="{plan_trajectory}" />
+        <ExecuteTrajectory trajectory="{plan_trajectory}" /> -->
 
         <!-- ── Phase 2: Get VLA target ──────────────────────────── -->
         <!-- Query the VLA bridge to populate {vla_grasp_pose}.       -->
@@ -21,7 +21,8 @@
 
         <!-- ── Phase 3: Approach grasp pose ─────────────────────── -->
         <!-- Reactive: re-plans if goal changes mid-motion.           -->
-        <ReactiveSequence name="reactive_approach">
+        <!-- Commented out because QueryVLA already executes the waypoints to the target pose. -->
+        <!-- <ReactiveSequence name="reactive_approach">
           <Inverter>
             <IsGoalChanged />
           </Inverter>
@@ -35,7 +36,7 @@
               output_trajectory="{plan_trajectory}" />
             <ExecuteTrajectory trajectory="{plan_trajectory}" />
           </Sequence>
-        </ReactiveSequence>
+        </ReactiveSequence> -->
 
         <!-- ── Phase 4: Grasp ───────────────────────────────────── -->
         <CloseGripper arm="{plan_active_arm}" close_position="0.0" duration="1.5" />

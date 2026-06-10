@@ -1,18 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  CycloneDDS config cho môi trường local
+  - Cấu hình Multicast tự động nhận diện thiết bị mạng
+  - MaxMessageSize lớn để truyền ảnh camera mượt mà
+-->
 <CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
     <Domain Id="any">
         <General>
-            <Interfaces>
-                <NetworkInterface name="wg7" />
-            </Interfaces>
-            <AllowMulticast>false</AllowMulticast>
-            <MaxMessageSize>10MB</MaxMessageSize>
+            <AllowMulticast>true</AllowMulticast>
+            <MaxMessageSize>65MB</MaxMessageSize>
             <FragmentSize>1300B</FragmentSize>
         </General>
-        <Discovery>
-            <Peers>
-                <Peer Address="192.168.1.122" />
-            </Peers>
-        </Discovery>
     </Domain>
 </CycloneDDS>

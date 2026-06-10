@@ -39,6 +39,7 @@ namespace openarm_demo
     private:
         void loadAndSketchSequence();
         void runConsole();
+        void printMenu();
         bool sendSkillGoal(const ExecuteSkill::Goal& goal);
 
         // Core movement helpers

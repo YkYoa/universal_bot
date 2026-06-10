@@ -28,9 +28,15 @@ def generate_launch_description():
         default_value="true",
         description="Whether to launch RViz (true) or not (false).",
     )
+    use_sim_time_arg = DeclareLaunchArgument(
+        "use_sim_time",
+        default_value="false",
+        description="Whether to use simulation clock (true) or not (false).",
+    )
 
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     use_rviz = LaunchConfiguration("use_rviz")
+    use_sim_time = LaunchConfiguration("use_sim_time")
 
     # ── Robot Description (URDF) ──
     robot_description_content = Command(
@@ -102,6 +108,10 @@ def generate_launch_description():
         "publish_transforms_updates": True,
     }
 
+    bounds_tolerances = {
+        "start_state_max_bounds_error": 2.0,
+    }
+
     # ─────────────────────────────────────────────
     # Nodes
     # ─────────────────────────────────────────────
@@ -110,13 +120,13 @@ def generate_launch_description():
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="both",
-        parameters=[robot_description],
+        parameters=[robot_description, {"use_sim_time": use_sim_time}],
     )
 
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[controller_config],
+        parameters=[controller_config, {"use_sim_time": use_sim_time}],
         remappings=[
             ("~/robot_description", "/robot_description"),
         ],
@@ -171,6 +181,8 @@ def generate_launch_description():
             moveit_controllers_yaml_path,
             trajectory_execution,
             planning_scene_monitor,
+            bounds_tolerances,
+            {"use_sim_time": use_sim_time},
         ],
     )
 
@@ -190,6 +202,8 @@ def generate_launch_description():
             joint_limits_yaml_path,
             trajectory_execution,
             planning_scene_monitor,
+            bounds_tolerances,
+            {"use_sim_time": use_sim_time},
         ],
     )
 
@@ -210,6 +224,7 @@ def generate_launch_description():
             pilz_planning_yaml_path,
             chomp_planning_yaml_path,
             stomp_planning_yaml_path,
+            {"use_sim_time": use_sim_time},
         ],
         condition=IfCondition(use_rviz),
     )
@@ -218,6 +233,7 @@ def generate_launch_description():
         [
             use_fake_hardware_arg,
             use_rviz_arg,
+            use_sim_time_arg,
             robot_state_publisher_node,
             ros2_control_node,
             joint_state_broadcaster_spawner,

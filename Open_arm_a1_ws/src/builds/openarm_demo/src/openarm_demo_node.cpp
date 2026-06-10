@@ -449,6 +449,7 @@ namespace openarm_demo
                     RCLCPP_INFO(DEMO_LOG, "Execution successfully stopped.");
                 } else {
                     std::cout << "\033[1;33mNo active execution to stop.\033[0m\n";
+                    printMenu();
                 }
                 return;
             }
@@ -514,31 +515,37 @@ namespace openarm_demo
                     status_msg.data = "idle";
                     status_pub_->publish(status_msg);
                 }
+                printMenu();
             });
         }
+    }
+
+    void OpenArmDemoNode::printMenu()
+    {
+        std::cout << "\n\033[1;36m==================================================\033[0m\n";
+        std::cout << "\033[1;33m       OpenArm Demo Sequence State Machine       \033[0m\n";
+        std::cout << "\033[1;36m==================================================\033[0m\n";
+        std::cout << "Select state/sequence to execute:\n";
+        std::cout << "  \033[1;32mh\033[0m   : Homing (Send left/right arms to pre-grasp angles)\n";
+        std::cout << "  \033[1;32mwc\033[0m  : Run Waving sequence (Cartesian-space)\n";
+        std::cout << "  \033[1;32mgj\033[0m  : Run Greeting sequence (Joint-space)\n";
+        std::cout << "  \033[1;32mgc\033[0m  : Run Greeting sequence (Cartesian-space)\n";
+        std::cout << "  \033[1;32mo\033[0m   : Open Left & Right Grippers\n";
+        std::cout << "  \033[1;32mc\033[0m   : Close Left & Right Grippers\n";
+        std::cout << "  \033[1;32ml\033[0m   : Loop command N times (e.g. l wc 5) or forever (l wc forever)\n";
+        std::cout << "  \033[1;32ms\033[0m   : Stop/cancel currently running command or loop\n";
+        std::cout << "  \033[1;31mq\033[0m   : Quit Demo Node\n";
+        std::cout << "Enter command: ";
+        std::cout.flush();
     }
 
     void OpenArmDemoNode::runConsole()
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(2)); // wait for ROS init to print clean logs
 
-        while (rclcpp::ok() && running_) {
-            std::cout << "\n\033[1;36m==================================================\033[0m\n";
-            std::cout << "\033[1;33m       OpenArm Demo Sequence State Machine       \033[0m\n";
-            std::cout << "\033[1;36m==================================================\033[0m\n";
-            std::cout << "Select state/sequence to execute:\n";
-            std::cout << "  \033[1;32mh\033[0m   : Homing (Send left/right arms to pre-grasp angles)\n";
-            std::cout << "  \033[1;32mwc\033[0m  : Run Waving sequence (Cartesian-space)\n";
-            std::cout << "  \033[1;32mgj\033[0m  : Run Greeting sequence (Joint-space)\n";
-            std::cout << "  \033[1;32mgc\033[0m  : Run Greeting sequence (Cartesian-space)\n";
-            std::cout << "  \033[1;32mo\033[0m   : Open Left & Right Grippers\n";
-            std::cout << "  \033[1;32mc\033[0m   : Close Left & Right Grippers\n";
-            std::cout << "  \033[1;32ml\033[0m   : Loop command N times (e.g. l wc 5) or forever (l wc forever)\n";
-            std::cout << "  \033[1;32ms\033[0m   : Stop/cancel currently running command or loop\n";
-            std::cout << "  \033[1;31mq\033[0m   : Quit Demo Node\n";
-            std::cout << "Enter command: ";
-            std::cout.flush();
+        printMenu();
 
+        while (rclcpp::ok() && running_) {
             std::string cmd;
             if (!std::getline(std::cin, cmd)) {
                 break;

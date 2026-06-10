@@ -13,6 +13,7 @@
         - default_planning_response_adapters/ValidateSolution
         - default_planning_response_adapters/DisplayMotionPath
       default_planner_config: PTP
+      start_state_max_bounds_error: 2.0
       planner_configs:
         PTP:
           type: PTP

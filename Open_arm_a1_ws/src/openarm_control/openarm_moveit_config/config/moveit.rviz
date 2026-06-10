@@ -82,6 +82,12 @@ Visualization Manager:
       Show Axes: true
       Show Names: false
 
+    - Class: rviz_default_plugins/Marker
+      Name: Planned Trajectory
+      Enabled: true
+      Topic:
+        Value: /motion_planner/planned_trajectory_markers
+
   Global Options:
     Background Color: 48; 48; 48
     Fixed Frame: openarm_base_link

@@ -20,7 +20,7 @@ import yaml
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import (
     Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
 )
@@ -40,6 +40,9 @@ def generate_launch_description():
     use_api     = LaunchConfiguration("use_api")
     bt_xml_path = LaunchConfiguration("bt_xml_path")
     tick_rate   = LaunchConfiguration("tick_rate_hz")
+    isaacsim    = LaunchConfiguration("isaacsim")
+    instruction = LaunchConfiguration("instruction")
+    use_sim_time = LaunchConfiguration("use_sim_time")
 
     # ── Robot description ────────────────────────────────────────────────────
     robot_description_content = Command([
@@ -53,7 +56,7 @@ def generate_launch_description():
     ])
     robot_description = {
         "robot_description": ParameterValue(robot_description_content,
-                                            value_type=str)
+                                             value_type=str)
     }
 
     # ── SRDF ─────────────────────────────────────────────────────────────────
@@ -95,26 +98,34 @@ def generate_launch_description():
         "publish_transforms_updates": True,
     }
 
+    bounds_tolerances = {
+        "start_state_max_bounds_error": 2.0,
+    }
+
     # ── Nodes ────────────────────────────────────────────────────────────────
 
     rsp = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
-        parameters=[robot_description],
+        parameters=[robot_description, {"use_sim_time": use_sim_time}],
         output="both",
+        condition=UnlessCondition(isaacsim),
     )
 
     ros2_ctrl = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[controller_config],
+        parameters=[controller_config, {"use_sim_time": use_sim_time}],
         remappings=[("~/robot_description", "/robot_description")],
         output="both",
+        condition=UnlessCondition(isaacsim),
     )
 
     spawners = [
         Node(package="controller_manager", executable="spawner",
-             arguments=[c, "-c", "/controller_manager"])
+             arguments=[c, "-c", "/controller_manager"],
+             parameters=[{"use_sim_time": use_sim_time}],
+             condition=UnlessCondition(isaacsim))
         for c in ["joint_state_broadcaster",
                   "left_arm_controller",  "right_arm_controller",
                   "left_gripper_controller", "right_gripper_controller"]
@@ -131,7 +142,10 @@ def generate_launch_description():
             {"default_planning_pipeline": "ompl"},
             ompl_yaml, pilz_yaml, joint_limits, moveit_ctrl,
             trajectory_execution, planning_scene_monitor,
+            bounds_tolerances,
+            {"use_sim_time": use_sim_time},
         ],
+        condition=UnlessCondition(isaacsim),
     )
 
     # ── Robot Skills Server (MoveItCpp action server backend) ─────────────────
@@ -149,7 +163,10 @@ def generate_launch_description():
             joint_limits,
             trajectory_execution,
             planning_scene_monitor,
+            bounds_tolerances,
+            {"use_sim_time": use_sim_time},
         ],
+        condition=UnlessCondition(isaacsim),
     )
 
     # ── BT executor ──────────────────────────────────────────────────────────
@@ -162,6 +179,8 @@ def generate_launch_description():
             "bt_xml_path": bt_xml_path,
             "tick_rate_hz": tick_rate,
             "log_to_file": False,
+            "vla_task_name": instruction,
+            "use_sim_time": use_sim_time,
         }],
     )
 
@@ -174,6 +193,7 @@ def generate_launch_description():
         parameters=[{
             "bt_xml_path": bt_xml_path,
             "port": 5000,
+            "use_sim_time": use_sim_time,
         }],
         condition=IfCondition(use_api),
     )
@@ -193,6 +213,7 @@ def generate_launch_description():
             {"default_planning_pipeline": "ompl"},
             ompl_yaml,
             pilz_yaml,
+            {"use_sim_time": use_sim_time},
         ],
         condition=IfCondition(use_rviz),
     )
@@ -201,6 +222,17 @@ def generate_launch_description():
         DeclareLaunchArgument("use_rviz",    default_value="false"),
         DeclareLaunchArgument("use_api",     default_value="false"),
         DeclareLaunchArgument("tick_rate_hz", default_value="50.0"),
+        DeclareLaunchArgument("use_sim_time", default_value="false"),
+        DeclareLaunchArgument(
+            "isaacsim",
+            default_value="false",
+            description="launch"
+        ),
+        DeclareLaunchArgument(
+            "instruction",
+            default_value="",
+            description="VLA task instruction (if empty, falls back to the VLA bridge server's instruction parameter)"
+        ),
         DeclareLaunchArgument(
             "bt_xml_path",
             default_value=os.path.join(bt_cfg, "bt_trees", "pick_and_place.xml"),

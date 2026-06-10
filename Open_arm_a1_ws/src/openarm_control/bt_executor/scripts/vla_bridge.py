@@ -16,8 +16,9 @@ from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from rclpy.action import ActionServer, GoalResponse, CancelResponse
-from openarm_messages.action import QueryVLA
+from rclpy.action import ActionServer, GoalResponse, CancelResponse, ActionClient
+from openarm_messages.action import QueryVLA, ExecuteSkill
+from rclpy.callback_groups import ReentrantCallbackGroup
 
 # Try loading cv2 and cv_bridge for camera subscriptions
 try:
@@ -34,15 +35,19 @@ class VLABridgeNode(Node):
         # Parameters
         self.declare_parameter('vla_host', 'localhost')
         self.declare_parameter('vla_port', 10000)
-        self.declare_parameter('mode', 'mock')  # 'real' or 'mock'
+        self.declare_parameter('mode', 'real')  # 'real' or 'mock'
         self.declare_parameter('arm', 'left')   # 'left' or 'right'
-        self.declare_parameter('instruction', 'Push the apple to the block')
+        self.declare_parameter('instruction', 'point to the white bottle, avoid the table')
         self.declare_parameter('pos_scale', 0.1) # scale normalized translation delta to meters
         self.declare_parameter('rot_scale', 1.0) # scale rotation axis-angle
         self.declare_parameter('predict_mode', 'batch') # 'batch' or 'stream'
         self.declare_parameter('front_camera_topic', '/camera_front/image_raw')
         self.declare_parameter('left_camera_topic', '/camera_left/image_raw')
         self.declare_parameter('joint_states_topic', '/joint_states')
+        self.declare_parameter('planner_profile', 'linear_approach')
+        self.declare_parameter('planning_mode', 'normal')
+        self.declare_parameter('position_only', False)
+        self.declare_parameter('velocity_override', 0.0)
         
         self.vla_host = self.get_parameter('vla_host').value
         self.vla_port = self.get_parameter('vla_port').value
@@ -55,6 +60,10 @@ class VLABridgeNode(Node):
         self.front_camera_topic = self.get_parameter('front_camera_topic').value
         self.left_camera_topic = self.get_parameter('left_camera_topic').value
         self.joint_states_topic = self.get_parameter('joint_states_topic').value
+        self.planner_profile = self.get_parameter('planner_profile').value
+        self.planning_mode = self.get_parameter('planning_mode').value
+        self.position_only = self.get_parameter('position_only').value
+        self.velocity_override = self.get_parameter('velocity_override').value
         
         # TF2 buffer and listener to track end effector pose
         self.tf_buffer = Buffer()
@@ -72,6 +81,8 @@ class VLABridgeNode(Node):
         self.front_image_msg = None
         self.left_image_msg = None
         
+        self.cb_group = ReentrantCallbackGroup()
+
         # Subscriptions & Publishers
         # Isaac Sim publishes joint_states with BEST_EFFORT QoS.
         # Using RELIABLE (depth=10) causes zero DDS matches → current_joints is always None.
@@ -85,7 +96,8 @@ class VLABridgeNode(Node):
             JointState,
             self.joint_states_topic,
             self.joint_states_callback,
-            joint_states_qos
+            joint_states_qos,
+            callback_group=self.cb_group
         )
         
         # Isaac Sim publishes camera images with BEST_EFFORT reliability and VOLATILE durability.
@@ -102,14 +114,16 @@ class VLABridgeNode(Node):
             Image,
             self.front_camera_topic,
             self.front_image_callback,
-            camera_qos
+            camera_qos,
+            callback_group=self.cb_group
         )
         
         self.left_image_sub = self.create_subscription(
             Image,
             self.left_camera_topic,
             self.left_image_callback,
-            camera_qos
+            camera_qos,
+            callback_group=self.cb_group
         )
         self.get_logger().info(f"Subscribed to front camera: '{self.front_camera_topic}' (BEST_EFFORT QoS)")
         self.get_logger().info(f"Subscribed to left camera:  '{self.left_camera_topic}' (BEST_EFFORT QoS)")
@@ -127,19 +141,25 @@ class VLABridgeNode(Node):
             '/vla_bridge/query',
             execute_callback=self.execute_action_callback,
             goal_callback=self.goal_callback,
-            cancel_callback=self.cancel_callback
+            cancel_callback=self.cancel_callback,
+            callback_group=self.cb_group
         )
         self.get_logger().info("QueryVLA Action Server started on topic '/vla_bridge/query'")
+
+        # Action Client for executing skills
+        self._execute_skill_client = ActionClient(
+            self,
+            ExecuteSkill,
+            'robot_skills_server/execute_skill',
+            callback_group=self.cb_group
+        )
         
         # State variables
         self.current_joints = None
         self.joint_names = []
         self.query_active = False
 
-        # Timer to trigger query for testing (or you can trigger it via a service)
-        # Retries every 5 seconds until camera images are available, then fires once.
-        self.trigger_timer = self.create_timer(5.0, self.test_trigger_callback)
-        self.trigger_timer_fired = False
+        # Timer to trigger query for testing (or you can trigger it via a service) has been removed.
 
     def joint_states_callback(self, msg):
         # Store latest joints for the selected arm
@@ -176,99 +196,7 @@ class VLABridgeNode(Node):
             gripper_pos = self.current_joints[idx]
             
         return arm_positions, gripper_pos
-
-    def forward_kinematics_so_arm100(self, joints_deg):
-        """
-        Simple forward kinematics solver for SO-ARM100 dimensions to map 
-        predicted joint angles to Cartesian coordinates in meters.
-        """
-        theta = np.radians(joints_deg)
-        
-        # SO-ARM100 Link lengths (approximate in meters)
-        L0 = 0.12  # Base height
-        L1 = 0.15  # Upper arm
-        L2 = 0.15  # Lower arm
-        L3 = 0.08  # Wrist length
-        L4 = 0.05  # Hand offset
-        
-        # Transformation matrices
-        def rz(a):
-            return np.array([
-                [np.cos(a), -np.sin(a), 0, 0],
-                [np.sin(a), np.cos(a), 0, 0],
-                [0, 0, 1, 0],
-                [0, 0, 0, 1]
-            ])
-            
-        def ry(a):
-            return np.array([
-                [np.cos(a), 0, np.sin(a), 0],
-                [0, 1, 0, 0],
-                [-np.sin(a), 0, np.cos(a), 0],
-                [0, 0, 0, 1]
-            ])
-            
-        def tz(d):
-            T = np.eye(4)
-            T[2, 3] = d
-            return T
-            
-        # Kinematic Chain
-        T = tz(L0)
-        T = T @ rz(theta[0])          # Shoulder Pan
-        T = T @ ry(theta[1])          # Shoulder Lift
-        T = T @ tz(L1)
-        T = T @ ry(theta[2])          # Elbow Flex
-        T = T @ tz(L2)
-        T = T @ ry(theta[3])          # Wrist Flex
-        T = T @ tz(L3)
-        T = T @ rz(theta[4])          # Wrist Roll
-        T = T @ tz(L4)                # Tool tip
-        
-        # Position
-        pos = T[:3, 3]
-        
-        # Rotation Matrix to Quaternion
-        R = T[:3, :3]
-        q = self.matrix_to_quaternion(R)
-        
-        return pos, q
-
-    def matrix_to_quaternion(self, R):
-        tr = np.trace(R)
-        q = Quaternion()
-        if tr > 0:
-            S = np.sqrt(tr + 1.0) * 2
-            q.w = 0.25 * S
-            q.x = (R[2, 1] - R[1, 2]) / S
-            q.y = (R[0, 2] - R[2, 0]) / S
-            q.z = (R[1, 0] - R[0, 1]) / S
-        elif (R[0, 0] > R[1, 1]) and (R[0, 0] > R[2, 2]):
-            S = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2
-            q.w = (R[2, 1] - R[1, 2]) / S
-            q.x = 0.25 * S
-            q.y = (R[0, 1] + R[1, 0]) / S
-            q.z = (R[0, 2] + R[2, 0]) / S
-        elif R[1, 1] > R[2, 2]:
-            S = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2
-            q.w = (R[0, 2] - R[2, 0]) / S
-            q.x = (R[0, 1] + R[1, 0]) / S
-            q.y = 0.25 * S
-            q.z = (R[1, 2] + R[2, 1]) / S
-        else:
-            S = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2
-            q.w = (R[1, 0] - R[0, 1]) / S
-            q.x = (R[0, 2] + R[2, 0]) / S
-            q.y = (R[1, 2] + R[2, 1]) / S
-            q.z = 0.25 * S
-        return q
-
-    def encode_dummy_image(self):
-        # Creates a mock 224x224 RGB image (solid grey)
-        img = np.ones((224, 224, 3), dtype=np.uint8) * 128
-        buf = io.BytesIO()
-        np.save(buf, img)
-        return base64.b64encode(buf.getvalue()).decode()
+        return arm_positions, gripper_pos
 
     def get_latest_images_b64(self):
         """
@@ -311,12 +239,12 @@ class VLABridgeNode(Node):
                     self.get_logger().error(f"Failed to process left image: {e}")
                     
         if img1_b64 is None:
-            self.get_logger().warn("Front camera frame not available. Falling back to dummy image.")
-            img1_b64 = self.encode_dummy_image()
+            self.get_logger().error("Front camera frame not available.")
+            return None
             
         if img2_b64 is None:
-            self.get_logger().warn("Left camera frame not available. Falling back to dummy image.")
-            img2_b64 = self.encode_dummy_image()
+            self.get_logger().error("Left camera frame not available.")
+            return None
             
         return [img1_b64, img2_b64]
 
@@ -345,8 +273,9 @@ class VLABridgeNode(Node):
         ]
 
     def compute_target_pose(self, action, curr_pos, curr_q):
-        delta_pos = np.array(action[:3]) * self.pos_scale
-        delta_rot_vec = np.array(action[3:6]) * self.rot_scale
+        # Rotate by 180 degrees around Z axis to match body orientation
+        delta_pos = np.array([-action[0], -action[1], action[2]]) * self.pos_scale
+        delta_rot_vec = np.array([-action[3], -action[4], action[5]]) * self.rot_scale
         
         target_pos = curr_pos + delta_pos
         q_delta = self.axis_angle_to_quaternion(delta_rot_vec)
@@ -362,7 +291,7 @@ class VLABridgeNode(Node):
         msg.pose.orientation.y = target_q_list[1]
         msg.pose.orientation.z = target_q_list[2]
         msg.pose.orientation.w = target_q_list[3]
-        return msg
+        return msg, target_pos, target_q_list
 
     def print_action_step(self, step_idx, action, source):
         joint_names = [
@@ -385,8 +314,47 @@ class VLABridgeNode(Node):
                 unit = "[-1=open, 1=close]"
             self.get_logger().info(f"    {name:<14}: {val:>8.3f} {unit}")
 
+    def execute_cartesian_move(self, waypoints):
+        if not self._execute_skill_client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error("ExecuteSkill action server not available!")
+            return False
+            
+        goal_msg = ExecuteSkill.Goal()
+        goal_msg.skill_name = "cartesian_move"
+        goal_msg.arm = f"{self.arm_side}_arm"
+        goal_msg.planner_profile = self.planner_profile
+        goal_msg.planning_mode = self.planning_mode
+        goal_msg.waypoints = waypoints
+        goal_msg.velocity_override = self.velocity_override
+        goal_msg.position_only = self.position_only
+        
+        self.get_logger().info(f"Sending cartesian_move skill with {len(waypoints)} waypoints...")
+        
+        # Send goal
+        send_goal_future = self._execute_skill_client.send_goal_async(goal_msg)
+        
+        # Wait for goal acceptance
+        while not send_goal_future.done():
+            time.sleep(0.02)
+            
+        goal_handle = send_goal_future.result()
+        if not goal_handle.accepted:
+            self.get_logger().error("Cartesian move goal rejected by server!")
+            return False
+            
+        self.get_logger().info("Cartesian move goal accepted. Waiting for execution result...")
+        
+        # Get result
+        get_result_future = goal_handle.get_result_async()
+        while not get_result_future.done():
+            time.sleep(0.02)
+            
+        result = get_result_future.result().result
+        return result.success
+
     def query_vla_model(self, instruction_override=None):
-        instr = instruction_override if instruction_override is not None else self.instruction
+        current_instr = self.get_parameter('instruction').value
+        instr = instruction_override if (instruction_override is not None and instruction_override != "") else current_instr
         
         if self.query_active:
             return False, None, "Query is already active."
@@ -433,104 +401,108 @@ class VLABridgeNode(Node):
             ]
             self.get_logger().info(f"Current TCP pose from TF: pos={curr_pos}, q={curr_q}")
         except Exception as ex:
-            self.get_logger().warning(f"TF lookup failed: {ex}. Using default home reference.")
-            curr_pos = np.array([-0.3, 0.15, 0.8])
-            curr_q = [0.0, 0.0, 0.0, 1.0]
+            self.get_logger().error(f"TF lookup failed: {ex}. Cannot proceed without current pose.")
+            self.query_active = False
+            return False, None, f"TF lookup failed: {ex}"
 
-        img1_b64, img2_b64 = self.get_latest_images_b64()
+        images = self.get_latest_images_b64()
+        if images is None:
+            self.query_active = False
+            return False, None, "Camera images not available."
+        img1_b64, img2_b64 = images
 
         if self.predict_mode == 'stream':
-            if self.mode == 'real':
-                url = f"http://{self.vla_host}:{self.vla_port}/predict_base64_stream"
-                try:
-                    payload = {
-                        "base64_rgb": [img1_b64, img2_b64],
-                        "state": state_deg,
-                        "instr": instr
-                    }
+            url = f"http://{self.vla_host}:{self.vla_port}/predict_base64_stream"
+            try:
+                payload = {
+                    "base64_rgb": [img1_b64, img2_b64],
+                    "state": state_deg,
+                    "instr": instr
+                }
+                
+                self.get_logger().info("Sending streaming HTTP request to real VLA model...")
+                response = requests.post(url, json=payload, stream=True, timeout=15.0)
+                if response.status_code == 200:
+                    last_step_pose = None
+                    for line in response.iter_lines():
+                        if line:
+                            data = json.loads(line.decode('utf-8'))
+                            if "value" in data:
+                                action = np.array(data["value"][0])
+                                step_idx = data["index"]
+                                self.print_action_step(step_idx, action, source="Real VLA Model Stream")
+                                
+                                # Execute this step immediately!
+                                step_pose, curr_pos, curr_q = self.compute_target_pose(action, curr_pos, curr_q)
+                                self.execute_cartesian_move([step_pose])
+                                last_step_pose = step_pose
+                            elif "time_taken" in data:
+                                self.get_logger().info(f"Stream generation finished. Time taken: {data['time_taken']}s")
                     
-                    self.get_logger().info("Sending streaming HTTP request to real VLA model...")
-                    response = requests.post(url, json=payload, stream=True, timeout=15.0)
-                    if response.status_code == 200:
-                        last_action = None
-                        for line in response.iter_lines():
-                            if line:
-                                data = json.loads(line.decode('utf-8'))
-                                if "value" in data:
-                                    action = np.array(data["value"][0])
-                                    step_idx = data["index"]
-                                    self.print_action_step(step_idx, action, source="Real VLA Model Stream")
-                                    last_action = action
-                                elif "time_taken" in data:
-                                    self.get_logger().info(f"Stream generation finished. Time taken: {data['time_taken']}s")
-                        
-                        self.query_active = False
-                        if last_action is not None:
-                            target_pose = self.compute_target_pose(last_action, curr_pos, curr_q)
-                            self.pose_pub.publish(target_pose)
-                            return True, target_pose, ""
-                        else:
-                            return False, None, "No action received in stream."
-                    else:
-                        err = f"HTTP Error {response.status_code}: {response.text}"
-                        self.get_logger().error(err)
-                        self.get_logger().info("Falling back to simulated mockup stream...")
-                        target_pose = self.trigger_mock_stream(curr_pos, curr_q)
-                        self.query_active = False
-                        return True, target_pose, ""
-                except Exception as e:
-                    err = f"Failed to query VLA model API stream: {str(e)}"
-                    self.get_logger().error(err)
-                    self.get_logger().info("Falling back to simulated mockup stream...")
-                    target_pose = self.trigger_mock_stream(curr_pos, curr_q)
                     self.query_active = False
-                    return True, target_pose, ""
-            else:
-                target_pose = self.trigger_mock_stream(curr_pos, curr_q)
+                    if last_step_pose is not None:
+                        self.pose_pub.publish(last_step_pose)
+                        return True, last_step_pose, ""
+                    else:
+                        return False, None, "No action received in stream."
+                else:
+                    err = f"HTTP Error {response.status_code}: {response.text}"
+                    self.get_logger().error(err)
+                    self.query_active = False
+                    return False, None, err
+            except Exception as e:
+                err = f"Failed to query VLA model API stream: {str(e)}"
+                self.get_logger().error(err)
                 self.query_active = False
-                return True, target_pose, ""
+                return False, None, err
         else:
             # Batch mode
-            if self.mode == 'real':
-                url = f"http://{self.vla_host}:{self.vla_port}/predict_base64"
-                try:
-                    payload = {
-                        "base64_rgb": [img1_b64, img2_b64],
-                        "state": state_deg,
-                        "instr": instr
-                    }
+            url = f"http://{self.vla_host}:{self.vla_port}/predict_base64"
+            try:
+                payload = {
+                    "base64_rgb": [img1_b64, img2_b64],
+                    "state": state_deg,
+                    "instr": instr
+                }
+                
+                self.get_logger().info("Sending HTTP request to real VLA model...")
+                response = requests.post(url, json=payload, timeout=8.0)
+                if response.status_code == 200:
+                    actions = response.json()
+                    self.print_actions_sequence(actions, source="Real VLA Model API")
                     
-                    self.get_logger().info("Sending HTTP request to real VLA model...")
-                    response = requests.post(url, json=payload, timeout=8.0)
-                    if response.status_code == 200:
-                        actions = response.json()
-                        self.print_actions_sequence(actions, source="Real VLA Model API")
-                        
-                        # Take the final predicted pose of the sequence (8th step)
-                        target_joints = actions[-1]
-                        target_pose = self.compute_target_pose(target_joints, curr_pos, curr_q)
+                    # Generate waypoints sequence
+                    waypoints = []
+                    active_pos = np.copy(curr_pos)
+                    active_q = list(curr_q)
+                    for act in actions:
+                        wp, active_pos, active_q = self.compute_target_pose(act, active_pos, active_q)
+                        waypoints.append(wp)
+                    
+                    # Execute trajectory on robot
+                    self.get_logger().info("Executing VLA trajectory waypoints on robot...")
+                    execution_success = self.execute_cartesian_move(waypoints)
+                    
+                    self.query_active = False
+                    if execution_success:
+                        self.get_logger().info("VLA trajectory execution succeeded!")
+                        target_pose = waypoints[-1]
                         self.pose_pub.publish(target_pose)
-                        self.query_active = False
                         return True, target_pose, ""
                     else:
-                        err = f"HTTP Error {response.status_code}: {response.text}"
-                        self.get_logger().error(err)
-                        self.get_logger().info("Falling back to simulated mockup pose...")
-                        target_pose = self.trigger_mock_pose(curr_pos, curr_q)
-                        self.query_active = False
-                        return True, target_pose, ""
-                        
-                except Exception as e:
-                    err = f"Failed to query VLA model API: {str(e)}"
+                        self.get_logger().error("VLA trajectory execution failed!")
+                        return False, None, "Trajectory execution failed."
+                else:
+                    err = f"HTTP Error {response.status_code}: {response.text}"
                     self.get_logger().error(err)
-                    self.get_logger().info("Falling back to simulated mockup pose...")
-                    target_pose = self.trigger_mock_pose(curr_pos, curr_q)
                     self.query_active = False
-                    return True, target_pose, ""
-            else:
-                target_pose = self.trigger_mock_pose(curr_pos, curr_q)
+                    return False, None, err
+                    
+            except Exception as e:
+                err = f"Failed to query VLA model API: {str(e)}"
+                self.get_logger().error(err)
                 self.query_active = False
-                return True, target_pose, ""
+                return False, None, err
 
     def print_actions_sequence(self, actions, source="VLA Model API"):
         self.get_logger().info(f"--- Action Sequence from {source} (timesteps={len(actions)}) ---")
@@ -559,48 +531,6 @@ class VLABridgeNode(Node):
                     unit = "[-1=open, 1=close]"
                 self.get_logger().info(f"    {name:<14}: {val:>8.3f} {unit}")
         self.get_logger().info(f"----------------------------------------------------------")
-
-    def trigger_mock_pose(self, curr_pos, curr_q):
-        # 7-DoF LIBERO EE delta action mockup: [dx, dy, dz, ax, ay, az, gripper]
-        mock_actions = [
-            [ 0.12, -0.10,  0.06,  0.00,  0.09, -0.08, -1.00],
-            [ 0.13, -0.11,  0.07,  0.00,  0.09, -0.08, -1.00],
-            [ 0.14, -0.11,  0.07,  0.00,  0.09, -0.08, -1.00],
-            [ 0.15, -0.12,  0.08,  0.00,  0.10, -0.08, -1.00],
-            [ 0.16, -0.12,  0.08,  0.00,  0.10, -0.08, -1.00],
-            [ 0.17, -0.13,  0.09,  0.00,  0.10, -0.08, -1.00],
-            [ 0.18, -0.13,  0.09,  0.00,  0.10, -0.08, -1.00],
-            [ 0.19, -0.14,  0.10,  0.00,  0.11, -0.08,  1.00]
-        ]
-        self.print_actions_sequence(mock_actions, source="Mock Simulator (LIBERO EE delta)")
-        
-        # Take the final predicted pose of the sequence (8th step)
-        target_joints = mock_actions[-1]
-        target_pose = self.compute_target_pose(target_joints, curr_pos, curr_q)
-        self.pose_pub.publish(target_pose)
-        self.get_logger().info(f"Published mockup target grasp pose: Position ({target_pose.pose.position.x:.3f}, {target_pose.pose.position.y:.3f}, {target_pose.pose.position.z:.3f})")
-        return target_pose
-
-    def trigger_mock_stream(self, curr_pos, curr_q):
-        mock_actions = [
-            [ 0.12, -0.10,  0.06,  0.00,  0.09, -0.08, -1.00],
-            [ 0.13, -0.11,  0.07,  0.00,  0.09, -0.08, -1.00],
-            [ 0.14, -0.11,  0.07,  0.00,  0.09, -0.08, -1.00],
-            [ 0.15, -0.12,  0.08,  0.00,  0.10, -0.08, -1.00],
-            [ 0.16, -0.12,  0.08,  0.00,  0.10, -0.08, -1.00],
-            [ 0.17, -0.13,  0.09,  0.00,  0.10, -0.08, -1.00],
-            [ 0.18, -0.13,  0.09,  0.00,  0.10, -0.08, -1.00],
-            [ 0.19, -0.14,  0.10,  0.00,  0.11, -0.08,  1.00]
-        ]
-        self.get_logger().info("Starting simulated mockup stream...")
-        target_pose = None
-        for idx, action in enumerate(mock_actions):
-            self.print_action_step(idx, action, source="Mock Simulator Stream")
-            target_pose = self.compute_target_pose(action, curr_pos, curr_q)
-            self.pose_pub.publish(target_pose)
-            self.get_logger().info(f"Published mockup target grasp pose stream: Position ({target_pose.pose.position.x:.3f}, {target_pose.pose.position.y:.3f}, {target_pose.pose.position.z:.3f})")
-            time.sleep(0.3)
-        return target_pose
 
     def goal_callback(self, goal_request):
         self.get_logger().info('Received action goal request')
@@ -635,27 +565,19 @@ class VLABridgeNode(Node):
             
         return result
 
-    def test_trigger_callback(self):
-        if not self.trigger_timer_fired:
-            # Wait until both cameras have published at least one frame
-            cameras_ready = (self.front_image_msg is not None and self.left_image_msg is not None)
-            if not cameras_ready:
-                front_ok = "✓" if self.front_image_msg is not None else "✗"
-                left_ok  = "✓" if self.left_image_msg  is not None else "✗"
-                self.get_logger().info(
-                    f"Waiting for cameras... front={front_ok}, left={left_ok}. Retrying in 5s."
-                )
-                return  # Timer is recurring, will retry in 5 seconds
-            self.trigger_timer_fired = True
-            self.get_logger().info("Both cameras ready! Starting demo query...")
-            self.query_vla_model()
-
 def main(args=None):
+    from rclpy.executors import MultiThreadedExecutor
     rclpy.init(args=args)
     node = VLABridgeNode()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

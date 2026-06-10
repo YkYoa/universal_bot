@@ -83,7 +83,7 @@ def generate_launch_description():
     # Tolerance for CheckStartStateBounds adapter (applied at move_group level)
     # Isaac Sim gripper joints drift ~0.001 rad beyond hard limits at both ends
     bounds_tolerances = {
-        "start_state_max_bounds_error": 0.05,
+        "start_state_max_bounds_error": 2.0,
     }
 
     planning_scene_monitor = {
@@ -188,6 +188,7 @@ def generate_launch_description():
             joint_limits_yaml_path,
             trajectory_execution,
             planning_scene_monitor,
+            bounds_tolerances,
             {"use_sim_time": True},
         ],
         arguments=cyclonedds_log_args,

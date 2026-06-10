@@ -36,7 +36,7 @@ services:
       - CYCLONEDDS_URI=file:///openarm_ws/cyclonedds.xml
       # Tuỳ chỉnh instruction tại đây hoặc truyền từ shell
       - VLA_INSTRUCTION=${VLA_INSTRUCTION:-push the lemon to the box}
-      - VLA_HOST=${VLA_HOST:-192.168.1.122}
+      - VLA_HOST=${VLA_HOST:-localhost}
       - VLA_PORT=${VLA_PORT:-10000}
       - VLA_ARM=${VLA_ARM:-left}
     command: >-
