@@ -196,7 +196,6 @@ class VLABridgeNode(Node):
             gripper_pos = self.current_joints[idx]
             
         return arm_positions, gripper_pos
-        return arm_positions, gripper_pos
 
     def get_latest_images_b64(self):
         """
@@ -369,14 +368,15 @@ class VLABridgeNode(Node):
             
         arm_positions, gripper_pos = joint_data
         
-        # Compatibility state vector (6-DoF, degrees)
+        # Compatibility state vector (6-DoF: 5 joints in degrees + 1 gripper)
+        import math
         state_deg = [
-            np.degrees(arm_positions[0]), # shoulder_pan
-            np.degrees(arm_positions[1]), # shoulder_lift
-            np.degrees(arm_positions[2]), # elbow_flex
-            np.degrees(arm_positions[3]), # wrist_flex
-            np.degrees(arm_positions[4]), # wrist_roll
-            gripper_pos * 100.0           # gripper opening scale
+            math.degrees(arm_positions[0]), # shoulder_pan
+            math.degrees(arm_positions[1]), # shoulder_lift
+            math.degrees(arm_positions[2]), # elbow_flex
+            math.degrees(arm_positions[3]), # wrist_flex
+            math.degrees(arm_positions[4]), # wrist_roll
+            gripper_pos * 100               # gripper opening scale
         ]
         
         self.get_logger().info(f"Querying model with state (deg): {state_deg} and instruction: '{instr}'")
@@ -433,7 +433,7 @@ class VLABridgeNode(Node):
                                 self.print_action_step(step_idx, action, source="Real VLA Model Stream")
                                 
                                 # Execute this step immediately!
-                                step_pose, curr_pos, curr_q = self.compute_target_pose(action, curr_pos, curr_q)
+                                step_pose, _, _ = self.compute_target_pose(action, curr_pos, curr_q)
                                 self.execute_cartesian_move([step_pose])
                                 last_step_pose = step_pose
                             elif "time_taken" in data:
@@ -473,10 +473,8 @@ class VLABridgeNode(Node):
                     
                     # Generate waypoints sequence
                     waypoints = []
-                    active_pos = np.copy(curr_pos)
-                    active_q = list(curr_q)
                     for act in actions:
-                        wp, active_pos, active_q = self.compute_target_pose(act, active_pos, active_q)
+                        wp, _, _ = self.compute_target_pose(act, curr_pos, curr_q)
                         waypoints.append(wp)
                     
                     # Execute trajectory on robot

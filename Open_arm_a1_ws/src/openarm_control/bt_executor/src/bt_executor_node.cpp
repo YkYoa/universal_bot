@@ -210,8 +210,8 @@ public:
 
     // Seed default values so nodes never read an unset key
     blackboard_->set(BB_ACTIVE_ARM,        std::string("left_arm"));
-    blackboard_->set(BB_VEL_SCALE,         0.3);
-    blackboard_->set(BB_ACC_SCALE,         0.3);
+    blackboard_->set(BB_VEL_SCALE,         0.5);
+    blackboard_->set(BB_ACC_SCALE,         0.5);
     blackboard_->set(BB_REPLAN_NEEDED,     false);
     blackboard_->set(BB_RECOVERY_COUNT,    0);
     blackboard_->set(BB_STATUS_MSG,        std::string("idle"));

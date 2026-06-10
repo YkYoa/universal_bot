@@ -3,88 +3,31 @@
   <BehaviorTree ID="PickAndPlace">
     <Fallback name="root_fallback">
 
-      <!-- ── Phase 1: Prepare ─────────────────────────────────────── -->
-      <!-- Move to ready pose, then query VLA for the grasp target.   -->
-      <!-- This only proceeds past QueryVLA once the bridge responds. -->
-      <Sequence name="pick_and_place">
-        <IsObjectVisible object_label="{vla_target_object}" />
-
-        <!-- Move to ready pose -->
-        <!-- <SetPlannerConfig profile="safe_rrt" />
-        <PlanToNamedPose arm="{plan_active_arm}" pose_name="ready" duration="3.0" output_trajectory="{plan_trajectory}" />
+      <Sequence name="vla_instruction_following">
+        <!-- ── Step 1: Initialize ─────────────────────────────────────── -->
+        <!-- Move arm to the safe custom "vla_ready" starting pose once.   -->
+        <!-- This unfolds the arm high above the table, providing a safe   -->
+        <!-- initial posture that prevents collisions and enables IK       -->
+        <!-- solvers to plan Cartesian moves smoothly.                     -->
+        <!-- <SetPlannerConfig profile="safe_rrt" /> -->
+        <!-- <PlanToNamedPose arm="{plan_active_arm}" pose_name="vla_ready" duration="3.0" output_trajectory="{plan_trajectory}" />
         <ExecuteTrajectory trajectory="{plan_trajectory}" /> -->
 
-        <!-- ── Phase 2: Get VLA target ──────────────────────────── -->
-        <!-- Query the VLA bridge to populate {vla_grasp_pose}.       -->
-        <!-- This blocks (returns RUNNING) until the bridge responds. -->
-        <QueryVLA task="{vla_task_name}" />
-
-        <!-- ── Phase 3: Approach grasp pose ─────────────────────── -->
-        <!-- Reactive: re-plans if goal changes mid-motion.           -->
-        <!-- Commented out because QueryVLA already executes the waypoints to the target pose. -->
-        <!-- <ReactiveSequence name="reactive_approach">
-          <Inverter>
-            <IsGoalChanged />
-          </Inverter>
-          <Sequence name="plan_and_move_grasp">
-            <SetPlannerConfig profile="linear_approach" />
-            <PlanToPose
-              arm="{plan_active_arm}"
-              target_pose="{vla_grasp_pose}"
-              velocity_scaling="{plan_velocity_scaling}"
-              position_only="true"
-              output_trajectory="{plan_trajectory}" />
-            <ExecuteTrajectory trajectory="{plan_trajectory}" />
+        <!-- ── Step 2: Continuous VLA Instruction Loop ───────────────── -->
+        <!-- Loops QueryVLA continuously. The arm stays exactly at its  -->
+        <!-- last reached pose and queries the model again from there,  -->
+        <!-- with no home/ready movements in between.                    -->
+        <KeepRunningUntilFailure>
+          <Sequence name="vla_query_and_execute">
+            <QueryVLA task="{vla_task_name}" />
+            <Sleep msec="1000" />
           </Sequence>
-        </ReactiveSequence> -->
-
-        <!-- ── Phase 4: Grasp ───────────────────────────────────── -->
-        <CloseGripper arm="{plan_active_arm}" close_position="0.0" duration="1.5" />
-        <IsGripperHolding arm="{plan_active_arm}" />
-
-        <!-- ── Phase 5: Place ───────────────────────────────────── -->
-        <SetPlannerConfig profile="fast_ptp" />
-        <PlanToPose
-          arm="{plan_active_arm}"
-          target_pose="{vla_place_pose}"
-          velocity_scaling="{plan_velocity_scaling}"
-          position_only="true"
-          output_trajectory="{plan_trajectory}" />
-        <ExecuteTrajectory trajectory="{plan_trajectory}" />
-
-        <!-- ── Phase 6: Release and go home ─────────────────────── -->
-        <OpenGripper arm="{plan_active_arm}" open_position="0.044" duration="1.0" />
-        <PlanToNamedPose arm="{plan_active_arm}" pose_name="home" duration="3.0" output_trajectory="{plan_trajectory}" />
-        <ExecuteTrajectory trajectory="{plan_trajectory}" />
+        </KeepRunningUntilFailure>
       </Sequence>
 
-      <!-- ── Recovery path ──────────────────────────────────────── -->
-      <Sequence name="recovery">
-        <IsReplanNeeded confidence_threshold="0.65" />
-        <QueryVLA task="{vla_task_name}" />
-        <RetryUntilSuccessful num_attempts="2">
-          <Sequence name="retry_pick">
-            <IsObjectVisible object_label="{vla_target_object}" />
-            <SetPlannerConfig profile="realtime_rrt" />
-            <PlanToPose
-              arm="{plan_active_arm}"
-              target_pose="{vla_grasp_pose}"
-              velocity_scaling="0.2"
-              position_only="true"
-              output_trajectory="{plan_trajectory}" />
-            <ExecuteTrajectory trajectory="{plan_trajectory}" />
-            <CloseGripper arm="{plan_active_arm}" close_position="0.0" duration="1.5" />
-            <IsGripperHolding arm="{plan_active_arm}" />
-          </Sequence>
-        </RetryUntilSuccessful>
-      </Sequence>
-
-      <!-- ── Idle: no goal yet, nothing to recover ──────────────── -->
-      <!-- ForceSuccess prevents the tree from crash-looping when    -->
-      <!-- the VLA bridge hasn't connected yet.  The tree will just  -->
-      <!-- idle until the next tick.                                  -->
+      <!-- ── Fallback Safe Abort ───────────────────────────────────── -->
       <ForceSuccess>
-        <SafeAbort reason="all_recovery_failed" />
+        <SafeAbort reason="vla_execution_failed" />
       </ForceSuccess>
 
     </Fallback>
