@@ -49,6 +49,10 @@ class VLABridgeNode(Node):
         self.declare_parameter('position_only', False)
         self.declare_parameter('velocity_override', 0.0)
         self.declare_parameter('planning_frame', 'openarm_base_link')
+        self.declare_parameter('prepare_vla_ready', True)
+        self.declare_parameter('vla_ready_once', True)
+        self.declare_parameter('vla_ready_named_pose', 'vla_ready')
+        self.declare_parameter('vla_ready_planner_profile', 'safe_rrt')
         
         self.vla_host = self.get_parameter('vla_host').value
         self.vla_port = self.get_parameter('vla_port').value
@@ -66,6 +70,10 @@ class VLABridgeNode(Node):
         self.position_only = self.get_parameter('position_only').value
         self.velocity_override = self.get_parameter('velocity_override').value
         self.planning_frame = self.get_parameter('planning_frame').value
+        self.prepare_vla_ready = self.get_parameter('prepare_vla_ready').value
+        self.vla_ready_once = self.get_parameter('vla_ready_once').value
+        self.vla_ready_named_pose = self.get_parameter('vla_ready_named_pose').value
+        self.vla_ready_planner_profile = self.get_parameter('vla_ready_planner_profile').value
         
         # TF2 buffer and listener to track end effector pose
         self.tf_buffer = Buffer()
@@ -170,6 +178,8 @@ class VLABridgeNode(Node):
         self.current_joints = None
         self.joint_names = []
         self.query_active = False
+        self.last_gripper_state = None
+        self.vla_ready_prepared = False
 
         # Timer to trigger query for testing (or you can trigger it via a service) has been removed.
 
@@ -517,8 +527,138 @@ class VLABridgeNode(Node):
 
         return True
 
-    def execute_cartesian_move_stepwise(self, waypoints, start_pose_msg=None):
+    def execute_vla_ready_skill(self, goal_msg, label):
+        if not self._execute_skill_client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error(f"ExecuteSkill action server not available for {label}!")
+            return False
+
+        self.get_logger().info(f"Sending {label} skill...")
+
+        send_goal_future = self._execute_skill_client.send_goal_async(goal_msg)
+        while not send_goal_future.done():
+            time.sleep(0.02)
+
+        goal_handle = send_goal_future.result()
+        if not goal_handle.accepted:
+            self.get_logger().error(f"{label} goal rejected by server!")
+            return False
+
+        get_result_future = goal_handle.get_result_async()
+        while not get_result_future.done():
+            time.sleep(0.02)
+
+        wrapped_result = get_result_future.result()
+        result = wrapped_result.result
+        if not result.success:
+            reason = result.error_message or f"action status={wrapped_result.status}"
+            self.get_logger().error(f"{label} failed: {reason}")
+            return False
+
+        return True
+
+    def prepare_vla_ready_pose(self):
+        if not self.prepare_vla_ready:
+            return True
+        if self.vla_ready_once and self.vla_ready_prepared:
+            return True
+
+        arm = f"{self.arm_side}_arm"
+        self.get_logger().info("Preparing VLA ready pose (Pose 1 -> Pose 2)...")
+
+        if self.arm_side == "left":
+            ready_1_joint_targets = [
+                0.0017,
+                -0.6105,
+                -0.0579,
+                0.1424,
+                -0.0420,
+                -0.6117,
+                0.1721,
+            ]
+
+            ready_1_goal = ExecuteSkill.Goal()
+            ready_1_goal.skill_name = "move_to_joint"
+            ready_1_goal.arm = arm
+            ready_1_goal.planner_profile = self.vla_ready_planner_profile
+            ready_1_goal.planning_mode = self.planning_mode
+            ready_1_goal.joint_targets = ready_1_joint_targets
+            ready_1_goal.velocity_override = self.velocity_override
+            ready_1_goal.position_only = False
+
+            if not self.execute_vla_ready_skill(ready_1_goal, "VLA ready 1"):
+                return False
+        else:
+            self.get_logger().warn(
+                f"VLA ready 1 joint targets are only configured for the left arm; "
+                f"skipping ready 1 for arm='{self.arm_side}'."
+            )
+
+        ready_2_goal = ExecuteSkill.Goal()
+        ready_2_goal.skill_name = "move_to_named_pose"
+        ready_2_goal.arm = arm
+        ready_2_goal.planner_profile = self.vla_ready_planner_profile
+        ready_2_goal.planning_mode = self.planning_mode
+        ready_2_goal.named_pose = self.vla_ready_named_pose
+        ready_2_goal.velocity_override = self.velocity_override
+        ready_2_goal.position_only = False
+
+        if not self.execute_vla_ready_skill(
+            ready_2_goal,
+            f"VLA ready 2 named pose '{self.vla_ready_named_pose}'"
+        ):
+            return False
+
+        self.vla_ready_prepared = True
+        self.get_logger().info("VLA ready pose preparation completed.")
+        return True
+
+    def execute_gripper_skill(self, action_name):
+        if not self._execute_skill_client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error(f"ExecuteSkill action server not available for gripper {action_name}!")
+            return False
+            
+        goal_msg = ExecuteSkill.Goal()
+        goal_msg.skill_name = action_name  # "open_gripper" or "close_gripper"
+        goal_msg.arm = f"{self.arm_side}_arm"
+        
+        self.get_logger().info(f"Sending {action_name} skill to gripper...")
+        
+        send_goal_future = self._execute_skill_client.send_goal_async(goal_msg)
+        while not send_goal_future.done():
+            time.sleep(0.02)
+            
+        goal_handle = send_goal_future.result()
+        if not goal_handle.accepted:
+            self.get_logger().error(f"Gripper skill {action_name} goal rejected!")
+            return False
+            
+        get_result_future = goal_handle.get_result_async()
+        while not get_result_future.done():
+            time.sleep(0.02)
+            
+        return get_result_future.result().result.success
+
+    def execute_cartesian_move_stepwise(self, waypoints, actions=None, start_pose_msg=None):
         total_steps = len(waypoints)
+
+        # --- Gripper majority vote ---
+        # Determine gripper intent ONCE across all steps instead of toggling per step.
+        # VLA often returns hard ±1 values that alternate; voting avoids rapid open/close.
+        gripper_command = None
+        if actions is not None and len(actions) > 0:
+            gripper_vals = [a[6] for a in actions if len(a) > 6]
+            closes = sum(1 for v in gripper_vals if v > 0.5)
+            opens  = sum(1 for v in gripper_vals if v < -0.5)
+            self.get_logger().info(
+                f"Gripper vote: {closes} close vs {opens} open out of {len(gripper_vals)} steps. "
+                f"Values: {[round(v, 2) for v in gripper_vals]}"
+            )
+            if closes > opens:
+                gripper_command = "close_gripper"
+            elif opens > closes:
+                gripper_command = "open_gripper"
+            # else: tie → no gripper command this round
+
         for step_idx, waypoint in enumerate(waypoints):
             self.get_logger().info(
                 f"Planning/executing VLA waypoint {step_idx + 1}/{total_steps}: "
@@ -534,6 +674,17 @@ class VLABridgeNode(Node):
                     self.get_logger().info(f"Returning to starting pose: {self.format_pose(start_pose_msg)}")
                     self.execute_cartesian_move([start_pose_msg])
                 return False, step_idx
+
+        # Execute gripper command once, after all arm waypoints succeed, only if state changed
+        if gripper_command is not None and gripper_command != self.last_gripper_state:
+            self.get_logger().info(f"Executing gripper command (majority vote): {gripper_command}")
+            if self.execute_gripper_skill(gripper_command):
+                self.last_gripper_state = gripper_command
+        elif gripper_command == self.last_gripper_state:
+            self.get_logger().info(f"Gripper already in target state '{gripper_command}', skipping.")
+        else:
+            self.get_logger().info("Gripper vote was a tie or no data — no gripper command sent.")
+
         return True, None
 
     def query_vla_model(self, instruction_override=None):
@@ -546,6 +697,10 @@ class VLABridgeNode(Node):
         
         # Publish ACM to ensure collisions are allowed for the demo
         self.publish_acm()
+
+        if not self.prepare_vla_ready_pose():
+            self.query_active = False
+            return False, None, "Failed to prepare VLA ready pose."
         
         # Read current joints just for logging/compatibility state
         joint_data = self.get_arm_joints()
@@ -692,7 +847,7 @@ class VLABridgeNode(Node):
                     start_pose_planning = self.transform_pose(start_pose_world, self.planning_frame)
                     
                     execution_success, failed_step = self.execute_cartesian_move_stepwise(
-                        waypoints, start_pose_msg=start_pose_planning
+                        waypoints, actions=actions, start_pose_msg=start_pose_planning
                     )
                     
                     self.query_active = False
