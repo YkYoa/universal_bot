@@ -9,9 +9,8 @@
         <!-- This unfolds the arm high above the table, providing a safe   -->
         <!-- initial posture that prevents collisions and enables IK       -->
         <!-- solvers to plan Cartesian moves smoothly.                     -->
-        <!-- <SetPlannerConfig profile="safe_rrt" /> -->
-        <!-- <PlanToNamedPose arm="{plan_active_arm}" pose_name="vla_ready" duration="3.0" output_trajectory="{plan_trajectory}" />
-        <ExecuteTrajectory trajectory="{plan_trajectory}" /> -->
+        <SetPlannerConfig profile="safe_rrt" />
+        <PlanToNamedPose arm="{plan_active_arm}" pose_name="vla_ready" />
 
         <!-- ── Step 2: Continuous VLA Instruction Loop ───────────────── -->
         <!-- Loops QueryVLA continuously. The arm stays exactly at its  -->

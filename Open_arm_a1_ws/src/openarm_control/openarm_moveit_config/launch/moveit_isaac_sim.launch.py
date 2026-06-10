@@ -215,6 +215,13 @@ def generate_launch_description():
         ],
     )
 
+    static_tf_pub_node = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_tf_pub_world_to_base_link",
+        arguments=["0", "0", "0.31", "0", "0", "0", "world", "openarm_base_link"],
+        parameters=[{"use_sim_time": True}]
+    )
 
     return LaunchDescription(
         [
@@ -227,6 +234,7 @@ def generate_launch_description():
             right_gripper_controller_spawner,
             move_group_node,
             robot_skills_node,
+            static_tf_pub_node,
             rviz_node,
         ]
     )

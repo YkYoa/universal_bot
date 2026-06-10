@@ -432,20 +432,131 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         moveit::core::MaxEEFStep max_step(0.01);
         moveit::core::CartesianPrecision precision;
 
-        double fraction = moveit::core::CartesianInterpolator::computeCartesianPath(
-            start_state.get(),
-            jmg,
-            traj_states,
-            link_model,
-            eigen_waypoints,
-            true,
-            max_step,
-            precision
-        );
+        double fraction = 0.0;
+        bool planning_failed = false;
+        size_t failed_step_idx = 0;
+        double failed_segment_fraction = 0.0;
+        moveit::core::RobotState active_state(*start_state);
 
-        if (fraction <= 0.0 || traj_states.empty()) {
+        for (size_t i = 0; i < eigen_waypoints.size(); ++i) {
+            std::vector<moveit::core::RobotStatePtr> segment_states;
+            EigenSTL::vector_Isometry3d segment_waypoints = { eigen_waypoints[i] };
+            
+            double seg_fraction = moveit::core::CartesianInterpolator::computeCartesianPath(
+                &active_state,
+                jmg,
+                segment_states,
+                link_model,
+                segment_waypoints,
+                true,
+                max_step,
+                precision
+            );
+
+            if (seg_fraction < 0.99 || segment_states.empty()) {
+                RCLCPP_WARN(node_->get_logger(),
+                            "[MoveItCppPlannerManager] Cartesian planning failed for step %zu. Trying OMPL fallback...", i);
+                
+                planning_component->setStartState(active_state);
+                
+                std::string planning_frame = moveit_cpp_->getRobotModel()->getModelFrame();
+                geometry_msgs::msg::PoseStamped target_pose;
+                target_pose.header.frame_id = planning_frame;
+                target_pose.pose.position.x = eigen_waypoints[i].translation().x();
+                target_pose.pose.position.y = eigen_waypoints[i].translation().y();
+                target_pose.pose.position.z = eigen_waypoints[i].translation().z();
+                Eigen::Quaterniond q(eigen_waypoints[i].linear());
+                target_pose.pose.orientation.x = q.x();
+                target_pose.pose.orientation.y = q.y();
+                target_pose.pose.orientation.z = q.z();
+                target_pose.pose.orientation.w = q.w();
+                planning_component->setGoal(target_pose, ee_link);
+
+                moveit_cpp::PlanningComponent::PlanRequestParameters fallback_params = plan_params;
+                fallback_params.planning_pipeline = "ompl";
+                fallback_params.planner_id = "RRTConnectkConfigDefault";
+                fallback_params.planning_attempts = 5;
+                fallback_params.planning_time = 1.5;
+
+                auto fallback_solution = planning_component->plan(fallback_params);
+                if (fallback_solution) {
+                    RCLCPP_INFO(node_->get_logger(),
+                                "[MoveItCppPlannerManager] OMPL fallback succeeded for step %zu!", i);
+                    
+                    segment_states.clear();
+                    for (size_t j = 0; j < fallback_solution.trajectory->getWayPointCount(); ++j) {
+                        segment_states.push_back(std::make_shared<moveit::core::RobotState>(
+                            fallback_solution.trajectory->getWayPoint(j)));
+                    }
+                    seg_fraction = 1.0;
+                } else {
+                    RCLCPP_ERROR(node_->get_logger(),
+                                 "[MoveItCppPlannerManager] OMPL fallback also failed for step %zu", i);
+                }
+            }
+
+            if (seg_fraction < 0.99 || segment_states.empty()) {
+                planning_failed = true;
+                failed_step_idx = i;
+                failed_segment_fraction = seg_fraction;
+                fraction = static_cast<double>(i) / eigen_waypoints.size();
+                break;
+            }
+
+            traj_states.insert(traj_states.end(), segment_states.begin(), segment_states.end());
+            active_state = *segment_states.back();
+        }
+
+        if (!planning_failed) {
+            fraction = 1.0;
+        }
+
+        if (planning_failed || traj_states.empty()) {
+            // Diagnostics for the failed step
+            RCLCPP_ERROR(node_->get_logger(),
+                         "[MoveItCppPlannerManager] Pre-planning failed at step %zu of %zu (segment fraction: %f, overall fraction: %f)",
+                         failed_step_idx, eigen_waypoints.size(), failed_segment_fraction, fraction);
+
+            const Eigen::Isometry3d& start_ee_pose = start_state->getGlobalLinkTransform(link_model);
+            Eigen::Vector3d start_trans = start_ee_pose.translation();
+            Eigen::Quaterniond start_rot(start_ee_pose.linear());
+            RCLCPP_INFO(node_->get_logger(), "[PlannerDiagnostics] Start EE Pose: pos=[%.4f, %.4f, %.4f], q=[%.4f, %.4f, %.4f, %.4f]",
+                        start_trans.x(), start_trans.y(), start_trans.z(),
+                        start_rot.x(), start_rot.y(), start_rot.z(), start_rot.w());
+
+            if (failed_step_idx < eigen_waypoints.size()) {
+                Eigen::Vector3d wp_trans = eigen_waypoints[failed_step_idx].translation();
+                Eigen::Quaterniond wp_rot(eigen_waypoints[failed_step_idx].linear());
+                RCLCPP_INFO(node_->get_logger(), "[PlannerDiagnostics] Waypoint %zu Target: pos=[%.4f, %.4f, %.4f], q=[%.4f, %.4f, %.4f, %.4f]",
+                            failed_step_idx, wp_trans.x(), wp_trans.y(), wp_trans.z(),
+                            wp_rot.x(), wp_rot.y(), wp_rot.z(), wp_rot.w());
+                
+                moveit::core::RobotState test_state(active_state);
+                bool ik_success = test_state.setFromIK(jmg, eigen_waypoints[failed_step_idx], ee_link);
+                RCLCPP_INFO(node_->get_logger(), "[PlannerDiagnostics] IK solution for failing waypoint: %s", ik_success ? "SUCCESS" : "FAILED");
+            }
+
+            if (moveit_cpp_->getPlanningSceneMonitorNonConst()) {
+                planning_scene_monitor::LockedPlanningSceneRO planning_scene(moveit_cpp_->getPlanningSceneMonitorNonConst());
+                if (planning_scene) {
+                    collision_detection::CollisionRequest coll_req;
+                    coll_req.contacts = true;
+                    coll_req.max_contacts = 10;
+                    collision_detection::CollisionResult coll_res;
+                    planning_scene->checkCollision(coll_req, coll_res, active_state);
+                    RCLCPP_INFO(node_->get_logger(), "[PlannerDiagnostics] State before failure in collision: %s", coll_res.collision ? "YES" : "NO");
+                    if (coll_res.collision) {
+                        for (const auto& contact : coll_res.contacts) {
+                            RCLCPP_INFO(node_->get_logger(), "[PlannerDiagnostics]   Collision contact between: %s and %s", 
+                                        contact.first.first.c_str(), contact.first.second.c_str());
+                        }
+                    }
+                }
+            }
+
             response.success = false;
-            response.error_message = "Cartesian planning failed completely (fraction: " + std::to_string(fraction) + ")";
+            response.error_message = "Cartesian planning failed at step " + std::to_string(failed_step_idx) +
+                                     " (segment fraction: " + std::to_string(failed_segment_fraction) + " < 0.99)";
             publish_target_marker_for_request(request, false);
             publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
             return response;

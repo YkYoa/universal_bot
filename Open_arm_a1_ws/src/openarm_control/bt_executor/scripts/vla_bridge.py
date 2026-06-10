@@ -48,6 +48,7 @@ class VLABridgeNode(Node):
         self.declare_parameter('planning_mode', 'normal')
         self.declare_parameter('position_only', False)
         self.declare_parameter('velocity_override', 0.0)
+        self.declare_parameter('planning_frame', 'openarm_base_link')
         
         self.vla_host = self.get_parameter('vla_host').value
         self.vla_port = self.get_parameter('vla_port').value
@@ -64,6 +65,7 @@ class VLABridgeNode(Node):
         self.planning_mode = self.get_parameter('planning_mode').value
         self.position_only = self.get_parameter('position_only').value
         self.velocity_override = self.get_parameter('velocity_override').value
+        self.planning_frame = self.get_parameter('planning_frame').value
         
         # TF2 buffer and listener to track end effector pose
         self.tf_buffer = Buffer()
@@ -133,6 +135,16 @@ class VLABridgeNode(Node):
             '/bt_executor/vla_grasp_pose',
             10
         )
+        
+        # Planning scene publisher to modify the Allowed Collision Matrix (ACM)
+        from moveit_msgs.msg import PlanningScene
+        self.planning_scene_pub = self.create_publisher(
+            PlanningScene,
+            '/planning_scene',
+            10
+        )
+        # Timer to continuously publish the Allowed Collision Matrix at 1Hz
+        self.acm_timer = self.create_timer(1.0, self.publish_acm)
         
         # Action Server
         self._action_server = ActionServer(
@@ -292,6 +304,121 @@ class VLABridgeNode(Node):
         msg.pose.orientation.w = target_q_list[3]
         return msg, target_pos, target_q_list
 
+    def transform_pose(self, pose_msg, target_frame):
+        if pose_msg.header.frame_id == target_frame:
+            return pose_msg
+            
+        try:
+            trans = self.tf_buffer.lookup_transform(
+                target_frame,
+                pose_msg.header.frame_id,
+                rclpy.time.Time()
+            )
+        except Exception as ex:
+            self.get_logger().error(f"Failed to lookup transform from {pose_msg.header.frame_id} to {target_frame}: {ex}")
+            return None
+            
+        # Extract transform translation and rotation
+        t_x = trans.transform.translation.x
+        t_y = trans.transform.translation.y
+        t_z = trans.transform.translation.z
+        
+        rx = trans.transform.rotation.x
+        ry = trans.transform.rotation.y
+        rz = trans.transform.rotation.z
+        rw = trans.transform.rotation.w
+        
+        # Original pose
+        px = pose_msg.pose.position.x
+        py = pose_msg.pose.position.y
+        pz = pose_msg.pose.position.z
+        
+        qx = pose_msg.pose.orientation.x
+        qy = pose_msg.pose.orientation.y
+        qz = pose_msg.pose.orientation.z
+        qw = pose_msg.pose.orientation.w
+        
+        # Apply rotation then translation: target = R * source + T
+        v = np.array([px, py, pz])
+        q_xyz = np.array([rx, ry, rz])
+        q_w = rw
+        
+        tmp = np.cross(q_xyz, v) + q_w * v
+        v_rot = v + 2.0 * np.cross(q_xyz, tmp)
+        
+        # Translate
+        transformed_pos = v_rot + np.array([t_x, t_y, t_z])
+        
+        # Multiply quaternions for orientation: target_q = trans_q * pose_q
+        transformed_q = self.multiply_quaternions([rx, ry, rz, rw], [qx, qy, qz, qw])
+        
+        msg = PoseStamped()
+        msg.header.stamp = pose_msg.header.stamp
+        msg.header.frame_id = target_frame
+        msg.pose.position.x = transformed_pos[0]
+        msg.pose.position.y = transformed_pos[1]
+        msg.pose.position.z = transformed_pos[2]
+        msg.pose.orientation.x = transformed_q[0]
+        msg.pose.orientation.y = transformed_q[1]
+        msg.pose.orientation.z = transformed_q[2]
+        msg.pose.orientation.w = transformed_q[3]
+        return msg
+
+    def publish_acm(self):
+        try:
+            from moveit_msgs.msg import PlanningScene, AllowedCollisionMatrix, AllowedCollisionEntry
+            
+            scene = PlanningScene()
+            scene.is_diff = True
+            
+            acm = AllowedCollisionMatrix()
+            links = [
+                "openarm_base_link",
+                "openarm_base_bl_caster_link",
+                "openarm_base_bl_wheel_link",
+                "openarm_base_br_caster_link",
+                "openarm_base_br_wheel_link",
+                "openarm_base_fl_caster_link",
+                "openarm_base_fl_wheel_link",
+                "openarm_base_fr_caster_link",
+                "openarm_base_fr_wheel_link",
+                "openarm_base_left_drive_wheel_link",
+                "openarm_base_right_drive_wheel_link",
+                "openarm_body_link0",
+                "openarm_left_link0",
+                "openarm_left_link1",
+                "openarm_left_link2",
+                "openarm_left_link3",
+                "openarm_left_link4",
+                "openarm_left_link5",
+                "openarm_left_link6",
+                "openarm_left_link7",
+                "openarm_left_hand_tcp",
+                "openarm_left_left_finger",
+                "openarm_left_right_finger",
+                "openarm_right_link0",
+                "openarm_right_link1",
+                "openarm_right_link2",
+                "openarm_right_link3",
+                "openarm_right_link4",
+                "openarm_right_link5",
+                "openarm_right_link6",
+                "openarm_right_link7",
+                "openarm_right_hand_tcp",
+                "openarm_right_left_finger",
+                "openarm_right_right_finger"
+            ]
+            acm.entry_names = links
+            for i in range(len(links)):
+                entry = AllowedCollisionEntry()
+                entry.enabled = [True] * len(links)
+                acm.entry_values.append(entry)
+                
+            scene.allowed_collision_matrix = acm
+            self.planning_scene_pub.publish(scene)
+        except Exception as e:
+            self.get_logger().error(f"Failed to publish ACM: {e}")
+
     def print_action_step(self, step_idx, action, source):
         joint_names = [
             "EE delta x", 
@@ -313,9 +440,35 @@ class VLABridgeNode(Node):
                 unit = "[-1=open, 1=close]"
             self.get_logger().info(f"    {name:<14}: {val:>8.3f} {unit}")
 
-    def execute_cartesian_move(self, waypoints):
+    def red_text(self, text):
+        return f"\033[1;31m{text}\033[0m"
+
+    def format_pose(self, pose_stamped):
+        p = pose_stamped.pose.position
+        q = pose_stamped.pose.orientation
+        return (
+            f"frame={pose_stamped.header.frame_id}, "
+            f"pos=({p.x:.4f}, {p.y:.4f}, {p.z:.4f}), "
+            f"quat=({q.x:.4f}, {q.y:.4f}, {q.z:.4f}, {q.w:.4f})"
+        )
+
+    def log_step_failure(self, step_idx, total_steps, pose_stamped, reason):
+        if total_steps is None:
+            step_label = f"step {step_idx}"
+        else:
+            step_label = f"step {step_idx + 1}/{total_steps} (model index {step_idx})"
+        self.get_logger().error(self.red_text(
+            f"VLA waypoint planning failed at {step_label}: {reason}. "
+            f"Target {self.format_pose(pose_stamped)}"
+        ))
+
+    def execute_cartesian_move(self, waypoints, step_idx=None, total_steps=None):
         if not self._execute_skill_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error("ExecuteSkill action server not available!")
+            msg = "ExecuteSkill action server not available!"
+            if step_idx is not None and waypoints:
+                self.log_step_failure(step_idx, total_steps, waypoints[-1], msg)
+            else:
+                self.get_logger().error(self.red_text(msg))
             return False
             
         goal_msg = ExecuteSkill.Goal()
@@ -338,7 +491,11 @@ class VLABridgeNode(Node):
             
         goal_handle = send_goal_future.result()
         if not goal_handle.accepted:
-            self.get_logger().error("Cartesian move goal rejected by server!")
+            msg = "Cartesian move goal rejected by server!"
+            if step_idx is not None and waypoints:
+                self.log_step_failure(step_idx, total_steps, waypoints[-1], msg)
+            else:
+                self.get_logger().error(self.red_text(msg))
             return False
             
         self.get_logger().info("Cartesian move goal accepted. Waiting for execution result...")
@@ -348,8 +505,36 @@ class VLABridgeNode(Node):
         while not get_result_future.done():
             time.sleep(0.02)
             
-        result = get_result_future.result().result
-        return result.success
+        wrapped_result = get_result_future.result()
+        result = wrapped_result.result
+        if not result.success:
+            reason = result.error_message or f"action status={wrapped_result.status}"
+            if step_idx is not None and waypoints:
+                self.log_step_failure(step_idx, total_steps, waypoints[-1], reason)
+            else:
+                self.get_logger().error(self.red_text(f"Cartesian move failed: {reason}"))
+            return False
+
+        return True
+
+    def execute_cartesian_move_stepwise(self, waypoints, start_pose_msg=None):
+        total_steps = len(waypoints)
+        for step_idx, waypoint in enumerate(waypoints):
+            self.get_logger().info(
+                f"Planning/executing VLA waypoint {step_idx + 1}/{total_steps}: "
+                f"{self.format_pose(waypoint)}"
+            )
+            if not self.execute_cartesian_move([waypoint], step_idx=step_idx, total_steps=total_steps):
+                self.get_logger().warn("Execution failed! Returning to previous successful stage...")
+                if step_idx > 0:
+                    prev_waypoint = waypoints[step_idx - 1]
+                    self.get_logger().info(f"Returning to previous successful waypoint {step_idx}: {self.format_pose(prev_waypoint)}")
+                    self.execute_cartesian_move([prev_waypoint])
+                elif start_pose_msg is not None:
+                    self.get_logger().info(f"Returning to starting pose: {self.format_pose(start_pose_msg)}")
+                    self.execute_cartesian_move([start_pose_msg])
+                return False, step_idx
+        return True, None
 
     def query_vla_model(self, instruction_override=None):
         current_instr = self.get_parameter('instruction').value
@@ -358,6 +543,9 @@ class VLABridgeNode(Node):
         if self.query_active:
             return False, None, "Query is already active."
         self.query_active = True
+        
+        # Publish ACM to ensure collisions are allowed for the demo
+        self.publish_acm()
         
         # Read current joints just for logging/compatibility state
         joint_data = self.get_arm_joints()
@@ -434,8 +622,14 @@ class VLABridgeNode(Node):
                                 
                                 # Execute this step immediately!
                                 step_pose, _, _ = self.compute_target_pose(action, curr_pos, curr_q)
-                                self.execute_cartesian_move([step_pose])
-                                last_step_pose = step_pose
+                                transformed_step_pose = self.transform_pose(step_pose, self.planning_frame)
+                                if transformed_step_pose is None:
+                                    self.query_active = False
+                                    return False, None, f"Failed to transform VLA step to planning frame {self.planning_frame}"
+                                if not self.execute_cartesian_move([transformed_step_pose], step_idx=step_idx):
+                                    self.query_active = False
+                                    return False, None, f"Trajectory execution failed at stream step {step_idx}."
+                                last_step_pose = transformed_step_pose
                             elif "time_taken" in data:
                                 self.get_logger().info(f"Stream generation finished. Time taken: {data['time_taken']}s")
                     
@@ -475,11 +669,31 @@ class VLABridgeNode(Node):
                     waypoints = []
                     for act in actions:
                         wp, _, _ = self.compute_target_pose(act, curr_pos, curr_q)
-                        waypoints.append(wp)
+                        transformed_wp = self.transform_pose(wp, self.planning_frame)
+                        if transformed_wp is None:
+                            self.query_active = False
+                            return False, None, f"Failed to transform VLA waypoint to planning frame {self.planning_frame}"
+                        waypoints.append(transformed_wp)
                     
                     # Execute trajectory on robot
                     self.get_logger().info("Executing VLA trajectory waypoints on robot...")
-                    execution_success = self.execute_cartesian_move(waypoints)
+                    
+                    # Create start pose message in planning frame for fallback recovery
+                    start_pose_world = PoseStamped()
+                    start_pose_world.header.stamp = self.get_clock().now().to_msg()
+                    start_pose_world.header.frame_id = 'world'
+                    start_pose_world.pose.position.x = curr_pos[0]
+                    start_pose_world.pose.position.y = curr_pos[1]
+                    start_pose_world.pose.position.z = curr_pos[2]
+                    start_pose_world.pose.orientation.x = curr_q[0]
+                    start_pose_world.pose.orientation.y = curr_q[1]
+                    start_pose_world.pose.orientation.z = curr_q[2]
+                    start_pose_world.pose.orientation.w = curr_q[3]
+                    start_pose_planning = self.transform_pose(start_pose_world, self.planning_frame)
+                    
+                    execution_success, failed_step = self.execute_cartesian_move_stepwise(
+                        waypoints, start_pose_msg=start_pose_planning
+                    )
                     
                     self.query_active = False
                     if execution_success:
@@ -489,7 +703,7 @@ class VLABridgeNode(Node):
                         return True, target_pose, ""
                     else:
                         self.get_logger().error("VLA trajectory execution failed!")
-                        return False, None, "Trajectory execution failed."
+                        return False, None, f"Trajectory execution failed at step {failed_step}."
                 else:
                     err = f"HTTP Error {response.status_code}: {response.text}"
                     self.get_logger().error(err)
