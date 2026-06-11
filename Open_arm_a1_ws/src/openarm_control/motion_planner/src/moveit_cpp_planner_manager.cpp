@@ -177,11 +177,19 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         return response;
     }
 
+    bool save_plan = true;
+    std::string resolved_profile_name = request.getProfileName();
+    size_t pos = resolved_profile_name.find("_no_save");
+    if (pos != std::string::npos) {
+        save_plan = false;
+        resolved_profile_name = resolved_profile_name.substr(0, pos);
+    }
+
     std::string filename = get_plan_filename(request);
     std::filesystem::path plan_filepath = std::filesystem::path(PLAN_DIR) / filename;
 
     // Check if the plan is already cached
-    if (std::filesystem::exists(plan_filepath)) {
+    if (save_plan && std::filesystem::exists(plan_filepath)) {
         try {
             YAML::Node plan_node = YAML::LoadFile(plan_filepath.string());
             moveit_msgs::msg::RobotTrajectory traj = deserialize_trajectory(plan_node);
@@ -281,15 +289,14 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
     }
 
     // 1. Load the planner profile
-    std::string profile_name = request.getProfileName();
     planning_interface::PlannerProfile profile;
-    auto opt_profile = profile_loader_->get_profile(profile_name);
+    auto opt_profile = profile_loader_->get_profile(resolved_profile_name);
     if (opt_profile) {
         profile = *opt_profile;
     } else {
         RCLCPP_WARN(node_->get_logger(), 
             "[MoveItCppPlannerManager] Profile '%s' not found. Using default profile.", 
-            profile_name.c_str());
+            resolved_profile_name.c_str());
         profile = profile_loader_->get_default_profile();
     }
 
@@ -581,22 +588,24 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         response.planning_time = 0.01;
 
         // Save successfully run Cartesian plan
-        try {
-            std::filesystem::path plan_dir(PLAN_DIR);
-            if (!std::filesystem::exists(plan_dir)) {
-                std::filesystem::create_directories(plan_dir);
+        if (save_plan) {
+            try {
+                std::filesystem::path plan_dir(PLAN_DIR);
+                if (!std::filesystem::exists(plan_dir)) {
+                    std::filesystem::create_directories(plan_dir);
+                }
+                YAML::Node plan_node = serialize_trajectory(response.trajectory);
+                std::ofstream fout(plan_filepath.string());
+                fout << plan_node;
+                fout.close();
+                RCLCPP_INFO(node_->get_logger(),
+                    "[MoveItCppPlannerManager] Saved successfully run plan to: %s",
+                    plan_filepath.string().c_str());
+            } catch (const std::exception& e) {
+                RCLCPP_WARN(node_->get_logger(),
+                    "[MoveItCppPlannerManager] Failed to save plan to '%s': %s",
+                    plan_filepath.string().c_str(), e.what());
             }
-            YAML::Node plan_node = serialize_trajectory(response.trajectory);
-            std::ofstream fout(plan_filepath.string());
-            fout << plan_node;
-            fout.close();
-            RCLCPP_INFO(node_->get_logger(),
-                "[MoveItCppPlannerManager] Saved successfully run plan to: %s",
-                plan_filepath.string().c_str());
-        } catch (const std::exception& e) {
-            RCLCPP_WARN(node_->get_logger(),
-                "[MoveItCppPlannerManager] Failed to save plan to '%s': %s",
-                plan_filepath.string().c_str(), e.what());
         }
 
         publish_target_marker_for_request(request, true);
@@ -636,22 +645,24 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         response.planning_time = plan_solution.planning_time;
 
         // Save successfully run standard plan
-        try {
-            std::filesystem::path plan_dir(PLAN_DIR);
-            if (!std::filesystem::exists(plan_dir)) {
-                std::filesystem::create_directories(plan_dir);
+        if (save_plan) {
+            try {
+                std::filesystem::path plan_dir(PLAN_DIR);
+                if (!std::filesystem::exists(plan_dir)) {
+                    std::filesystem::create_directories(plan_dir);
+                }
+                YAML::Node plan_node = serialize_trajectory(response.trajectory);
+                std::ofstream fout(plan_filepath.string());
+                fout << plan_node;
+                fout.close();
+                RCLCPP_INFO(node_->get_logger(),
+                    "[MoveItCppPlannerManager] Saved successfully run plan to: %s",
+                    plan_filepath.string().c_str());
+            } catch (const std::exception& e) {
+                RCLCPP_WARN(node_->get_logger(),
+                    "[MoveItCppPlannerManager] Failed to save plan to '%s': %s",
+                    plan_filepath.string().c_str(), e.what());
             }
-            YAML::Node plan_node = serialize_trajectory(response.trajectory);
-            std::ofstream fout(plan_filepath.string());
-            fout << plan_node;
-            fout.close();
-            RCLCPP_INFO(node_->get_logger(),
-                "[MoveItCppPlannerManager] Saved successfully run plan to: %s",
-                plan_filepath.string().c_str());
-        } catch (const std::exception& e) {
-            RCLCPP_WARN(node_->get_logger(),
-                "[MoveItCppPlannerManager] Failed to save plan to '%s': %s",
-                plan_filepath.string().c_str(), e.what());
         }
     } else {
         response.success = false;

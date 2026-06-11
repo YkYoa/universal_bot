@@ -53,6 +53,7 @@ class VLABridgeNode(Node):
         self.declare_parameter('vla_ready_once', True)
         self.declare_parameter('vla_ready_named_pose', 'vla_ready')
         self.declare_parameter('vla_ready_planner_profile', 'safe_rrt')
+        self.declare_parameter('save_plan', False)
         
         self.vla_host = self.get_parameter('vla_host').value
         self.vla_port = self.get_parameter('vla_port').value
@@ -74,6 +75,7 @@ class VLABridgeNode(Node):
         self.vla_ready_once = self.get_parameter('vla_ready_once').value
         self.vla_ready_named_pose = self.get_parameter('vla_ready_named_pose').value
         self.vla_ready_planner_profile = self.get_parameter('vla_ready_planner_profile').value
+        self.save_plan = self.get_parameter('save_plan').value
         
         # TF2 buffer and listener to track end effector pose
         self.tf_buffer = Buffer()
@@ -210,12 +212,48 @@ class VLABridgeNode(Node):
                 idx = self.joint_names.index(name)
                 arm_positions.append(self.current_joints[idx])
         
+        # Define limits: (lower, upper)
+        if self.arm_side == "left":
+            limits = [
+                (-3.490659, 1.396263),
+                (-3.316125, 0.174532),
+                (-1.570796, 1.570796),
+                (0.0, 2.443461),
+                (-1.570796, 1.570796),
+                (-0.785398, 0.785398),
+                (-1.570796, 1.570796),
+            ]
+        else: # right arm
+            limits = [
+                (-1.396263, 3.490659),
+                (-0.174532, 3.316125),
+                (-1.570796, 1.570796),
+                (0.0, 2.443461),
+                (-1.570796, 1.570796),
+                (-0.785398, 0.785398),
+                (-1.570796, 1.570796),
+            ]
+
+        # Apply a small gap/buffer (e.g., 0.02 radians) to keep joint states strictly within limits
+        gap = 0.02
+        clipped_positions = []
+        for i, pos in enumerate(arm_positions):
+            if i < len(limits):
+                low, high = limits[i]
+                clipped_val = max(low + gap, min(high - gap, pos))
+                clipped_positions.append(clipped_val)
+            else:
+                clipped_positions.append(pos)
+        arm_positions = clipped_positions
+
         # If gripper finger joint exists, read it too
         gripper_name = f"openarm_{self.arm_side}_finger_joint1"
         gripper_pos = 0.0
         if gripper_name in self.joint_names:
             idx = self.joint_names.index(gripper_name)
             gripper_pos = self.current_joints[idx]
+            # Clip gripper joint with a small gap (limits are 0.0 to 0.044)
+            gripper_pos = max(0.001, min(0.043, gripper_pos))
             
         return arm_positions, gripper_pos
 
@@ -484,7 +522,10 @@ class VLABridgeNode(Node):
         goal_msg = ExecuteSkill.Goal()
         goal_msg.skill_name = "cartesian_move"
         goal_msg.arm = f"{self.arm_side}_arm"
-        goal_msg.planner_profile = self.planner_profile
+        profile = self.planner_profile
+        if not self.save_plan:
+            profile += "_no_save"
+        goal_msg.planner_profile = profile
         goal_msg.planning_mode = self.planning_mode
         goal_msg.waypoints = waypoints
         goal_msg.velocity_override = self.velocity_override
@@ -576,10 +617,14 @@ class VLABridgeNode(Node):
                 0.1721,
             ]
 
+            profile = self.vla_ready_planner_profile
+            if not self.save_plan:
+                profile += "_no_save"
+
             ready_1_goal = ExecuteSkill.Goal()
             ready_1_goal.skill_name = "move_to_joint"
             ready_1_goal.arm = arm
-            ready_1_goal.planner_profile = self.vla_ready_planner_profile
+            ready_1_goal.planner_profile = profile
             ready_1_goal.planning_mode = self.planning_mode
             ready_1_goal.joint_targets = ready_1_joint_targets
             ready_1_goal.velocity_override = self.velocity_override
@@ -593,10 +638,14 @@ class VLABridgeNode(Node):
                 f"skipping ready 1 for arm='{self.arm_side}'."
             )
 
+        profile = self.vla_ready_planner_profile
+        if not self.save_plan:
+            profile += "_no_save"
+
         ready_2_goal = ExecuteSkill.Goal()
         ready_2_goal.skill_name = "move_to_named_pose"
         ready_2_goal.arm = arm
-        ready_2_goal.planner_profile = self.vla_ready_planner_profile
+        ready_2_goal.planner_profile = profile
         ready_2_goal.planning_mode = self.planning_mode
         ready_2_goal.named_pose = self.vla_ready_named_pose
         ready_2_goal.velocity_override = self.velocity_override
