@@ -38,7 +38,10 @@ Sử dụng script `deploy_to_server.sh` để tự động đồng bộ mã ngu
 1. Mở terminal trên máy chạy Isaac Sim, export các biến môi trường trước khi chạy giả lập:
    ```bash
    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-   export CYCLONEDDS_URI=$HOME/Desktop/isaacsim/cyclonedds.xml
+   # Trên Laptop cá nhân:
+   export CYCLONEDDS_URI=$HOME/isaacsim/cyclonedds.xml
+   # Hoặc trên Server GPU (naiscorp-4090):
+   export CYCLONEDDS_URI=/data21tb/huyhoang/isaacsim/cyclonedds.xml
    ```
 2. Mở file `cyclonedds.xml` trong thư mục Isaac Sim và thêm IP của máy chạy Docker vào danh sách `<Peers>` (nếu chạy khác máy):
    ```xml
