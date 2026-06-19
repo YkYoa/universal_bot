@@ -1,40 +1,46 @@
 #!/usr/bin/env python3
+# Copyright 2026 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 isaaclab_demo.py
 ================
 Playback script to run and visualize a trained Stable-Baselines3 policy locally or via streaming.
-
-Usage (Local GUI viewport):
-    /home/hans/isaacsim/isaac-sim-standalone-5.1.0-linux-x86_64/python.sh \\
-        src/isaacsim_setup/isaaclab_demo.py \\
-        --model_path src/isaacsim_setup/logs/best_policy.pt \\
-        --num_envs 1
-
-Usage (Headless WebRTC livestreaming from server):
-    /data21tb/huyhoang/isaacsim/python.sh \
-        src/isaacsim_setup/isaaclab_demo.py \
-        --model_path logs_openarm/train/best_policy.pt \
-        --num_envs 1 \
-        --headless \
-        --livestream 1
+Converted to the world-class Manager-based RL workflow.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 import time
 import argparse
 import torch
 import numpy as np
-from stable_baselines3 import PPO
+
+# Dynamic Python path registration to make isaaclab_openarm_env package discoverable
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.append(_THIS_DIR)
 
 # ── 1. Parse arguments and launch Isaac Sim first (must happen before importing isaaclab) ──
-parser = argparse.ArgumentParser(description="Isaac Lab OpenArm Apple Pick-and-Place Demo")
+parser = argparse.ArgumentParser(description="Isaac Lab OpenArm Apple Pick-and-Place Demo — Manager-Based workflow")
 parser.add_argument("--num-envs", "--num_envs", dest="num_envs", type=int, default=1, help="Number of parallel environments to run")
-parser.add_argument("--model-path", "--model_path", dest="model_path", type=str, default="./logs/best_policy.pt", help="Path to trained policy (.pt weights or SB3 .zip checkpoint)")
+parser.add_argument("--model-path", "--model_path", dest="model_path", type=str, default=os.path.join(_THIS_DIR, "logs", "train", "best_policy.pt"), help="Path to trained policy (.pt weights or SB3 .zip checkpoint)")
 parser.add_argument("--seed",       type=int, default=42, help="Random seed")
 
-# Add Isaac Sim AppLauncher args (like --headless, --livestream, etc.)
+# Add Isaac Sim AppLauncher args
 from isaaclab.app import AppLauncher
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
@@ -43,9 +49,16 @@ args = parser.parse_args()
 app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
-# ── 2. Now import Isaac Lab and gymnasium wrappers ──
+# ── 2. Import standard libraries and environment configuration ──
+from stable_baselines3 import PPO
 from isaaclab_rl.sb3 import Sb3VecEnvWrapper
-from isaaclab_openarm_env import ApplePickPlaceEnv, ApplePickPlaceEnvCfg
+from isaaclab_openarm_env.env import ApplePickPlaceEnv
+from isaaclab_openarm_env.config import ApplePickPlaceEnvCfg
+from isaaclab_openarm_env.scene import patch_qvic_usd_once
+
+# Permanently patch qvic.usd to remove duplicate robot prims and nested RigidBodyAPIs.
+patch_qvic_usd_once()
+
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -54,7 +67,7 @@ def main():
     model_path = os.path.abspath(args.model_path)
 
     print("=" * 70)
-    print("  Isaac Lab OpenArm Apple Pick-and-Place Policy Player")
+    print("  Isaac Lab OpenArm Apple Pick-and-Place Policy Player (Manager-Based)")
     print(f"  Model Path : {model_path}")
     print(f"  Envs       : {args.num_envs}")
     print(f"  Device     : {device.upper()}")
@@ -64,8 +77,7 @@ def main():
     print("\n  Building environment...")
     env_cfg = ApplePickPlaceEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
-    # Enable rendering at every step for smooth visual playback
-    env_cfg.sim.render_interval = 1
+    env_cfg.sim.render_interval = env_cfg.decimation
     env_cfg.seed = args.seed
     
     env = ApplePickPlaceEnv(cfg=env_cfg)
@@ -123,20 +135,16 @@ def main():
     total_rewards = np.zeros(args.num_envs)
     episode_steps = np.zeros(args.num_envs)
     
-    step = 0
     try:
         while simulation_app.is_running():
-            # Get action predictions
             with torch.no_grad():
                 action, _ = model.predict(obs, deterministic=True)
             
-            # Step simulation
             obs, rewards, dones, infos = env.step(action)
             
             total_rewards += rewards
             episode_steps += 1
             
-            # Reset logs for finished episodes
             for i, done in enumerate(dones):
                 if done:
                     success = infos[i].get("success", False)
@@ -145,7 +153,6 @@ def main():
                     total_rewards[i] = 0.0
                     episode_steps[i] = 0
             
-            # Control playback speed to be human-digestible when running with GUI
             if not args.headless:
                 time.sleep(0.01)
                 
@@ -154,6 +161,7 @@ def main():
 
     print("\n  Closing environment...")
     env.close()
+
 
 if __name__ == "__main__":
     main()

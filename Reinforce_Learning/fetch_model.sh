@@ -8,22 +8,22 @@
 #   ./fetch_model.sh [user@server_ip]
 #
 # Example:
-#   ./fetch_model.sh naiscorp@192.168.1.122
+#   ./fetch_model.sh naiscorp-4090
 #
-# Downloads to: Open_arm_a1_ws/src/isaacsim_setup/logs/
+# Downloads to: Reinforce_Learning/logs/
 # =============================================================================
 set -e
 
-SERVER="${1:-naiscorp@192.168.1.122}"
+SERVER="${1:-naiscorp-4090}"
 SERVER_USER="$(echo "$SERVER" | cut -d@ -f1)"
 SERVER_IP="$(echo "$SERVER" | cut -d@ -f2)"
 REMOTE_DIR="/data21tb/huyhoang/openarm_train_ws/logs_openarm/train"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_LOGS="${SCRIPT_DIR}/src/isaacsim_setup/logs"
+LOCAL_LOGS="${SCRIPT_DIR}/logs"
 
 echo "============================================================"
-echo "  Fetching Isaac Lab model from server"
+echo "  Fetching Isaac Lab model from server (Manager-Based RL)"
 echo "  Server : $SERVER:${REMOTE_DIR}"
 echo "  Local  : ${LOCAL_LOGS}"
 echo "============================================================"
@@ -42,11 +42,11 @@ else
     echo "  ✅ Training has completed (or was stopped)."
 fi
 
-# ── Download best policy (Isaac Lab saves as .pt — PyTorch checkpoint) ────────
+# ── Download best policy ────────────────────────────────────────────────────
 echo ""
 echo "Downloading best policy checkpoint..."
 scp "${SERVER}:${REMOTE_DIR}/best_policy.pt" "${LOCAL_LOGS}/best_policy.pt" && \
-    echo "  ✅ best_policy.pt" || echo "  ⚠️  best_policy.pt not found yet (training may still be in early stages)"
+    echo "  ✅ best_policy.pt" || echo "  ⚠️  best_policy.pt not found yet"
 
 # ── Download final model ──────────────────────────────────────────────────────
 echo ""
@@ -62,7 +62,7 @@ scp "${SERVER}:${REMOTE_DIR}/env_cfg.pkl" "${LOCAL_LOGS}/env_cfg.pkl" && \
 
 # ── Download latest checkpoint (for resume) ───────────────────────────────────
 echo ""
-echo "Downloading latest checkpoint (for visualization/resume)..."
+echo "Downloading latest checkpoint..."
 LATEST=$(ssh "$SERVER" "ls -t ${REMOTE_DIR}/checkpoints/*.zip 2>/dev/null | head -1" </dev/null)
 if [ -n "$LATEST" ]; then
     scp "${SERVER}:${LATEST}" "${LOCAL_LOGS}/checkpoints/" && \
@@ -73,7 +73,7 @@ fi
 
 # ── Sync TensorBoard logs ──────────────────────────────────────────────────────
 echo ""
-echo "Syncing TensorBoard logs (for local visualization)..."
+echo "Syncing TensorBoard logs..."
 rsync -avz --progress \
     "${SERVER}:/data21tb/huyhoang/openarm_train_ws/logs_openarm/tensorboard/" \
     "${LOCAL_LOGS}/tensorboard/" && \
@@ -88,7 +88,6 @@ if [ -d "${LOCAL_LOGS}/tensorboard" ] && [ "$(ls -A "${LOCAL_LOGS}/tensorboard" 
         echo "  🚀 Launching TensorBoard at http://localhost:6007 ..."
         echo "     (Press Ctrl+C to stop)"
         echo ""
-        # Install tensorboard if not available
         python3 -m tensorboard.main \
             --logdir "${LOCAL_LOGS}/tensorboard" \
             --host 127.0.0.1 \
@@ -114,9 +113,9 @@ ls "${LOCAL_LOGS}/"*.{pt,pkl} 2>/dev/null | while read f; do
 done || echo "     (no model files yet)"
 echo ""
 echo "  ▶ Run demo on your laptop with Isaac Sim:"
-echo "     cd ${SCRIPT_DIR}/src/isaacsim_setup/"
+echo "     cd ${SCRIPT_DIR}/"
 echo "     /path/to/isaac-sim-standalone/python.sh isaaclab_demo.py \\"
-echo "         --model-path ./logs/best_policy.pt"
+echo "         --model_path ./logs/best_policy.pt"
 echo ""
 echo "  📊 View TensorBoard locally:"
 echo "     tensorboard --logdir ${LOCAL_LOGS}/tensorboard --port 6007"

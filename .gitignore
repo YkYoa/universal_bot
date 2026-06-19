@@ -19,3 +19,16 @@ __pycache__/
 .DS_Store
 *.swp
 *.swo
+
+# Isaac Lab / RL Training artifacts
+**/logs/
+**/tensorboard/
+*.pt
+*.zip
+*.pkl
+*.patched
+
+# Large USD assets
+*.usda
+
+
