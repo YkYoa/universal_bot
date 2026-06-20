@@ -128,9 +128,9 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
 
     z_unit = torch.tensor([0.0, 0.0, 1.0], device=env.device).repeat(env.num_envs, 1)
     y_unit = torch.tensor([0.0, 1.0, 0.0], device=env.device).repeat(env.num_envs, 1)
-    hand_z_w = quat_apply(hand_quat_w, z_unit)
-    bottle_y_w = quat_apply(bottle_quat_w, y_unit)
-    alignment = torch.abs(torch.sum(hand_z_w * bottle_y_w, dim=-1)) ** 2
+    hand_y_w = quat_apply(hand_quat_w, y_unit)
+    bottle_z_w = quat_apply(bottle_quat_w, z_unit)
+    alignment = torch.abs(torch.sum(hand_y_w * bottle_z_w, dim=-1)) ** 2
 
     return {
         "origins": origins,

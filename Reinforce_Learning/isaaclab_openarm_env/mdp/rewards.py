@@ -58,7 +58,8 @@ def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
     r_open_grip = torch.zeros(env.num_envs, device=env.device)
 
     if is_stage0.any():
-        r_reach[is_stage0] = torch.exp(-5.0 * dist_ee_grasp[is_stage0]) * 5.0
+        # Combination of linear and exponential reaching reward to guarantee dense gradients at all distances
+        r_reach[is_stage0] = (1.0 - dist_ee_grasp[is_stage0]) * 3.0 + torch.exp(-5.0 * dist_ee_grasp[is_stage0]) * 2.0
 
         milestones = (
             (dist_ee_grasp < 0.20).float() * 1.0 +
@@ -74,16 +75,15 @@ def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
             min=-1.5, max=3.0
         )
 
+        # Dense vertical alignment gradient (less aggressive exponential decay + linear component)
         z_error = torch.abs(ee_pos[:, 2] - grasp_target_pos[:, 2])
-        r_z_align[is_stage0] = torch.exp(-12.0 * z_error[is_stage0]) * 4.0
+        r_z_align[is_stage0] = (1.0 - z_error[is_stage0]) * 2.0 + torch.exp(-5.0 * z_error[is_stage0]) * 2.0
 
-        near_bottle = (dist_ee_grasp < 0.25)
-        aligned_envs = is_stage0 & near_bottle
-        r_align[aligned_envs] = alignment[aligned_envs] * 1.0
+        # Encourage vertical gripper alignment during the entire Reach stage (Stage 0)
+        r_align[is_stage0] = alignment[is_stage0] * 5.0
 
-        physically_touching = (dist_ee_grasp < 0.15)
-        early_squeeze_envs = is_stage0 & physically_touching
-        r_open_grip[early_squeeze_envs] = (1.0 - gripper_state[early_squeeze_envs]) * 4.0
+        # Encourage keeping the gripper open during the entire Reach stage (Stage 0)
+        r_open_grip[is_stage0] = (1.0 - gripper_state[is_stage0]) * 2.0
 
         # Curriculum transition 0 -> 1
         near_grasp = (dist_ee_grasp < 0.15)
@@ -103,7 +103,11 @@ def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
     r_grasp_bonus = torch.zeros(env.num_envs, device=env.device)
 
     if is_stage1.any():
-        r_reach[is_stage1] = torch.exp(-5.0 * dist_ee_grasp[is_stage1]) * 1.0
+        # Keep same reach reward format for consistency, scaled down to matches Stage 1's weight of 1.0
+        r_reach[is_stage1] = ((1.0 - dist_ee_grasp[is_stage1]) * 3.0 + torch.exp(-5.0 * dist_ee_grasp[is_stage1]) * 2.0) * 0.2
+
+        # Encourage vertical gripper alignment during grasping/lifting (Stage 1) to prevent tilt
+        r_align[is_stage1] = alignment[is_stage1] * 2.0
 
         in_contact = (dist_ee_grasp < 0.15)
         squeeze_envs = is_stage1 & in_contact
