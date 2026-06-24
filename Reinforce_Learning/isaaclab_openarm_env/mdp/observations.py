@@ -31,6 +31,7 @@ def get_apple_pick_place_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
     """
     check_init_buffers(env)
     s = compute_state(env)
+    env._last_state = s
 
     # Fetch joint states
     q = env._robot.data.joint_pos[:, env._arm_joint_ids]
@@ -40,12 +41,27 @@ def get_apple_pick_place_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
     wrist_pos_w = env._robot.data.body_pos_w[:, env._ee_body_id, :]
     wrist_quat_w = env._robot.data.body_quat_w[:, env._ee_body_id, :]
 
-    if hasattr(env, "_ee_markers") and env._ee_markers is not None:
-        env._ee_markers.visualize(wrist_pos_w, wrist_quat_w)
-    if hasattr(env, "_tcp_markers") and env._tcp_markers is not None:
-        env._tcp_markers.visualize(s["ee_world"], s["hand_quat_w"])
-    if hasattr(env, "_bottle_markers") and env._bottle_markers is not None:
-        env._bottle_markers.visualize(s["bottle_world"], s["bottle_quat_w"])
+    # Only update markers in GUI/demo mode (few environments) to prevent multi-threading deadlocks during headless training
+    if env.num_envs <= 16:
+        if hasattr(env, "_tcp_markers") and env._tcp_markers is not None:
+            env._tcp_markers.visualize(s["ee_world"], s["hand_quat_w"])
+        if hasattr(env, "_bottle_markers") and env._bottle_markers is not None:
+            env._bottle_markers.visualize(s["bottle_world"], s["bottle_quat_w"])
+
+    # Dynamic active target vector based on current curriculum stage:
+    # Stage 0: hover target above bottle
+    # Stage 1: grasp point at bottle neck
+    # Stage 2: bowl position (transport phase)
+    ee_to_target = torch.zeros_like(s["ee_to_grasp"])
+    stage = env._stage
+    
+    is_stage0 = (stage == 0)
+    is_stage1 = (stage == 1)
+    is_stage2 = (stage == 2)
+    
+    ee_to_target[is_stage0] = s["ee_to_grasp"][is_stage0]
+    ee_to_target[is_stage1] = (s["grasp_pos"] - s["ee_pos"])[is_stage1]
+    ee_to_target[is_stage2] = (s["bowl_pos"] - s["ee_pos"])[is_stage2]
 
     # Curriculum Stage representation as a normalized float
     stage_obs = (env._stage.float() / 2.0).unsqueeze(-1)
@@ -61,7 +77,7 @@ def get_apple_pick_place_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
         q,                     # [0:7]
         dq,                    # [7:14]
         s["ee_pos"],           # [14:17]
-        s["ee_to_grasp"],      # [17:20]
+        ee_to_target,          # [17:20]
         s["bottle_to_bowl"],   # [20:23]
         gripper_state,         # [23]
         clearance_obs,         # [24]
@@ -70,5 +86,10 @@ def get_apple_pick_place_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
 
     if torch.isnan(obs).any():
         print("[WARNING] Observation contains NaNs!")
+        if torch.isnan(q).any(): print(f"  -> NaN in q (joint pos): {q}")
+        if torch.isnan(dq).any(): print(f"  -> NaN in dq (joint vel): {dq}")
+        if torch.isnan(s["ee_pos"]).any(): print(f"  -> NaN in ee_pos: {s['ee_pos']}")
+        if torch.isnan(s["ee_to_grasp"]).any(): print(f"  -> NaN in ee_to_grasp: {s['ee_to_grasp']}")
+        if torch.isnan(s["bottle_to_bowl"]).any(): print(f"  -> NaN in bottle_to_bowl: {s['bottle_to_bowl']}")
 
     return obs

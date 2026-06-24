@@ -59,6 +59,7 @@ def reset_robot(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
     env._stage[env_ids] = STAGE_REACH
     env._steps_near_grasp[env_ids] = 0
     env._steps_bottle_lifted[env_ids] = 0
+    env._steps_hovering_in_grasp[env_ids] = 0
     env._prev_dist_ee_bottle[env_ids] = 1.0
     env._prev_dist_bottle_bowl[env_ids] = 1.0
 

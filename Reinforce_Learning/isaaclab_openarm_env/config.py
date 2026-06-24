@@ -91,8 +91,8 @@ class OpenArmSceneCfg(InteractiveSceneCfg):
             ),
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 enabled_self_collisions=False,
-                solver_position_iteration_count=12,
-                solver_velocity_iteration_count=1,
+                solver_position_iteration_count=16,
+                solver_velocity_iteration_count=4,
                 fix_root_link=True,
             ),
         ),
@@ -197,11 +197,17 @@ class RewardsCfg:
     )
 
 
+from isaaclab.envs.mdp import time_out
+
 @configclass
 class TerminationsCfg:
     """Termination manager configuration."""
     success = TerminationTermCfg(
         func=mdp.success_termination,
+    )
+    time_out = TerminationTermCfg(
+        func=time_out,
+        time_out=True,
     )
 
 

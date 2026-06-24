@@ -185,6 +185,9 @@ def spawn_qvic_with_physics(prim_path: str, cfg: sim_utils.UsdFileCfg, translati
             if table_prim.HasAPI(UsdPhysics.RigidBodyAPI):
                 table_prim.RemoveAPI(UsdPhysics.RigidBodyAPI)
                 print(f"[ApplePickPlaceEnv] Stripped Table rigid body physics: {table_path}")
+            # Disable collision on the table to prevent static-intersection explosions with the robot base
+            table_prim.CreateAttribute("physics:collisionEnabled", Sdf.ValueTypeNames.Bool).Set(False)
+            print(f"[ApplePickPlaceEnv] Disabled Table collision: {table_path}")
 
     def enable_collisions(p, approximation_type="convexHull"):
         if not p.IsValid():

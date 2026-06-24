@@ -80,8 +80,17 @@ patch_qvic_usd_once()
 def find_latest_checkpoint(log_dir: str) -> str | None:
     """Scan for the most recent rl_model_*_steps.zip checkpoint."""
     pattern = os.path.join(log_dir, "checkpoints", "rl_model_*_steps.zip")
-    files = sorted(glob.glob(pattern))
-    return files[-1] if files else None
+    files = glob.glob(pattern)
+    if not files:
+        return None
+    # Sort numerically by step count
+    def get_steps(f):
+        try:
+            return int(os.path.basename(f).split("rl_model_")[1].split("_steps.zip")[0])
+        except (IndexError, ValueError):
+            return 0
+    files.sort(key=get_steps)
+    return files[-1]
 
 
 def make_env(num_envs: int) -> Sb3VecEnvWrapper:

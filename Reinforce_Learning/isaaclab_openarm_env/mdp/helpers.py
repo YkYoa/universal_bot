@@ -56,6 +56,15 @@ def check_init_buffers(env: ManagerBasedRLEnv):
     except Exception:
         env._hand_body_id = env._ee_body_id
 
+    # Resolve dynamic TCP offset value based on the identified hand body link
+    hand_body_name = env._robot.data.body_names[env._hand_body_id]
+    if hand_body_name == "openarm_left_hand":
+        env._tcp_offset_val = 0.08
+    elif hand_body_name == "openarm_left_link7":
+        env._tcp_offset_val = 0.1801
+    else:
+        env._tcp_offset_val = 0.0
+
     # Nominal positions and offsets
     env._bottle_nominal_pos = torch.tensor([0.53, 0.40, 0.64], device=env.device)
     env._bowl_nominal_pos = torch.tensor([0.58, 0.22, 0.67], device=env.device)
@@ -68,6 +77,7 @@ def check_init_buffers(env: ManagerBasedRLEnv):
     env._stage = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
     env._steps_near_grasp = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
     env._steps_bottle_lifted = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+    env._steps_hovering_in_grasp = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
 
     env._prev_dist_ee_bottle = torch.full((env.num_envs,), 1.0, device=env.device)
     env._prev_dist_bottle_bowl = torch.full((env.num_envs,), 1.0, device=env.device)
@@ -76,9 +86,9 @@ def check_init_buffers(env: ManagerBasedRLEnv):
     from isaaclab.markers import VisualizationMarkers
     from isaaclab.markers.config import FRAME_MARKER_CFG
     
-    ee_marker_cfg = FRAME_MARKER_CFG.copy()
-    ee_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
-    env._ee_markers = VisualizationMarkers(ee_marker_cfg.replace(prim_path="/Visuals/ee_marker"))
+    # ee_marker_cfg = FRAME_MARKER_CFG.copy()
+    # ee_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+    # env._ee_markers = VisualizationMarkers(ee_marker_cfg.replace(prim_path="/Visuals/ee_marker"))
 
     tcp_marker_cfg = FRAME_MARKER_CFG.copy()
     tcp_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
@@ -95,7 +105,7 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
 
     hand_pos_w = env._robot.data.body_pos_w[:, env._hand_body_id, :]
     hand_quat_w = env._robot.data.body_quat_w[:, env._hand_body_id, :]
-    tcp_offset = torch.tensor([0.0, 0.0, 0.08], device=env.device).repeat(env.num_envs, 1)
+    tcp_offset = torch.tensor([0.0, 0.0, env._tcp_offset_val], device=env.device).repeat(env.num_envs, 1)
     ee_world = hand_pos_w + quat_apply(hand_quat_w, tcp_offset)
     ee_pos = ee_world - origins
 
@@ -108,15 +118,23 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
 
     bottle_resting_z = 0.626
 
-    bottle_pos_for_target = bottle_pos.clone()
-    bottle_pos_for_target[:, 2] = torch.clamp(bottle_pos_for_target[:, 2], min=bottle_resting_z)
-    grasp_target_pos = bottle_pos_for_target
-    grasp_target_pos[:, 2] += 0.101
+    bottle_pos_floor = bottle_pos.clone()
+    bottle_pos_floor[:, 2] = torch.clamp(bottle_pos_floor[:, 2], min=bottle_resting_z)
+
+    # Stage 0 approach target: 15cm above bottle (safe hover before grasping)
+    grasp_target_pos = bottle_pos_floor.clone()
+    grasp_target_pos[:, 2] += 0.15
+
+    # Stage 1 grasp target: at bottle upper-body/neck (where fingers close safely above table)
+    grasp_pos = bottle_pos_floor.clone()
+    grasp_pos[:, 2] += 0.08   # 8cm above resting z → at bottle neck
 
     ee_to_grasp = grasp_target_pos - ee_pos
+    ee_to_grasp_body = grasp_pos - ee_pos          # vector to the actual grasp point
     bottle_to_bowl = bowl_pos - bottle_pos
 
     dist_ee_grasp = torch.norm(ee_to_grasp, dim=-1)
+    dist_ee_bottle = torch.norm(ee_to_grasp_body, dim=-1)   # distance to bottle body
     dist_bottle_bowl = torch.norm(bottle_to_bowl, dim=-1)
 
     table_clearance = ee_pos[:, 2] - env._table_z
@@ -142,9 +160,11 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
         "bottle_pos": bottle_pos,
         "bowl_pos": bowl_pos,
         "grasp_target_pos": grasp_target_pos,
+        "grasp_pos": grasp_pos,
         "ee_to_grasp": ee_to_grasp,
         "bottle_to_bowl": bottle_to_bowl,
         "dist_ee_grasp": dist_ee_grasp,
+        "dist_ee_bottle": dist_ee_bottle,
         "dist_bottle_bowl": dist_bottle_bowl,
         "table_clearance": table_clearance,
         "bottle_lift": bottle_lift,

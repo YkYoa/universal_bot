@@ -65,13 +65,25 @@ class OpenArmActionTerm(ActionTerm):
     def apply_actions(self):
         # Calculate and write arm target positions
         current_q = self._robot.data.joint_pos[:, self._arm_joint_ids]
-        delta_q = self._processed_actions[:, :7] * 0.08
+        
+        # Get control time step (decimation * sim_dt = 2 * (1/120) = 1/60s)
+        dt = self._env.cfg.sim.dt * self._env.cfg.decimation
+        
+        # Velocity limits from joint_limits.yaml:
+        # joint 1-4: 2.175 rad/s -> max step delta = 2.175 * dt
+        # joint 5-7: 2.610 rad/s -> max step delta = 2.610 * dt
+        max_vel = torch.tensor([2.175, 2.175, 2.175, 2.175, 2.610, 2.610, 2.610], device=self._robot.device)
+        max_delta = max_vel * dt
+        
+        delta_q = self._processed_actions[:, :7] * max_delta
         target_q = current_q + delta_q
         self._robot.set_joint_position_target(target_q, joint_ids=self._arm_joint_ids)
 
-        # Calculate and write gripper target positions (finger_pos in [0.0, 0.044])
+        # Calculate and write gripper target positions based on gripper_state
+        # Open (gripper_state = 0) -> finger_pos = 0.044
+        # Closed (gripper_state = 1) -> finger_pos = 0.0
         finger_pos = (1.0 - self.gripper_state) * 0.044
-        finger_targets = finger_pos.expand(-1, 2)
+        finger_targets = finger_pos.repeat(1, 2)
         self._robot.set_joint_position_target(finger_targets, joint_ids=self._gripper_joint_ids)
 
 
