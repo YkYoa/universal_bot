@@ -14,6 +14,7 @@
 
 import torch
 from isaaclab.envs import ManagerBasedRLEnv
+from isaaclab.utils.math import quat_apply
 from .helpers import check_init_buffers, compute_state, STAGE_REACH, STAGE_GRASP, STAGE_PLACE
 
 
@@ -37,10 +38,11 @@ def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
     table_clearance = s["table_clearance"]
     bottle_lift = s["bottle_lift"]
     is_lifted = s["is_lifted"]
-    alignment = s["alignment"]
     ee_pos = s["ee_pos"]
     grasp_target_pos = s["grasp_target_pos"]
     grasp_pos = s["grasp_pos"]
+    hand_quat_w = s["hand_quat_w"]       # needed for inline alignment computation
+    bottle_quat_w = s["bottle_quat_w"]   # needed for inline alignment computation
 
     # Increment environment step counter
     env.step_counter += 1
@@ -102,6 +104,21 @@ def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
     # ─── STAGE 1: GRASP ───────────────────────────────────────────────────────
     # In Stage 1 the arm must DESCEND from the hover point down to the bottle
     # body and close the gripper AROUND the bottle before lifting.
+    z_unit = torch.tensor([0.0, 0.0, 1.0], device=env.device).repeat(env.num_envs, 1)
+    y_unit = torch.tensor([0.0, 1.0, 0.0], device=env.device).repeat(env.num_envs, 1)
+    hand_y_w = quat_apply(hand_quat_w, y_unit)
+    bottle_z_w = quat_apply(bottle_quat_w, z_unit)
+
+    # Approach-perpendicular alignment: fingers (hand Y-axis) should be perpendicular
+    # to the EE→bottle approach direction. Maximized (=1) when hand_y is perpendicular
+    # to approach vector → fingers wrap around the bottle correctly.
+    # Old metric |hand_y · bottle_z|² rewarded fingers pointing VERTICAL (wrong for grasping).
+    approach_vec = grasp_pos - ee_pos                                     # EE → grasp point
+    approach_norm = torch.norm(approach_vec, dim=-1, keepdim=True).clamp(min=1e-6)
+    approach_dir = approach_vec / approach_norm                            # unit vector
+    hand_y_dot_approach = torch.abs(torch.sum(hand_y_w * approach_dir, dim=-1))
+    alignment = 1.0 - hand_y_dot_approach ** 2  # 1=fingers perpendicular to approach (correct)
+
     r_squeeze = torch.zeros(env.num_envs, device=env.device)
     r_lift = torch.zeros(env.num_envs, device=env.device)
     r_grasp_bonus = torch.zeros(env.num_envs, device=env.device)
@@ -122,7 +139,7 @@ def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
         #      the 3D r_reach above drives XY alignment first.
         #    This prevents the robot from descending at the wrong XY position.
         lateral_dist = torch.norm(ee_pos[:, :2] - grasp_pos[:, :2], dim=-1)
-        xy_close = (lateral_dist < 0.10)
+        xy_close = (lateral_dist < 0.12)  # 12cm gate: fires z-descent at current ~8cm lateral
         above_grasp_z = torch.clamp(ee_pos[:, 2] - grasp_pos[:, 2], min=0.0)
         z_descent_error = torch.abs(ee_pos[:, 2] - grasp_pos[:, 2])
 
@@ -136,13 +153,19 @@ def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
             torch.exp(-10.0 * z_descent_error[is_stage1 & ~xy_close]) * 1.0
         )
 
-        # 3. Squeeze reward fires only when TCP is physically at the bottle body
+        # 3. Squeeze reward fires only when TCP is physically at the bottle body.
+        #    Boosted 8 → 30 to overcome the strong "open gripper" prior from prior training.
         at_bottle = (dist_ee_bottle < 0.06)
         squeeze_envs = is_stage1 & at_bottle
-        r_squeeze[squeeze_envs] = gripper_state[squeeze_envs] * 8.0
+        r_squeeze[squeeze_envs] = gripper_state[squeeze_envs] * 30.0
 
-        # Encourage keeping the gripper open during Stage 1 until we are at the bottle body
-        r_open_grip[is_stage1 & ~at_bottle] = (1.0 - gripper_state[is_stage1 & ~at_bottle]) * 2.0
+        # Gripper orientation: reward fingers (hand Y-axis) being perpendicular to the
+        # approach direction. Fires in Stage 1 only (not Stage 0 to avoid disturbing reach).
+        r_align[is_stage1] = alignment[is_stage1] * 4.0
+
+        # NOTE: r_open_grip for Stage 1 is intentionally removed.
+        # Keeping it (even gated to ~at_bottle) created a 50M+ step "always open" prior
+        # so strong that r_squeeze=8 could never overcome it in brief contact windows.
 
         # 4. Lift reward: exponential + linear for dense gradient
         target_lift = 0.05
@@ -172,7 +195,7 @@ def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
         env._steps_hovering_in_grasp[still_hovering] += 1
         env._steps_hovering_in_grasp[~still_hovering & is_stage1] = 0
 
-        demote_to_reach = is_stage1 & (env._steps_hovering_in_grasp >= 150)
+        demote_to_reach = is_stage1 & (env._steps_hovering_in_grasp >= 80)  # faster cycling → more exploration
         env._stage[demote_to_reach] = STAGE_REACH
         env._steps_near_grasp[demote_to_reach] = 0
         env._steps_hovering_in_grasp[demote_to_reach] = 0

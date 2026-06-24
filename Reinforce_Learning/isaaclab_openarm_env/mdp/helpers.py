@@ -144,11 +144,9 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
     # Fetch gripper state from action term via private _terms dictionary
     gripper_state = env.action_manager._terms["openarm_action"].gripper_state[:, 0]
 
-    z_unit = torch.tensor([0.0, 0.0, 1.0], device=env.device).repeat(env.num_envs, 1)
-    y_unit = torch.tensor([0.0, 1.0, 0.0], device=env.device).repeat(env.num_envs, 1)
-    hand_y_w = quat_apply(hand_quat_w, y_unit)
-    bottle_z_w = quat_apply(bottle_quat_w, z_unit)
-    alignment = torch.abs(torch.sum(hand_y_w * bottle_z_w, dim=-1)) ** 2
+    # NOTE: alignment is now computed in rewards.py with the corrected approach-perpendicular
+    # metric. Keeping the key in the return dict as zeros for backward compatibility.
+    alignment = torch.zeros(env.num_envs, device=env.device)
 
     return {
         "origins": origins,
