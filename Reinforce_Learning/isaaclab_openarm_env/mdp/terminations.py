@@ -15,28 +15,47 @@
 import torch
 from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.utils.math import sample_uniform
-from .helpers import check_init_buffers, STAGE_REACH, STAGE_PLACE
+from .helpers import check_init_buffers, reset_action_terms, STAGE_REACH, STAGE_GRASP
 
 
 def success_termination(env: ManagerBasedRLEnv) -> torch.Tensor:
-    """Returns True if the success criteria are met: stage 2 reached, bottle inside bowl, gripper released."""
+    """Phase 1: TCP hold at bottle. Phase 2+: bottle lifted with gripper closed."""
     check_init_buffers(env)
-    origins = env.scene.env_origins
-    bottle_pos = env._bottle.data.root_pos_w + env._bottle_offset - origins
-    bowl_pos = env._bowl.data.root_pos_w + env._bowl_offset - origins
+    task_phase = getattr(env.cfg, "task_phase", 1)
+    if task_phase <= 1:
+        hold_steps = getattr(env.cfg, "success_hold_steps", 5)
+        return env._steps_in_contact >= hold_steps
+    lift_hold = getattr(env.cfg, "grasp_lift_hold_steps", 5)
+    return env._steps_bottle_lifted >= lift_hold
 
-    dist_bottle_bowl = torch.norm(bottle_pos - bowl_pos, dim=-1)
-    
-    # Fetch gripper state via private _terms dictionary
-    gripper_state = env.action_manager._terms["openarm_action"].gripper_state[:, 0]
-    gripper_open = (gripper_state < 0.4)
-    is_lifted = (bottle_pos[:, 2] > 0.656)
 
-    place_dist_threshold = getattr(env.cfg, "place_dist_threshold", 0.10)
-    
-    # Success condition
-    terminated = (env._stage == STAGE_PLACE) & (dist_bottle_bowl < place_dist_threshold) & gripper_open & is_lifted
-    return terminated
+def tipped_bottle_termination(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Phase 2+: terminate early when bottle is knocked over beyond recovery.
+
+    Saves the ~700 wasted steps observed when the arm tips the bottle to 90° and
+    the episode has no way to recover. Only fires in GRASP stage so that an upright
+    bottle that hasn't been grasped yet is not incorrectly terminated.
+    """
+    check_init_buffers(env)
+    task_phase = getattr(env.cfg, "task_phase", 1)
+    if task_phase < 2:
+        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    if not hasattr(env, "_last_state") or env._last_state is None:
+        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+
+    max_tilt = getattr(env.cfg, "bottle_tipped_termination_deg", 60.0)
+    tilt = env._last_state["bottle_tilt_deg"]
+    in_grasp = env._stage == STAGE_GRASP
+
+    # Track consecutive tipped steps to avoid premature termination from transient tilts
+    if not hasattr(env, "_steps_bottle_tipped"):
+        env._steps_bottle_tipped = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+    tipped_now = in_grasp & (tilt > max_tilt)
+    env._steps_bottle_tipped[tipped_now] += 1
+    env._steps_bottle_tipped[~tipped_now] = 0
+
+    min_steps = getattr(env.cfg, "bottle_tipped_min_steps", 5)
+    return env._steps_bottle_tipped >= min_steps
 
 
 def reset_robot(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
@@ -51,15 +70,25 @@ def reset_robot(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
     env._robot.write_joint_state_to_sim(default_joint_pos, default_joint_vel, env_ids=env_ids)
     env._robot.reset(env_ids)
 
-    # Reset action tracking states via private _terms dictionary
-    env.action_manager._terms["openarm_action"]._raw_actions[env_ids] = 0.0
-    env.action_manager._terms["openarm_action"].gripper_state[env_ids] = 0.0
+    reset_action_terms(env, env_ids)
 
-    # Reset stages and history distance indicators
     env._stage[env_ids] = STAGE_REACH
     env._steps_near_grasp[env_ids] = 0
     env._steps_bottle_lifted[env_ids] = 0
     env._steps_hovering_in_grasp[env_ids] = 0
+    env._steps_in_contact[env_ids] = 0
+    env._steps_in_grasp[env_ids] = 0
+    if hasattr(env, "_grasp_descent_ref_dist"):
+        env._grasp_descent_ref_dist[env_ids] = 1.0
+    if hasattr(env, "_pre_lift_hold_steps"):
+        env._pre_lift_hold_steps[env_ids] = 0
+    if hasattr(env, "_steps_bottle_tipped"):
+        env._steps_bottle_tipped[env_ids] = 0
+    env._dbg_prev_lift_steps = 0
+    env._dbg_logged_grip = False
+    env._dbg_logged_lift = False
+    if hasattr(env, "_in_contact_zone"):
+        env._in_contact_zone[env_ids] = False
     env._prev_dist_ee_bottle[env_ids] = 1.0
     env._prev_dist_bottle_bowl[env_ids] = 1.0
 
@@ -83,6 +112,13 @@ def reset_bottle(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
     bottle_root_state[:, 7:] = 0.0  # zero out linear/angular velocities
     env._bottle.write_root_state_to_sim(bottle_root_state, env_ids=env_ids)
     env._bottle.reset(env_ids)
+
+    if not hasattr(env, "_bottle_spawn_env_pos"):
+        env._bottle_spawn_env_pos = torch.zeros(env.num_envs, 3, device=env.device)
+    env._bottle_spawn_env_pos[env_ids] = bottle_pos
+    if not hasattr(env, "_bottle_rest_z"):
+        env._bottle_rest_z = env._bottle_nominal_pos[2].expand(env.num_envs).clone()
+    env._bottle_rest_z[env_ids] = bottle_pos[:, 2]
 
 
 def reset_bowl(env: ManagerBasedRLEnv, env_ids: torch.Tensor):

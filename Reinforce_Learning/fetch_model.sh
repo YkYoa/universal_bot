@@ -1,123 +1,73 @@
 #!/bin/bash
 # =============================================================================
-# fetch_model.sh
-# Download the trained Isaac Lab model from the server to your local machine,
-# then optionally view results in TensorBoard locally.
+# fetch_model.sh — Download trained policy from server → local logs/
 #
 # Usage:
-#   ./fetch_model.sh [user@server_ip]
+#   ./fetch_model.sh [user@server] [run_name]
 #
-# Example:
-#   ./fetch_model.sh naiscorp-4090
+# Examples:
+#   ./fetch_model.sh naiscorp-4090 train_osc              # Phase 1 reach
+#   ./fetch_model.sh naiscorp-4090 train_osc_phase2    # Phase 2 reach+grasp+lift
 #
-# Downloads to: Reinforce_Learning/logs/
+# Saves:
+#   logs/best_policy_<run_name>.pt   — named copy (keeps history)
+#   logs/active_policy.pt            — symlink → use this for demo
 # =============================================================================
-set -e
+set -euo pipefail
 
-SERVER="${1:-naiscorp-4090}"
-SERVER_USER="$(echo "$SERVER" | cut -d@ -f1)"
-SERVER_IP="$(echo "$SERVER" | cut -d@ -f2)"
-REMOTE_DIR="/data21tb/huyhoang/openarm_train_ws/logs_openarm/train"
+SERVER="${1:-naiscorp@naiscorp-4090}"
+RUN_NAME="${2:-train_osc_phase2}"
+OPENARM_REMOTE_ROOT="${OPENARM_REMOTE_ROOT:-/data21tb/users/huyhoang/openarm_train_ws}"
+REMOTE_DIR="${OPENARM_REMOTE_ROOT}/logs_openarm/${RUN_NAME}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_LOGS="${SCRIPT_DIR}/logs"
+NAMED_PT="${LOCAL_LOGS}/best_policy_${RUN_NAME}.pt"
+ACTIVE_PT="${LOCAL_LOGS}/active_policy.pt"
+CKPT_DIR="${LOCAL_LOGS}/checkpoints_${RUN_NAME}"
 
 echo "============================================================"
-echo "  Fetching Isaac Lab model from server (Manager-Based RL)"
+echo "  Fetch policy: ${RUN_NAME}"
 echo "  Server : $SERVER:${REMOTE_DIR}"
-echo "  Local  : ${LOCAL_LOGS}"
+echo "  Local  : ${NAMED_PT}"
+echo "         → ${ACTIVE_PT} (symlink for demo)"
 echo "============================================================"
 
-mkdir -p "${LOCAL_LOGS}/checkpoints"
+mkdir -p "${CKPT_DIR}"
 mkdir -p "${LOCAL_LOGS}/tensorboard"
 
-# ── Check if training is still running ───────────────────────────────────────
-echo ""
-echo "Checking training status on server..."
 IS_RUNNING=$(ssh "$SERVER" "pgrep -f 'isaaclab_train\.p[y]' > /dev/null 2>&1 && echo yes || echo no" </dev/null)
 if [ "$IS_RUNNING" = "yes" ]; then
-    echo "  ⚠️  Training is still running on the server."
-    echo "  You can still fetch intermediate checkpoints below."
+    echo "  ⚠️  Training still running — fetching latest checkpoint."
 else
-    echo "  ✅ Training has completed (or was stopped)."
+    echo "  ✅ Training not running."
 fi
 
-# ── Download best policy ────────────────────────────────────────────────────
 echo ""
-echo "Downloading best policy checkpoint..."
-scp "${SERVER}:${REMOTE_DIR}/best_policy.pt" "${LOCAL_LOGS}/best_policy.pt" && \
-    echo "  ✅ best_policy.pt" || echo "  ⚠️  best_policy.pt not found yet"
+echo "Downloading best_policy.pt..."
+if scp "${SERVER}:${REMOTE_DIR}/best_policy.pt" "${NAMED_PT}"; then
+    ln -sf "$(basename "${NAMED_PT}")" "${ACTIVE_PT}"
+    echo "  ✅ ${NAMED_PT}"
+    echo "  ✅ active_policy.pt → best_policy_${RUN_NAME}.pt"
+else
+    echo "  ❌ best_policy.pt not found on server for ${RUN_NAME}"
+    exit 1
+fi
 
-# ── Download final model ──────────────────────────────────────────────────────
 echo ""
-echo "Downloading final model checkpoint..."
-scp "${SERVER}:${REMOTE_DIR}/final_policy.pt" "${LOCAL_LOGS}/final_policy.pt" && \
-    echo "  ✅ final_policy.pt" || echo "  ⚠️  final_policy.pt not found yet"
+scp "${SERVER}:${REMOTE_DIR}/env_cfg.pkl" "${LOCAL_LOGS}/env_cfg_${RUN_NAME}.pkl" 2>/dev/null && \
+    ln -sf "env_cfg_${RUN_NAME}.pkl" "${LOCAL_LOGS}/env_cfg.pkl" && \
+    echo "  ✅ env_cfg.pkl" || echo "  ⚠️  env_cfg.pkl missing"
 
-# ── Download env config (needed to reconstruct env for demo) ─────────────────
-echo ""
-echo "Downloading environment config..."
-scp "${SERVER}:${REMOTE_DIR}/env_cfg.pkl" "${LOCAL_LOGS}/env_cfg.pkl" && \
-    echo "  ✅ env_cfg.pkl" || echo "  ⚠️  env_cfg.pkl not found"
-
-# ── Download latest checkpoint (for resume) ───────────────────────────────────
-echo ""
-echo "Downloading latest checkpoint..."
 LATEST=$(ssh "$SERVER" "ls -t ${REMOTE_DIR}/checkpoints/*.zip 2>/dev/null | head -1" </dev/null)
 if [ -n "$LATEST" ]; then
-    scp "${SERVER}:${LATEST}" "${LOCAL_LOGS}/checkpoints/" && \
-        echo "  ✅ $(basename "$LATEST")" || echo "  ⚠️  Failed to download latest checkpoint"
-else
-    echo "  ⚠️  No checkpoints found yet"
-fi
-
-# ── Sync TensorBoard logs ──────────────────────────────────────────────────────
-echo ""
-echo "Syncing TensorBoard logs..."
-rsync -avz --progress \
-    "${SERVER}:/data21tb/huyhoang/openarm_train_ws/logs_openarm/tensorboard/" \
-    "${LOCAL_LOGS}/tensorboard/" && \
-    echo "  ✅ TensorBoard logs synced" || echo "  ⚠️  TensorBoard logs not found yet"
-
-# ── Offer to open TensorBoard locally ─────────────────────────────────────────
-echo ""
-if [ -d "${LOCAL_LOGS}/tensorboard" ] && [ "$(ls -A "${LOCAL_LOGS}/tensorboard" 2>/dev/null)" ]; then
-    read -rp "Launch TensorBoard locally now? [Y/n]: " launch_tb || true
-    if [[ ! "$launch_tb" =~ ^[Nn]$ ]]; then
-        echo ""
-        echo "  🚀 Launching TensorBoard at http://localhost:6007 ..."
-        echo "     (Press Ctrl+C to stop)"
-        echo ""
-        python3 -m tensorboard.main \
-            --logdir "${LOCAL_LOGS}/tensorboard" \
-            --host 127.0.0.1 \
-            --port 6007 \
-            --reload_interval 5 2>/dev/null || \
-        python3 -m pip install tensorboard -q && \
-        python3 -m tensorboard.main \
-            --logdir "${LOCAL_LOGS}/tensorboard" \
-            --host 127.0.0.1 \
-            --port 6007 \
-            --reload_interval 5
-    fi
+    scp "${SERVER}:${LATEST}" "${CKPT_DIR}/" && \
+        echo "  ✅ latest ckpt → checkpoints_${RUN_NAME}/$(basename "$LATEST")"
 fi
 
 echo ""
-echo "============================================================"
-echo "  ✅ Done! Files saved to:"
-echo "     ${LOCAL_LOGS}/"
+echo "Run demo with THE FILE YOU JUST FETCHED:"
+echo "  ./run_local.sh demo --model ./logs/active_policy.pt --phase 2"
 echo ""
-echo "  📁 Files:"
-ls "${LOCAL_LOGS}/"*.{pt,pkl} 2>/dev/null | while read f; do
-    echo "     $(basename "$f")  ($(du -sh "$f" | cut -f1))"
-done || echo "     (no model files yet)"
-echo ""
-echo "  ▶ Run demo on your laptop with Isaac Sim:"
-echo "     cd ${SCRIPT_DIR}/"
-echo "     /path/to/isaac-sim-standalone/python.sh isaaclab_demo.py \\"
-echo "         --model_path ./logs/best_policy.pt"
-echo ""
-echo "  📊 View TensorBoard locally:"
-echo "     tensorboard --logdir ${LOCAL_LOGS}/tensorboard --port 6007"
-echo "     → open http://localhost:6007"
+echo "  ⚠️  Do NOT use best_policy_osc.pt unless you fetched train_osc (Phase 1 only)."
 echo "============================================================"

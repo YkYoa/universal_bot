@@ -15,7 +15,7 @@
 from .actions import OpenArmActionTerm, OpenArmActionTermCfg
 from .observations import get_apple_pick_place_obs
 from .rewards import compute_curriculum_reward
-from .terminations import success_termination, reset_robot, reset_bottle, reset_bowl
+from .terminations import success_termination, tipped_bottle_termination, reset_robot, reset_bottle, reset_bowl
 
 __all__ = [
     "OpenArmActionTerm",
@@ -23,6 +23,7 @@ __all__ = [
     "get_apple_pick_place_obs",
     "compute_curriculum_reward",
     "success_termination",
+    "tipped_bottle_termination",
     "reset_robot",
     "reset_bottle",
     "reset_bowl",

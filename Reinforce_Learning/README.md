@@ -1,118 +1,235 @@
-# OpenArm RL Pick-and-Place: Commands Guide
+# OpenArm RL — Pick & Place (Isaac Lab + SB3)
 
-This workspace provides a manager-based RL pipeline using **Isaac Lab** and **Stable-Baselines3** for the Apple Pick-and-Place task.
-
----
-
-## 🚀 Quick Command Overview
-
-| Goal | Command | Description |
-| :--- | :--- | :--- |
-| **Deploy** | `./deploy_training.sh [server_ip]` | Sync code & robot assets to high-end GPU server (RTX 4090). |
-| **Fetch** | `./fetch_model.sh [server_ip]` | Download trained models, checkpoints, & TensorBoard logs locally. |
-| **Train (Local)** | `./run_local.sh train` | Run training locally optimized for laptop GPU (RTX 4050). |
-| **Demo (Local)** | `./run_local.sh demo` | Playback & visualize a trained policy locally. |
+Pipeline manager-based RL cho robot OpenArm: **REACH → GRASP → LIFT** chai.
 
 ---
 
-## 💻 1. Local Training & Visual Playback
+## Tổng quan workflow
 
-Use `./run_local.sh` to run training or visualization locally (e.g., on your RTX 4050 laptop).
+| Mục tiêu | Lệnh chính |
+|----------|------------|
+| Deploy code lên server | `./deploy_training.sh [user@server]` |
+| Train trên server (4090) | SSH + `isaaclab_train.py` (xem §2) |
+| Tải model về máy local | `./fetch_model.sh [user@server] [run_name]` |
+| Demo visual local | `./run_local.sh demo --model ./logs/active_policy.pt --phase 2` |
+| Train backup local (4050) | `./run_local.sh train --phase 2 ...` (xem §3) |
 
-### Train Locally
-Runs training in headless mode by default.
-```bash
-./run_local.sh train --envs 16 --steps 1000000
-```
-* **Local Script Options (`./run_local.sh train`):**
-  * `--envs <num>` : Number of parallel environments (default: `16`).
-  * `--steps <num>` : Total training timesteps (default: `1000000`).
-  * `--gui` : Make the Isaac Sim window visible during training (runs headless by default).
-  * `--resume` : Resume from the latest local checkpoint.
-  * `--progress` : Enable tqdm progress bar in terminal.
-
----
-
-### Direct Python Training Options (`isaaclab_train.py`)
-If you are running the python script directly using Isaac Sim's python executable, you can use these arguments:
-```bash
-/path/to/isaacsim/python.sh isaaclab_train.py --num_envs 1024 --timesteps 1000000 --headless
-```
-* **Arguments:**
-  * `--num_envs` / `--num-envs` : Number of parallel environments (default: `1024`).
-  * `--timesteps` : Total training timesteps (default: `1_000_000`).
-  * `--resume` : Resume training from the latest checkpoint.
-  * `--progress` : Enable tqdm progress bar.
-  * `--headless` : Run without opening the local GUI window.
-  * `--log_dir` : Output directory for policies and checkpoints.
-
-### Run Demo (Visual Playback)
-Visualizes your trained model in the local Isaac Sim viewport:
-* **For locally trained models**:
-  ```bash
-  ./run_local.sh demo --model ./logs/train/best_policy.pt
-  ```
-* **For fetched remote server models**:
-  ```bash
-  ./run_local.sh demo --model ./logs/best_policy.pt
-  ```
-
----
-
-## 🖥️ 2. Remote Server Training (RTX 4090)
-
-For high-performance training, deploy to a remote server and run headless.
-
-### Deploy Training to Server
-Compresses and synchronizes the training codebase and robot URDF/USD assets to your server. It also automatically launches a remote TensorBoard server on port `6008`.
-```bash
-./deploy_training.sh user@server_ip
-```
-
-### Start Remote Training
-After deploying, connect to your server to start training in the background (headless). 
-> [!NOTE]
-> Do NOT use the `--progress` flag for background runs, as it will suppress the text logging tables and buffer stdout.
-
-* **Start training from scratch**:
-  ```bash
-  ssh user@server_ip "nohup /data21tb/huyhoang/isaacsim/python.sh /data21tb/huyhoang/openarm_train_ws/Reinforce_Learning/isaaclab_train.py --headless --num-envs 1024 --timesteps 50000000 --log_dir /data21tb/huyhoang/openarm_train_ws/logs_openarm/train > /data21tb/huyhoang/openarm_train_ws/logs_openarm/train.log 2>&1 &"
-  ```
-* **Resume training from the latest checkpoint**:
-  ```bash
-  ssh user@server_ip "nohup /data21tb/huyhoang/isaacsim/python.sh /data21tb/huyhoang/openarm_train_ws/Reinforce_Learning/isaaclab_train.py --headless --resume --num-envs 1024 --timesteps 100000000 --log_dir /data21tb/huyhoang/openarm_train_ws/logs_openarm/train > /data21tb/huyhoang/openarm_train_ws/logs_openarm/train.log 2>&1 &"
-  ```
-
-* **See if training is running**:
-  ```bash
-  ssh user@server_ip "ps aux | grep isaaclab_train.py"
-  ```
-* **Monitor logs**:
-  ```bash
-  ssh user@server_ip "tail -f /data21tb/huyhoang/openarm_train_ws/logs_openarm/train.log"
-  ```
-* **Stop training**:
-  ```bash
-  ssh user@server_ip "pgrep -u \$(whoami) -f 'isaaclab_train.py' | grep -v '\$\$' | xargs -r kill -9"
-  ```
-
----
-
-## 📥 3. Fetch Results to Local Machine
-
-Once training is complete (or to check intermediate progress), download the policy weights, logs, and config back to your laptop:
+**Biến môi trường (tùy chọn):**
 
 ```bash
-./fetch_model.sh user@server_ip
+export OPENARM_REMOTE_ROOT=/data21tb/users/huyhoang/openarm_train_ws
+export ISAAC_SIM_PYTHON=/path/to/isaacsim/python.sh
 ```
-* Downloads `best_policy.pt`, `final_policy.pt`, `env_cfg.pkl`, checkpoints, and TensorBoard logs to `./logs/`.
-* Offers to launch **TensorBoard locally** on `http://localhost:6007` automatically.
 
 ---
 
-## 🔬 Debugging RL Values & Collisions
+## Làm từng công đoạn (khuyến nghị)
 
-During local playback (`./run_local.sh demo`), the console is configured to be silent during smooth flight but will output real-time **Critic/Q-Value Estimates** and the **exact 3D coordinates `[X, Y, Z]` of the Tool Center Point (TCP)** whenever transition or collision events happen:
-* **Table Collisions**: Triggers when the tool-center point contacts/penetrates the table.
-* **Object Contact**: Triggers when the gripper reaches grasping range with the apple/bottle.
-* **Object Knocked Over**: Triggers if the bottle tilts $>15^\circ$.
+Dùng `--stage` để bật đúng phần gate/assist. **Demo và train dùng cùng file gate** → `isaaclab_openarm_env/phase2_overrides.py`.
+
+| Công đoạn | `--stage` | Mục tiêu |
+|-----------|-----------|----------|
+| 1. REACH | `reach` | Tay tới chai, căn top↓ / z_f, vào GRASP |
+| 2. GRASP | `grasp` | Hạ ngón, latch, đóng grip (`grip:1.0`), chưa nhấc |
+| 3. LIFT | `all` hoặc `lift` | Nhấc chai Δz ≥ 3cm, giữ 5 bước |
+
+### Demo từng công đoạn (local)
+
+```bash
+cd Reinforce_Learning
+
+# Công đoạn 1 — chỉ REACH (phase 1, không cần --stage)
+./run_local.sh demo --model ./logs/active_policy.pt --phase 1
+
+# Công đoạn 2 — REACH + GRASP, chưa bật lift assist
+./run_local.sh demo --model ./logs/active_policy.pt --phase 2 --stage grasp
+
+# Công đoạn 3 — đủ pipeline (reach + grasp + lift)
+./run_local.sh demo --model ./logs/active_policy.pt --phase 2 --stage all
+# hoặc tương đương:
+./run_local.sh demo --model ./logs/active_policy.pt --phase 2 --assist
+```
+
+**Log GRASP cần thấy:** `desc↓` → `dh:12/12L` → `grip:1.00` với `z_f < 0.014`  
+**Log LIFT cần thấy:** `st:2/2` → `ph:2/2` → `lift↑` → `lift > +0.03m`
+
+### Chỉnh gate (khi cần tune)
+
+**Chỉ sửa một file:** `isaaclab_openarm_env/phase2_overrides.py`
+
+| Dict | Khi nào chỉnh |
+|------|----------------|
+| `PHASE2_REACH` | Vào GRASP quá sớm / quá muộn (`reach_advance_max_z_finger`, `reach_advance_min_top_down`) |
+| `PHASE2_GRASP` | Kẹp cổ chai, không đóng được (`grasp_descent_z_target`, `grasp_latch_max_z_finger`, `grasp_close_max_z_err`) |
+| `PHASE2_LIFT` | Không nhấc / trượt khi nhấc (`grasp_lift_world_m`, `grasp_pre_lift_hold_steps`, `grasp_lift_settle_steps`) |
+
+**Bug fix quan trọng (giữ nguyên):** `mdp/helpers.py` — `finger_descended_for_close` dùng `min(close_max_z, z_target)` để descent không dừng sớm.
+
+Sau khi sửa gate → chạy lại demo cùng `--stage`, **chưa cần train** cho đến khi demo ổn.
+
+---
+
+## §1 — Server train + Local demo (workflow chính)
+
+### Bước 1: Deploy code lên server
+
+```bash
+./deploy_training.sh naiscorp-4090
+# hoặc: ./deploy_training.sh user@192.168.x.x /path/to/isaacsim/python.sh
+```
+
+### Bước 2: Train trên server (background)
+
+```bash
+# Phase 1 — REACH only
+ssh naiscorp-4090 "nohup /data21tb/users/huyhoang/isaacsim/python.sh \
+  /data21tb/users/huyhoang/openarm_train_ws/Reinforce_Learning/isaaclab_train.py \
+  --headless --task_phase 1 --num-envs 1024 --timesteps 50000000 \
+  --log_dir /data21tb/users/huyhoang/openarm_train_ws/logs_openarm/train_osc \
+  > /data21tb/users/huyhoang/openarm_train_ws/logs_openarm/train_osc.log 2>&1 &"
+
+# Phase 2 — reach + grasp + lift (assist giảm dần khi train)
+ssh naiscorp-4090 "nohup /data21tb/users/huyhoang/isaacsim/python.sh \
+  /data21tb/users/huyhoang/openarm_train_ws/Reinforce_Learning/isaaclab_train.py \
+  --headless --task_phase 2 --assist-schedule --descent-assist \
+  --stage all --num-envs 1024 --timesteps 50000000 \
+  --log_dir /data21tb/users/huyhoang/openarm_train_ws/logs_openarm/train_osc_phase2 \
+  > /data21tb/users/huyhoang/openarm_train_ws/logs_openarm/train_osc_phase2.log 2>&1 &"
+
+# Fine-tune từ checkpoint .pt đã fetch
+ssh naiscorp-4090 "nohup .../isaaclab_train.py \
+  --headless --task_phase 2 --assist-schedule --descent-assist --stage all \
+  --checkpoint /data21tb/users/huyhoang/openarm_train_ws/logs_openarm/train_osc_phase2/best_policy.pt \
+  --log_dir .../logs_openarm/train_osc_phase2_ft ..."
+```
+
+**Theo dõi / dừng train:**
+
+```bash
+ssh naiscorp-4090 "tail -f /data21tb/users/huyhoang/openarm_train_ws/logs_openarm/train_osc_phase2.log"
+ssh naiscorp-4090 "pgrep -u \$(whoami) -f 'isaaclab_train.py'"
+ssh naiscorp-4090 "pgrep -u \$(whoami) -f 'isaaclab_train.py' | xargs -r kill"
+```
+
+**TensorBoard server:** `http://<server_ip>:6008` (tự khởi động khi deploy)
+
+### Bước 3: Fetch model về local
+
+```bash
+./fetch_model.sh naiscorp-4090 train_osc              # phase 1
+./fetch_model.sh naiscorp-4090 train_osc_phase2      # phase 2
+./list_models.sh naiscorp-4090                         # xem run nào có checkpoint
+```
+
+Tạo symlink: `logs/active_policy.pt` → `best_policy_<run_name>.pt`
+
+### Bước 4: Demo trên laptop (4050)
+
+```bash
+./run_local.sh demo --model ./logs/active_policy.pt --phase 2 --stage all
+```
+
+---
+
+## §2 — Backup: Server offline → train & demo local
+
+Khi server chưa online, dùng RTX 4050 local (ít env hơn, steps ít hơn).
+
+```bash
+# Phase 1 — REACH
+./run_local.sh train --phase 1 --envs 16 --steps 2000000
+
+# Phase 2 — full pipeline (assist schedule)
+./run_local.sh train --phase 2 --stage all --assist-schedule \
+  --envs 16 --steps 5000000 \
+  --checkpoint ./logs/active_policy.pt   # fine-tune nếu đã có weights
+
+# Demo ngay trên local
+./run_local.sh demo --model ./logs/train/best_policy.pt --phase 2 --stage grasp
+./run_local.sh demo --model ./logs/train/best_policy.pt --phase 2 --stage all
+```
+
+**Lưu ý local:** log mặc định `./logs/train/`. Server dùng `logs_openarm/<run_name>/`.
+
+---
+
+## §3 — Eval headless (tùy chọn)
+
+```bash
+$ISAAC_SIM_PYTHON eval_lift_metrics.py --headless \
+  --model_path ./logs/active_policy.pt --episodes 5 --stage all
+```
+
+In một dòng `LIFT_METRICS {...}` — không cần GUI.
+
+---
+
+## Tham chiếu lệnh nhanh
+
+### `run_local.sh train`
+
+| Option | Mô tả | Default |
+|--------|--------|---------|
+| `--envs N` | Số env song song | 16 |
+| `--steps N` | Tổng timesteps | 1_000_000 |
+| `--phase 1\|2` | Task phase | (từ config) |
+| `--stage reach\|grasp\|lift\|all` | Gate phase 2 | all |
+| `--assist-schedule` | Assist 1.0→0.0 khi train | off |
+| `--checkpoint path` | Fine-tune từ .pt | — |
+| `--resume` | Tiếp checkpoint zip | off |
+| `--gui` | Hiện Isaac Sim | headless |
+
+### `run_local.sh demo`
+
+| Option | Mô tả | Default |
+|--------|--------|---------|
+| `--model path` | File .pt | `./logs/active_policy.pt` |
+| `--phase 1\|2` | Task phase | — |
+| `--stage reach\|grasp\|lift\|all` | Gate phase 2 | all |
+| `--assist` | = `--stage all` | — |
+
+### `isaaclab_train.py` (server / direct)
+
+Cùng options với `run_local.sh train`, thêm:
+
+```bash
+--headless --num-envs 1024 --timesteps 50000000 \
+--log_dir /path/to/logs_openarm/my_run \
+--descent-assist    # bật descent assist khi train phase 2
+```
+
+---
+
+## Cấu trúc file quan trọng
+
+```
+Reinforce_Learning/
+├── run_local.sh              # train + demo local
+├── deploy_training.sh        # rsync → server
+├── fetch_model.sh            # scp model ← server
+├── list_models.sh            # inventory checkpoints
+├── isaaclab_train.py         # training entry
+├── isaaclab_demo.py          # visual playback
+├── eval_lift_metrics.py      # headless eval (optional)
+└── isaaclab_openarm_env/
+    ├── config.py             # defaults
+    ├── phase2_overrides.py   # ★ CHỈNH GATE Ở ĐÂY
+    └── mdp/
+        ├── helpers.py        # metrics, finger_descended_for_close
+        ├── grasp_assist.py   # descent/lift assist logic
+        ├── actions.py        # auto-close gripper
+        └── rewards.py        # stage transitions, rewards
+```
+
+---
+
+## Debug khi demo
+
+Console in real-time khi `--phase 2`:
+
+- `desc↓` — assist đang hạ ngón
+- `dh:N/12L` — descend hold / latched
+- `lift↑` — assist đang nhấc
+- `lift_hold:N/5` — đếm bước success
+
+Collision / contact events in `z_f`, `top↓`, TCP position.

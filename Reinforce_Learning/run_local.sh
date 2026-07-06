@@ -18,10 +18,17 @@ function print_usage() {
     echo "  --gui             Run training with Isaac Sim GUI window visible (default: headless)"
     echo "  --resume          Resume training from the latest checkpoint"
     echo "  --progress        Enable tqdm progress bar"
+    echo "  --phase <1|2>     Task phase: 1=reach, 2=reach+grasp+lift"
+    echo "  --stage <s>       Phase 2 sub-stage: reach | grasp | lift | all (default: all)"
+    echo "  --assist-schedule Phase 2: decay assist 1.0→0.0 during training"
+    echo "  --checkpoint <path> Fine-tune from .pt weights"
     echo ""
     echo "Options for 'demo':"
-    echo "  --model <path>    Path to model weights/checkpoint (default: ./logs/train/best_policy.pt)"
+    echo "  --model <path>    Path to model weights/checkpoint (default: ./logs/active_policy.pt)"
     echo "  --envs <num>      Number of parallel demo environments (default: 1)"
+    echo "  --phase <1|2>     Task phase: 1=reach, 2=reach+grasp+lift"
+    echo "  --stage <s>       Phase 2 sub-stage: reach | grasp | lift | all (default: all)"
+    echo "  --assist          Same as --stage all (legacy)"
 }
 
 # Ensure script is run from workspace root
@@ -44,6 +51,10 @@ case "$CMD" in
         RESUME=""
         PROGRESS=""
         LOG_DIR="./logs/train"
+        TASK_PHASE=""
+        ASSIST_SCHEDULE=""
+        CHECKPOINT=""
+        STAGE=""
 
         while [ $# -gt 0 ]; do
             case "$1" in
@@ -66,6 +77,22 @@ case "$CMD" in
                 --progress)
                     PROGRESS="--progress"
                     shift
+                    ;;
+                --phase)
+                    TASK_PHASE="--task_phase $2"
+                    shift 2
+                    ;;
+                --stage)
+                    STAGE="--stage $2"
+                    shift 2
+                    ;;
+                --assist-schedule)
+                    ASSIST_SCHEDULE="--assist-schedule"
+                    shift
+                    ;;
+                --checkpoint)
+                    CHECKPOINT="--checkpoint $2"
+                    shift 2
                     ;;
                 *)
                     echo "Unknown training option: $1"
@@ -93,12 +120,18 @@ case "$CMD" in
             --log_dir "$LOG_DIR" \
             $HEADLESS \
             $RESUME \
-            $PROGRESS
+            $PROGRESS \
+            $TASK_PHASE \
+            $STAGE \
+            $ASSIST_SCHEDULE \
+            $CHECKPOINT
         ;;
 
     demo)
-        MODEL="./logs/train/best_policy.pt"
+        MODEL="./logs/active_policy.pt"
         ENVS=1
+        EXTRA_ARGS=()
+        STAGE=""
 
         while [ $# -gt 0 ]; do
             case "$1" in
@@ -110,13 +143,28 @@ case "$CMD" in
                     ENVS=$2
                     shift 2
                     ;;
+                --phase)
+                    EXTRA_ARGS+=("--task_phase" "$2")
+                    shift 2
+                    ;;
+                --stage)
+                    STAGE="$2"
+                    shift 2
+                    ;;
+                --assist)
+                    STAGE="all"
+                    shift
+                    ;;
                 *)
-                    echo "Unknown demo option: $1"
-                    print_usage
-                    exit 1
+                    EXTRA_ARGS+=("$1")
+                    shift
                     ;;
             esac
         done
+
+        if [ -n "$STAGE" ]; then
+            EXTRA_ARGS+=("--stage" "$STAGE")
+        fi
 
         echo "======================================================================"
         echo "Starting Visual Playback (Demo) of Local Model"
@@ -127,7 +175,9 @@ case "$CMD" in
 
         PYTHONPATH="$SCRIPT_DIR" $ISAAC_SIM_PYTHON ./isaaclab_demo.py \
             --model_path "$MODEL" \
-            --num_envs "$ENVS"
+            --num_envs "$ENVS" \
+            --no-bottle-rand \
+            "${EXTRA_ARGS[@]}"
         ;;
 
     help)

@@ -98,42 +98,12 @@ def patch_qvic_usd_once():
 
 
 
-def _strip_duplicate_scene_robot_physics(stage, UsdPhysics, Sdf):
-    """
-    Helper: deactivates ALL duplicate robot/graph prims that live under
-    /World/envs/env_N/Scene/openarm, ActionGraph, PushGraph without traversing the full stage.
-    Deactivating them ensures they (and all their descendants/joints) are ignored by PhysX
-    and Isaac Lab, avoiding joint validation warnings and articulation errors.
-    """
-    duplicate_prim_names = ["openarm", "ActionGraph", "PushGraph"]
-    deactivated_paths = []
-    
-    envs_prim = stage.GetPrimAtPath("/World/envs")
-    if not envs_prim.IsValid():
-        return
-
-    for env_child in envs_prim.GetChildren():
-        env_name = env_child.GetName()
-        if env_name.startswith("env_"):
-            for prim_name in duplicate_prim_names:
-                path_str = f"/World/envs/{env_name}/Scene/{prim_name}"
-                prim = stage.GetPrimAtPath(path_str)
-                if prim.IsValid() and prim.IsActive():
-                    prim.SetActive(False)
-                    deactivated_paths.append(path_str)
-
-    if deactivated_paths:
-        n_envs = len({p.rsplit("/", 2)[0] for p in deactivated_paths})
-        print(f"[ApplePickPlaceEnv] Deactivated duplicate static robot/graph prims "
-              f"({len(deactivated_paths)} prims) from {n_envs} env Scene backdrops.")
-
-
 def spawn_qvic_with_physics(prim_path: str, cfg: sim_utils.UsdFileCfg, translation=None, orientation=None):
     """
     Custom spawn function for scene_env (qvic.usd).
     Loads the USD file and immediately configures the USD rigid body and collision APIs
-    on the Bowl and Bottle before other scene entities initialize.
-    This guarantees clean loading with replicate_physics=False.
+    on the Bowl and Bottle relative to the active concrete prim_path.
+    Optimized to avoid traversing all environments in the USD stage, preventing OOM.
     """
     # 1. Load the scene backdrop USD using standard loader
     prim = sim_utils.spawn_from_usd(prim_path, cfg, translation, orientation)
@@ -146,48 +116,29 @@ def spawn_qvic_with_physics(prim_path: str, cfg: sim_utils.UsdFileCfg, translati
     if not stage:
         return prim
 
-    # ── Strip duplicate robot physics (immediate pass) ────────────────────
-    _strip_duplicate_scene_robot_physics(stage, UsdPhysics, Sdf)
+    # Resolve regex patterns (e.g. env_.*) to the concrete source template environment (env_0)
+    # so that we can query and modify real, well-formed SdfPaths on the stage.
+    concrete_prim_path = prim_path.replace("env_.*", "env_0")
 
-    # ── Register a deferred pre-physics callback as a belt-and-suspenders ─
-    # PhysX validates the stage hierarchy when the physics scene is initialized.
-    # We register a one-shot subscription that fires just before that happens
-    # to guarantee the duplicate /Scene/openarm physics is gone.
-    try:
-        import omni.physx
-        _sub_holder = []  # list used to keep the subscription alive until it fires
+    # ── Strip duplicate robot physics under this concrete_prim_path ───────────
+    duplicate_prim_names = ["openarm", "ActionGraph", "PushGraph"]
+    for prim_name in duplicate_prim_names:
+        dup_path = f"{concrete_prim_path}/{prim_name}"
+        dup_prim = stage.GetPrimAtPath(dup_path)
+        if dup_prim.IsValid() and dup_prim.IsActive():
+            dup_prim.SetActive(False)
+            print(f"[ApplePickPlaceEnv] Deactivated duplicate static robot/graph prim: {dup_path}")
 
-        def _on_physics_ready(step_size, _sub_ref=_sub_holder, _stage=stage,
-                              _UsdPhysics=UsdPhysics, _Sdf=Sdf):
-            _strip_duplicate_scene_robot_physics(_stage, _UsdPhysics, _Sdf)
-            # Unsubscribe after first call
-            if _sub_ref:
-                _sub_ref.clear()
-
-        sub = omni.physx.get_physx_interface().subscribe_physics_step_events(_on_physics_ready)
-        _sub_holder.append(sub)
-    except Exception as e:
-        # Non-fatal: the immediate pass above may be sufficient
-        print(f"[ApplePickPlaceEnv] Could not register deferred physics callback: {e}")
-
-    # Gather all spawned environments
-    envs_prim = stage.GetPrimAtPath("/World/envs")
-    if envs_prim.IsValid():
-        env_children = [c.GetName() for c in envs_prim.GetChildren() if c.GetName().startswith("env_")]
-    else:
-        env_children = ["env_0"]
-
-    # ── Strip physics from the Table prim ─────────────────────────────────
-    for env_name in env_children:
-        table_path = f"/World/envs/{env_name}/Scene/Table"
-        table_prim = stage.GetPrimAtPath(table_path)
-        if table_prim.IsValid():
-            if table_prim.HasAPI(UsdPhysics.RigidBodyAPI):
-                table_prim.RemoveAPI(UsdPhysics.RigidBodyAPI)
-                print(f"[ApplePickPlaceEnv] Stripped Table rigid body physics: {table_path}")
-            # Disable collision on the table to prevent static-intersection explosions with the robot base
-            table_prim.CreateAttribute("physics:collisionEnabled", Sdf.ValueTypeNames.Bool).Set(False)
-            print(f"[ApplePickPlaceEnv] Disabled Table collision: {table_path}")
+    # ── Strip physics from the Table prim under this concrete_prim_path ───────
+    table_path = f"{concrete_prim_path}/Table"
+    table_prim = stage.GetPrimAtPath(table_path)
+    if table_prim.IsValid():
+        if table_prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            table_prim.RemoveAPI(UsdPhysics.RigidBodyAPI)
+            print(f"[ApplePickPlaceEnv] Stripped Table rigid body physics: {table_path}")
+        # Disable collision on the table to prevent static-intersection explosions with the robot base
+        table_prim.CreateAttribute("physics:collisionEnabled", Sdf.ValueTypeNames.Bool).Set(False)
+        print(f"[ApplePickPlaceEnv] Disabled Table collision: {table_path}")
 
     def enable_collisions(p, approximation_type="convexHull"):
         if not p.IsValid():
@@ -200,36 +151,26 @@ def spawn_qvic_with_physics(prim_path: str, cfg: sim_utils.UsdFileCfg, translati
         for c in p.GetChildren():
             enable_collisions(c, approximation_type)
 
-    # Apply Kinematic physics and convexDecomposition to Bowl on ALL environments
-    bowl_count = 0
-    for env_name in env_children:
-        bowl_path = f"/World/envs/{env_name}/Scene/Bowl"
-        bowl_prim = stage.GetPrimAtPath(bowl_path)
-        if bowl_prim.IsValid():
-            if not bowl_prim.HasAPI(UsdPhysics.RigidBodyAPI):
-                rb = UsdPhysics.RigidBodyAPI.Apply(bowl_prim)
-                rb.CreateKinematicEnabledAttr(True)
-                print(f"[ApplePickPlaceEnv] Applied Kinematic RigidBodyAPI to Bowl: {bowl_path}")
-            enable_collisions(bowl_prim, "convexDecomposition")
-            bowl_count += 1
+    # Apply Kinematic physics and convexDecomposition to Bowl under this concrete_prim_path
+    bowl_path = f"{concrete_prim_path}/Bowl"
+    bowl_prim = stage.GetPrimAtPath(bowl_path)
+    if bowl_prim.IsValid():
+        if not bowl_prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            rb = UsdPhysics.RigidBodyAPI.Apply(bowl_prim)
+            rb.CreateKinematicEnabledAttr(True)
+            print(f"[ApplePickPlaceEnv] Applied Kinematic RigidBodyAPI to Bowl: {bowl_path}")
+        enable_collisions(bowl_prim, "convexDecomposition")
+        print(f"[ApplePickPlaceEnv] Configured Bowl collision & physics: {bowl_path}")
 
-    if bowl_count:
-        print(f"[ApplePickPlaceEnv] Configured Bowl collision & physics across {bowl_count} environments.")
-
-    # Apply Dynamic physics and convexHull to Bottle on ALL environments
-    bottle_count = 0
-    for env_name in env_children:
-        bottle_path = f"/World/envs/{env_name}/Scene/Bottle"
-        bottle_prim = stage.GetPrimAtPath(bottle_path)
-        if bottle_prim.IsValid():
-            if not bottle_prim.HasAPI(UsdPhysics.RigidBodyAPI):
-                rb = UsdPhysics.RigidBodyAPI.Apply(bottle_prim)
-                rb.CreateKinematicEnabledAttr(False)
-                print(f"[ApplePickPlaceEnv] Applied Dynamic RigidBodyAPI to Bottle: {bottle_path}")
-            enable_collisions(bottle_prim, "convexHull")
-            bottle_count += 1
-
-    if bottle_count:
-        print(f"[ApplePickPlaceEnv] Configured Bottle collision & physics across {bottle_count} environments.")
+    # Apply Dynamic physics and convexHull to Bottle under this concrete_prim_path
+    bottle_path = f"{concrete_prim_path}/Bottle"
+    bottle_prim = stage.GetPrimAtPath(bottle_path)
+    if bottle_prim.IsValid():
+        if not bottle_prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            rb = UsdPhysics.RigidBodyAPI.Apply(bottle_prim)
+            rb.CreateKinematicEnabledAttr(False)
+            print(f"[ApplePickPlaceEnv] Applied Dynamic RigidBodyAPI to Bottle: {bottle_path}")
+        enable_collisions(bottle_prim, "convexHull")
+        print(f"[ApplePickPlaceEnv] Configured Bottle collision & physics: {bottle_path}")
 
     return prim

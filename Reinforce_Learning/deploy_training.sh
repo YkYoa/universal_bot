@@ -14,14 +14,15 @@ set -e
 SERVER="${1:-naiscorp-4090}"
 SERVER_USER="$(echo "$SERVER" | cut -d@ -f1)"
 SERVER_IP="$(echo "$SERVER" | cut -d@ -f2)"
-REMOTE_DIR="/data21tb/huyhoang/openarm_train_ws"
+OPENARM_REMOTE_ROOT="${OPENARM_REMOTE_ROOT:-/data21tb/users/huyhoang/openarm_train_ws}"
+REMOTE_DIR="${OPENARM_REMOTE_ROOT}"
 
 # Combine remote operations (probing path, creating directories, killing old sessions, starting TensorBoard)
 echo "Initializing server directories, processes, and path resolution..."
 INIT_SCRIPT="
 SERVER_ISAAC_PYTHON='$2'
 if [ -z \"\$SERVER_ISAAC_PYTHON\" ]; then
-    for path in '/data21tb/huyhoang/isaacsim/python.sh' '/home/${SERVER_USER}/Desktop/isaacsim/python.sh' '/home/${SERVER_USER}/isaacsim/python.sh'; do
+    for path in '/data21tb/users/huyhoang/isaacsim/python.sh' '/data21tb/huyhoang/isaacsim/python.sh' '/home/${SERVER_USER}/Desktop/isaacsim/python.sh' '/home/${SERVER_USER}/isaacsim/python.sh'; do
         if [ -f \"\$path\" ]; then
             SERVER_ISAAC_PYTHON=\"\$path\"
             break
@@ -101,7 +102,34 @@ rsync -avz --progress \
     "${WS_DIR}/../Open_arm_a1_ws/src/openarm_description/urdf/robot/v10/" \
     "${SERVER}:${REMOTE_DIR}/Open_arm_a1_ws/src/openarm_description/urdf/robot/v10/"
 
-# ── 4. Print Launch Instructions ─────────────────────────────────────────────
+# ── 4. Optional: sync Isaac Lab (required for server training) ───────────────
+LOCAL_IL="${OPENARM_LOCAL_ISAACLAB:-$HOME/IsaacLab}"
+REMOTE_IL="${OPENARM_REMOTE_ROOT%/openarm_train_ws}/IsaacLab"
+if [ "${OPENARM_SYNC_ISAACLAB:-0}" = "1" ]; then
+    echo ""
+    if [ ! -f "${LOCAL_IL}/isaaclab.sh" ]; then
+        echo "  ❌ OPENARM_SYNC_ISAACLAB=1 but local Isaac Lab not found: ${LOCAL_IL}"
+        echo "     Set OPENARM_LOCAL_ISAACLAB or install Isaac Lab locally."
+        exit 1
+    fi
+    echo "[3/3] Syncing Isaac Lab to server (first-time / missing on server)..."
+    rsync -avz --progress \
+        --exclude '.git/' \
+        --exclude 'docs/' \
+        --exclude 'datasets/' \
+        --exclude '**/logs/' \
+        --exclude '**/__pycache__/' \
+        --exclude '*.pyc' \
+        "${LOCAL_IL}/" \
+        "${SERVER}:${REMOTE_IL}/"
+    # Link server's Isaac Sim into Isaac Lab tree
+    ISAACSIM_DIR="$(dirname "${ISAAC_PYTHON}")"
+    ssh "$SERVER" "ln -sfn '${ISAACSIM_DIR}' '${REMOTE_IL}/_isaac_sim'"
+    echo "  ✅ Isaac Lab synced → ${REMOTE_IL}"
+    echo "  ✅ _isaac_sim → ${ISAACSIM_DIR}"
+fi
+
+# ── 5. Print Launch Instructions ─────────────────────────────────────────────
 echo ""
 echo "============================================================"
 echo "  🚀 Training code deployed and synchronized!"

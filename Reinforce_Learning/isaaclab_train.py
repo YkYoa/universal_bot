@@ -33,6 +33,10 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.append(_THIS_DIR)
 
+# Force NVIDIA Vulkan ICD if available, to bypass any integrated GPU conflicts
+if os.path.exists("/usr/share/vulkan/icd.d/nvidia_icd.json"):
+    os.environ["VK_ICD_FILENAMES"] = "/usr/share/vulkan/icd.d/nvidia_icd.json"
+
 # ── 1. Parse arguments and launch Isaac Sim FIRST (must happen before any isaaclab import) ──
 parser = argparse.ArgumentParser(description="OpenArm Isaac Lab PPO Training — Manager-Based workflow")
 parser.add_argument("--num-envs", "--num_envs", dest="num_envs", type=int, default=1024, help="Number of parallel envs")
@@ -40,9 +44,22 @@ parser.add_argument("--timesteps",   type=int,   default=1_000_000, help="Total 
 parser.add_argument("--num-envs-eval", "--num_envs_eval", dest="num_envs_eval", type=int, default=16, help="Eval envs")
 parser.add_argument("--log-dir", "--log_dir", dest="log_dir", type=str, default=os.path.join(_THIS_DIR, "logs", "train"), help="Output directory")
 parser.add_argument("--model-name", "--model_name", dest="model_name", type=str, default="ppo_openarm_pick_place")
-parser.add_argument("--resume",      action="store_true", help="Resume from latest checkpoint")
+parser.add_argument("--resume",      action="store_true", help="Resume from latest checkpoint in log_dir")
+parser.add_argument("--checkpoint",  type=str, default=None,
+                    help="Load policy weights from .pt (fine-tune, e.g. best_policy_train_osc_phase2_v3.pt)")
 parser.add_argument("--progress",    action="store_true", help="Enable tqdm progress bar")
 parser.add_argument("--seed",        type=int,   default=42)
+parser.add_argument("--joint-space", "--joint_space", dest="joint_space", action="store_true",
+                    help="Use legacy 8-D joint-space actions instead of OSC 6-DOF (default)")
+parser.add_argument("--task-phase", "--task_phase", dest="task_phase", type=int, default=None,
+                    help="Curriculum: 1=reach, 2=reach+grasp+lift")
+parser.add_argument("--descent-assist", "--descent_assist", dest="descent_assist", action="store_true",
+                    help="Enable REACH+GRASP descent assist during training")
+parser.add_argument("--assist-schedule", "--assist_schedule", dest="assist_schedule", action="store_true",
+                    help="Phase 2: decay assist blend 1.0→0.0 over training (Option C)")
+parser.add_argument("--stage", type=str, default="all",
+                    choices=("reach", "grasp", "lift", "all"),
+                    help="Phase 2 sub-stage gates: reach | grasp | lift | all")
 
 # Isaac Sim AppLauncher args
 from isaaclab.app import AppLauncher
@@ -59,6 +76,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import (
     CheckpointCallback,
     CallbackList,
+    BaseCallback,
 )
 # Linear LR schedule: decays from initial_value to final_value as progress_remaining goes 1→0
 def linear_lr_schedule(initial_value: float, final_value: float):
@@ -70,10 +88,10 @@ from isaaclab_rl.sb3 import Sb3VecEnvWrapper
 
 from isaaclab_openarm_env.env import ApplePickPlaceEnv
 from isaaclab_openarm_env.config import ApplePickPlaceEnvCfg
+from isaaclab_openarm_env.phase2_overrides import apply_phase2_train_overrides
 from isaaclab_openarm_env.scene import patch_qvic_usd_once
 
 # Permanently patch qvic.usd to remove duplicate robot prims and nested RigidBodyAPIs.
-# This runs only once (a sentinel file prevents re-patching on subsequent runs).
 patch_qvic_usd_once()
 
 
@@ -98,9 +116,113 @@ def make_env(num_envs: int) -> Sb3VecEnvWrapper:
     env_cfg = ApplePickPlaceEnvCfg()
     env_cfg.scene.num_envs = num_envs
     env_cfg.seed = args.seed
+    env_cfg.use_joint_space_actions = args.joint_space
+    if args.task_phase is not None:
+        env_cfg.task_phase = args.task_phase
+        if args.task_phase >= 2:
+            env_cfg.episode_length_s = 20.0
+    phase = args.task_phase if args.task_phase is not None else env_cfg.task_phase
+    if phase >= 2:
+        env_cfg.grasp_lift_assist_enabled = True
+        if args.descent_assist or args.assist_schedule:
+            env_cfg.grasp_descent_assist_enabled = True
+            env_cfg.grasp_descent_assist_grasp = True
+        if args.assist_schedule:
+            env_cfg.grasp_assist_schedule_enabled = True
+    elif args.descent_assist:
+        env_cfg.grasp_descent_assist_enabled = True
+        env_cfg.grasp_descent_assist_grasp = True
+    if phase >= 2:
+        apply_phase2_train_overrides(
+            env_cfg,
+            assist_curriculum=args.assist_schedule,
+            stage=args.stage,
+        )
     env = ApplePickPlaceEnv(cfg=env_cfg)
     env = Sb3VecEnvWrapper(env)
     return env
+
+
+def keep_only_last_n_tb_logs(tb_dir: str, n: int = 2):
+    """Scan and keep only the last n PPO folders in TensorBoard directory."""
+    import shutil
+    if not os.path.exists(tb_dir):
+        return
+    ppo_dirs = []
+    for entry in os.listdir(tb_dir):
+        full_path = os.path.join(tb_dir, entry)
+        if os.path.isdir(full_path) and entry.startswith("PPO_"):
+            try:
+                num = int(entry.split("PPO_")[1])
+                ppo_dirs.append((num, full_path))
+            except ValueError:
+                pass
+    ppo_dirs.sort(key=lambda x: x[0])
+    if len(ppo_dirs) > n:
+        to_delete = ppo_dirs[:-n]
+        print(f"  🧹 Auto-cleaning {len(to_delete)} old TensorBoard runs (keeping last {n})...")
+        for num, full_path in to_delete:
+            try:
+                shutil.rmtree(full_path)
+                print(f"    - Deleted old run: PPO_{num}")
+            except Exception as e:
+                print(f"    - Warning: Failed to delete PPO_{num}: {e}")
+
+
+def keep_only_last_n_checkpoints(ckpt_dir: str, n: int = 5):
+    """Delete old rl_model_*_steps.zip files, keep only the newest n."""
+    pattern = os.path.join(ckpt_dir, "rl_model_*_steps.zip")
+    files = glob.glob(pattern)
+    if len(files) <= n:
+        return
+
+    def get_steps(f):
+        try:
+            return int(os.path.basename(f).split("rl_model_")[1].split("_steps.zip")[0])
+        except (IndexError, ValueError):
+            return 0
+
+    files.sort(key=get_steps)
+    to_delete = files[:-n]
+    print(f"  🧹 Pruning {len(to_delete)} old checkpoints (keeping last {n})...")
+    for f in to_delete:
+        try:
+            os.remove(f)
+        except OSError as e:
+            print(f"    - Warning: failed to delete {f}: {e}")
+
+
+class AssistScheduleCallback(BaseCallback):
+    """Decay grasp assist blend from start→end over training (Option C curriculum)."""
+
+    def __init__(self, total_timesteps: int, verbose: int = 0):
+        super().__init__(verbose)
+        self._total = max(total_timesteps, 1)
+
+    def _on_step(self) -> bool:
+        env = self.training_env
+        unwrapped = env.unwrapped if hasattr(env, "unwrapped") else env.envs[0].unwrapped
+        cfg = unwrapped.cfg
+        if not getattr(cfg, "grasp_assist_schedule_enabled", False):
+            return True
+        progress = 1.0 - (self.num_timesteps / self._total)
+        start = getattr(cfg, "grasp_assist_blend_start", 1.0)
+        end = getattr(cfg, "grasp_assist_blend_end", 0.0)
+        unwrapped._assist_blend_scale = end + progress * (start - end)
+        return True
+
+
+class PruningCheckpointCallback(CheckpointCallback):
+    """CheckpointCallback that keeps only the last N zip files on disk."""
+
+    def __init__(self, keep_last: int = 5, **kwargs):
+        super().__init__(**kwargs)
+        self._keep_last = keep_last
+
+    def _on_step(self) -> bool:
+        ret = super()._on_step()
+        keep_only_last_n_checkpoints(self.save_path, self._keep_last)
+        return ret
 
 
 def train():
@@ -110,6 +232,10 @@ def train():
 
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(tb_dir,   exist_ok=True)
+
+    # Keep disk usage bounded: 2 TB runs, 5 checkpoints
+    keep_only_last_n_tb_logs(tb_dir, n=2)
+    keep_only_last_n_checkpoints(ckpt_dir, n=5)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -121,6 +247,9 @@ def train():
     print(f"  Log dir    : {log_dir}")
     print(f"  TensorBoard: {tb_dir}")
     print(f"  Resume     : {args.resume}")
+    print(f"  Actions    : {'joint-space 8D' if args.joint_space else 'OSC 6-DOF + gripper (7D)'}")
+    phase = args.task_phase if args.task_phase is not None else ApplePickPlaceEnvCfg().task_phase
+    print(f"  Task phase : {phase}")
     print("=" * 65)
 
     # Build environment
@@ -134,13 +263,17 @@ def train():
     print(f"  ✅ Env config saved: {env_cfg_path}")
 
     # Checkpoint Callback setup
-    checkpoint_cb = CheckpointCallback(
+    checkpoint_cb = PruningCheckpointCallback(
+        keep_last=5,
         save_freq=max(1_000_000 // args.num_envs, 1),
         save_path=ckpt_dir,
         name_prefix="rl_model",
         verbose=1,
     )
     callbacks = CallbackList([checkpoint_cb])
+    if getattr(train_env.unwrapped.cfg, "grasp_assist_schedule_enabled", False):
+        callbacks = CallbackList([checkpoint_cb, AssistScheduleCallback(args.timesteps)])
+        print("  ✅ Assist schedule enabled (blend 1.0 → 0.0)")
 
     # Model definition
     latest_ckpt = find_latest_checkpoint(log_dir) if args.resume else None
@@ -182,6 +315,16 @@ def train():
             tensorboard_log=tb_dir,
         )
         remaining = args.timesteps
+
+        if args.checkpoint:
+            ckpt_path = args.checkpoint if os.path.isabs(args.checkpoint) else os.path.join(_THIS_DIR, args.checkpoint)
+            if not os.path.isfile(ckpt_path):
+                ckpt_path = os.path.abspath(args.checkpoint)
+            if not os.path.isfile(ckpt_path):
+                raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
+            print(f"\n  ✅ Fine-tuning from: {ckpt_path}")
+            state_dict = torch.load(ckpt_path, map_location=device)
+            model.policy.load_state_dict(state_dict)
 
     # Launch RL learning loop
     print(f"\n  🚀 Starting training for {remaining:,} timesteps...\n")

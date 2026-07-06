@@ -18,6 +18,7 @@ import omni.usd
 from pxr import UsdPhysics, Usd
 from isaaclab.envs import ManagerBasedRLEnv
 from .config import ApplePickPlaceEnvCfg
+from .mdp.helpers import calibrate_bottle_local_xy_offset
 
 
 class ApplePickPlaceEnv(ManagerBasedRLEnv):
@@ -57,3 +58,8 @@ class ApplePickPlaceEnv(ManagerBasedRLEnv):
                     realsense_prim.SetActive(False)
                     if i == 0:
                         print(f"[ApplePickPlaceEnv] Deactivated active robot Realsense camera: {realsense_path}")
+
+        # One-shot bottle mesh offset (safe here — not during physics step)
+        self._bottle_local_xy_offset = calibrate_bottle_local_xy_offset(self)
+
+    # Assist chạy trong AssistedOSCActionTerm.process_actions (không cần override step)

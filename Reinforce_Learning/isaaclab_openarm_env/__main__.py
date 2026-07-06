@@ -59,7 +59,8 @@ print(f"Initial observation shape: {obs['policy'].shape}")
 
 for step in range(args.num_steps):
     # Send random actions in [-1, 1]
-    actions = torch.rand(env.num_envs, 8, device=env.device) * 2.0 - 1.0
+    act_dim = env.action_space.shape[0]
+    actions = torch.rand(env.num_envs, act_dim, device=env.device) * 2.0 - 1.0
     obs, rewards, terminated, truncated, infos = env.step(actions)
 
     if (step + 1) % 50 == 0 or step == args.num_steps - 1:
