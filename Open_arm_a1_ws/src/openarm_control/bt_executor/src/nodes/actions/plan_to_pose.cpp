@@ -26,8 +26,8 @@ bool PlanToPose::setGoal(Goal & goal)
   std::string profile_name = "";
   std::string planning_mode = "normal";
 
-  config().blackboard->get(BB_PLANNER_PROFILE, profile_name);
-  config().blackboard->get(BB_PLANNING_MODE, planning_mode);
+  (void)config().blackboard->get(BB_PLANNER_PROFILE, profile_name);
+  (void)config().blackboard->get(BB_PLANNING_MODE, planning_mode);
 
   // Set ExecuteSkill goal fields
   goal.skill_name = "move_to_pose";

@@ -44,6 +44,58 @@ def finger_grasp_ready(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
     )
 
 
+def finger_symmetric_ready(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """Both pads near bottle body with similar distance/height (mimic gripper safety)."""
+    max_close = float(getattr(env.cfg, "grasp_close_max_dist_finger", 0.058))
+    max_each = float(getattr(env.cfg, "grasp_sym_max_dist_each", 0.0))
+    if max_each <= 0.0:
+        max_each = max_close
+    max_delta = float(getattr(env.cfg, "grasp_sym_max_dist_delta", 0.012))
+    max_z_delta = float(getattr(env.cfg, "grasp_sym_max_z_delta", 0.012))
+    dl = s["dist_left_body"]
+    dr = s["dist_right_body"]
+    zl = s["z_error_finger_left"]
+    zr = s["z_error_finger_right"]
+    dist_balanced = (dl - dr).abs() < max_delta
+    height_balanced = (zl - zr).abs() < max_z_delta
+    # Cả hai pad đủ gần (dùng cùng ngưỡng close) + cân bằng L/R
+    both_near = (dl < max_each) & (dr < max_each)
+    return both_near & dist_balanced & height_balanced
+
+
+def finger_pad_asymmetric(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """True when L/R pad distances diverge (mimic gripper closing off-center)."""
+    max_delta = float(getattr(env.cfg, "grasp_reopen_asym_dist_delta", 0.022))
+    return (s["dist_left_body"] - s["dist_right_body"]).abs() > max_delta
+
+
+def finger_pad_severe_asymmetric(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """L/R lệch nặng — dùng pause ramp / mid-ramp reopen (ngưỡng cao hơn asym nhẹ)."""
+    max_delta = float(getattr(env.cfg, "grasp_reopen_severe_asym_delta", 0.032))
+    return (s["dist_left_body"] - s["dist_right_body"]).abs() > max_delta
+
+
+def grip_close_ramp_active(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Gripper đang ramp khép (0 < gc < 99%) — tránh descent/lift chen ngang."""
+    term = env.action_manager._terms.get("gripper_action")
+    ramp_steps = int(getattr(env.cfg, "grasp_close_ramp_steps", 0))
+    if ramp_steps <= 0 or term is None or not hasattr(term, "_close_progress"):
+        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    return (
+        term._want_close
+        & (term._close_progress > 0.05)
+        & (term._close_progress < 0.99)
+    )
+
+
+def finger_ready_for_close(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """Align + optional two-pad symmetry before auto-close / latch."""
+    ready = finger_grasp_ready(env, s)
+    if getattr(env.cfg, "grasp_symmetry_gate_enabled", False):
+        ready = ready & finger_symmetric_ready(env, s)
+    return ready
+
+
 def finger_descended_for_close(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
     """Ngón đã hạ đủ thấp quanh thân chai trước khi đóng gripper."""
     max_z = float(getattr(env.cfg, "grasp_close_max_z_err", 0.04))
@@ -413,6 +465,12 @@ def reset_action_terms(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
             term._grasp_latched[env_ids] = False
         if name == "gripper_action" and hasattr(term, "_descend_hold"):
             term._descend_hold[env_ids] = 0
+        if name == "gripper_action" and hasattr(term, "_sym_hold"):
+            term._sym_hold[env_ids] = 0
+        if name == "gripper_action" and hasattr(term, "_reopen_cooldown"):
+            term._reopen_cooldown[env_ids] = 0
+        if name == "gripper_action" and hasattr(term, "_reopen_count"):
+            term._reopen_count[env_ids] = 0
         if name == "gripper_action" and hasattr(term, "_close_progress"):
             term._close_progress[env_ids] = 0.0
         if name == "gripper_action" and hasattr(term, "_want_close"):

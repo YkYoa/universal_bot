@@ -20,6 +20,8 @@ from .helpers import (
     STAGE_REACH,
     STAGE_GRASP,
     finger_grasp_ready,
+    finger_symmetric_ready,
+    finger_ready_for_close,
     grasp_lift_success_ready,
     reach_align_ready,
     uses_grasp_lift,
@@ -99,6 +101,12 @@ def _log_success_status(env: ManagerBasedRLEnv, s: dict) -> None:
     dist_f = float(s["dist_finger_body"][0].item())
     dist_ee = float(s["dist_ee_bottle"][0].item())
     finger_ok = bool(finger_grasp_ready(env, s)[0].item())
+    sym_ok = (
+        bool(finger_symmetric_ready(env, s)[0].item())
+        if getattr(env.cfg, "grasp_symmetry_gate_enabled", False)
+        else True
+    )
+    close_ok = bool(finger_ready_for_close(env, s)[0].item())
 
     gripped = grip > grip_thresh
     lifted = lift_m > lift_thresh
@@ -120,6 +128,10 @@ def _log_success_status(env: ManagerBasedRLEnv, s: dict) -> None:
         status = f"tilt too high ({tilt_deg:.1f}°>={max_tilt}°) — not success"
     elif gripped and not lifted:
         status = "gripped — need lift"
+    elif finger_ok and not sym_ok and not gripped:
+        status = "align symmetric pads (L/R)"
+    elif close_ok and not gripped:
+        status = "finger OK — close grip"
     elif finger_ok and not gripped:
         status = "finger OK — close grip"
     else:
@@ -134,7 +146,8 @@ def _log_success_status(env: ManagerBasedRLEnv, s: dict) -> None:
         f" dist:{dist_ee:.3f}<{max_dist_ee}"
         f" lat_f:{lat_f:.3f} top↓:{top_down:.2f}>{min_top_succ}"
         f" tilt:{tilt_deg:.1f}°<{max_tilt}"
-        f" finger_ready:{finger_ok}"
+        f" finger_ready:{finger_ok} sym:{sym_ok}"
+        f" L/R:{float(s['dist_left_body'][0]):.3f}/{float(s['dist_right_body'][0]):.3f}"
     )
     print(f"  [Bottle] {format_bottle_debug(env, s, env_id=0)}")
     print(f"  [Fingers] {format_finger_debug(s, env_id=0, env=env)}")

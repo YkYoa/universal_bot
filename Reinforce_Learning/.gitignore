@@ -1,0 +1,5 @@
+logs/
+openarm.env
+__pycache__/
+*.pyc
+.cache/

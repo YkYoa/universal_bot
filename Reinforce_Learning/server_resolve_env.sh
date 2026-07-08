@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# Resolve Isaac Lab / Isaac Sim paths on the training server (stdout: KEY=value lines).
+# Resolve Isaac Lab / Isaac Sim paths ON THE SERVER (stdout: KEY=value).
+# Gọi từ ./rl.sh train qua SSH — không chạy trên laptop.
 set -euo pipefail
 
-OPENARM_REMOTE_ROOT="${OPENARM_REMOTE_ROOT:-/data21tb/users/huyhoang/openarm_train_ws}"
+OPENARM_DATA_ROOT="${OPENARM_DATA_ROOT:-/data21tb/users}"
+OPENARM_WS_NAME="${OPENARM_WS_NAME:-openarm_train_ws}"
+OPENARM_REMOTE_ROOT="${OPENARM_REMOTE_ROOT:-${OPENARM_DATA_ROOT}/$(whoami)/${OPENARM_WS_NAME}}"
 REMOTE_RL="${OPENARM_REMOTE_ROOT}/Reinforce_Learning"
 
 for d in \
     "${OPENARM_REMOTE_ROOT%/openarm_train_ws}/IsaacLab" \
-    "/data21tb/users/huyhoang/IsaacLab" \
+    "${OPENARM_DATA_ROOT}/$(whoami)/IsaacLab" \
+    "/data21tb/$(whoami)/IsaacLab" \
     "${HOME}/IsaacLab" \
-    "${HOME}/Desktop/IsaacLab"; do
+    "${HOME}/Desktop/IsaacLab" \
+    "${OPENARM_DATA_ROOT}/huyhoang/IsaacLab"; do
     if [ -f "${d}/isaaclab.sh" ]; then
         echo "ISAACLAB_SH=${d}/isaaclab.sh"
         echo "ISAACLAB_ROOT=${d}"
@@ -22,10 +27,11 @@ done
 
 for p in \
     "${OPENARM_REMOTE_ROOT%/openarm_train_ws}/isaacsim/python.sh" \
-    "/data21tb/users/huyhoang/isaacsim/python.sh" \
-    "/data21tb/huyhoang/isaacsim/python.sh" \
+    "${OPENARM_DATA_ROOT}/$(whoami)/isaacsim/python.sh" \
+    "/data21tb/$(whoami)/isaacsim/python.sh" \
     "${HOME}/isaacsim/python.sh" \
-    "${HOME}/Desktop/isaacsim/python.sh"; do
+    "${HOME}/Desktop/isaacsim/python.sh" \
+    "${OPENARM_DATA_ROOT}/huyhoang/isaacsim/python.sh"; do
     if [ -f "$p" ]; then
         echo "ISAAC_PYTHON=${p}"
         break
@@ -34,11 +40,12 @@ done
 
 echo "REMOTE_RL=${REMOTE_RL}"
 
-# PYTHONPATH for broken editable installs (pip points to old Desktop path)
 if [ -d "${OPENARM_REMOTE_ROOT%/openarm_train_ws}/IsaacLab/source/isaaclab" ]; then
     IL="${OPENARM_REMOTE_ROOT%/openarm_train_ws}/IsaacLab"
-elif [ -d "/data21tb/users/huyhoang/IsaacLab/source/isaaclab" ]; then
-    IL="/data21tb/users/huyhoang/IsaacLab"
+elif [ -d "${OPENARM_DATA_ROOT}/$(whoami)/IsaacLab/source/isaaclab" ]; then
+    IL="${OPENARM_DATA_ROOT}/$(whoami)/IsaacLab"
+elif [ -d "${OPENARM_DATA_ROOT}/huyhoang/IsaacLab/source/isaaclab" ]; then
+    IL="${OPENARM_DATA_ROOT}/huyhoang/IsaacLab"
 else
     IL=""
 fi

@@ -37,6 +37,14 @@ if _THIS_DIR not in sys.path:
 if os.path.exists("/usr/share/vulkan/icd.d/nvidia_icd.json"):
     os.environ["VK_ICD_FILENAMES"] = "/usr/share/vulkan/icd.d/nvidia_icd.json"
 
+# Isaac Lab writes file logs under tempfile.gettempdir()/isaaclab/logs — use per-user TMPDIR
+# (shared /tmp/isaaclab is often owned by another account on multi-user servers).
+_il_tmp = os.environ.get("ISAACLAB_TMPDIR") or os.path.join(
+    os.path.expanduser("~"), ".cache", "isaaclab_tmp"
+)
+os.makedirs(_il_tmp, exist_ok=True)
+os.environ.setdefault("TMPDIR", _il_tmp)
+
 # ── 1. Parse arguments and launch Isaac Sim FIRST (must happen before any isaaclab import) ──
 parser = argparse.ArgumentParser(description="OpenArm Isaac Lab PPO Training — Manager-Based workflow")
 parser.add_argument("--num-envs", "--num_envs", dest="num_envs", type=int, default=1024, help="Number of parallel envs")
@@ -114,6 +122,7 @@ def find_latest_checkpoint(log_dir: str) -> str | None:
 def make_env(num_envs: int) -> Sb3VecEnvWrapper:
     """Build and wrap the Isaac Lab environment for SB3."""
     env_cfg = ApplePickPlaceEnvCfg()
+    env_cfg.sim.log_dir = os.path.join(args.log_dir, "sim_logs")
     env_cfg.scene.num_envs = num_envs
     env_cfg.seed = args.seed
     env_cfg.use_joint_space_actions = args.joint_space
@@ -138,6 +147,9 @@ def make_env(num_envs: int) -> Sb3VecEnvWrapper:
             assist_curriculum=args.assist_schedule,
             stage=args.stage,
         )
+        # Khớp demo/eval — mimic gripper khép nhẹ hơn
+        env_cfg.scene.robot.actuators["gripper"].stiffness = 550.0
+        env_cfg.scene.robot.actuators["gripper"].damping = 35.0
     env = ApplePickPlaceEnv(cfg=env_cfg)
     env = Sb3VecEnvWrapper(env)
     return env

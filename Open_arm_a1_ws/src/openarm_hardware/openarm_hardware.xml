@@ -1,9 +1,9 @@
 <library path="openarm_hardware">
-    <class  name="openarm_hardware/Openarm" 
-            type="openarm_hardware::Openarm" 
+    <class  name="openarm_hardware/OpenArm_v10HW"
+            type="openarm_hardware::OpenArm_v10HW"
             base_class_type="hardware_interface::SystemInterface">
         <description>
-            ros2_control hw interface for OpenArm
+            ros2_control hw interface for OpenArm v10 (CAN / CAN-FD via openarm_can when available)
         </description>
     </class>
 </library>

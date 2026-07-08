@@ -176,8 +176,8 @@ def _warn_model_mismatch(model_path: str) -> None:
         print("")
         print("  ⚠️  Model phase2c (task_phase=22) — Phase 2C đã bỏ khỏi code.")
         print("      Dùng checkpoint phase 2 thật: train_osc_phase2_v3")
-        print("      ./fetch_model.sh naiscorp-4090 train_osc_phase2_v3")
-        print("      ./run_local.sh demo --model ./logs/active_policy.pt --phase 2")
+        print("      ./rl.sh fetch train_osc_phase2")
+        print("      ./rl.sh demo --model ./logs/active_policy.pt --phase 2")
         print("")
 
 
@@ -216,6 +216,7 @@ def main():
     # ── Build environment ──
     print("\n  Building environment...")
     env_cfg = ApplePickPlaceEnvCfg()
+    env_cfg.sim.log_dir = os.path.join(_THIS_DIR, "logs", "sim_logs")
     env_cfg.scene.num_envs = args.num_envs
     env_cfg.sim.render_interval = env_cfg.decimation
     env_cfg.seed = args.seed
@@ -234,10 +235,10 @@ def main():
         demo_profile = apply_phase2_demo_gates(env_cfg, model_path, stage=stage)
     if args.no_bottle_rand:
         env_cfg.bottle_pos_noise = 0.0
-    # Mimic gripper: moderate stiffness — symmetric close via joint1 only
+    # Mimic gripper: nhẹ hơn — khép nhanh làm chai nghiêng trước khi gc đạt 96%
     if env_cfg.task_phase >= 2:
-        env_cfg.scene.robot.actuators["gripper"].stiffness = 900.0
-        env_cfg.scene.robot.actuators["gripper"].damping = 45.0
+        env_cfg.scene.robot.actuators["gripper"].stiffness = 550.0
+        env_cfg.scene.robot.actuators["gripper"].damping = 35.0
     if args.marker_offset_x is not None:
         env_cfg.bottle_grasp_xy_offset_x = args.marker_offset_x
     if args.marker_offset_y is not None:
@@ -278,7 +279,7 @@ def main():
     
     if not os.path.exists(model_path):
         print(f"  ❌ File not found: {model_path}")
-        print("  Please run './fetch_model.sh' first or check the path.")
+        print("  Chạy './rl.sh fetch <run_name>' trước hoặc kiểm tra --model path.")
         env.close()
         return
 

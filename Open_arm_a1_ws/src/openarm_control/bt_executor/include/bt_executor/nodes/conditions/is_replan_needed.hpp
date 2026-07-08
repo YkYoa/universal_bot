@@ -34,7 +34,7 @@ public:
   {
     // Check explicit replan flag (set by /bt_executor/replan service)
     bool flag = false;
-    config().blackboard->get(BB_REPLAN_NEEDED, flag);
+    (void)config().blackboard->get(BB_REPLAN_NEEDED, flag);
     if (flag) {
       // Consume the flag
       config().blackboard->set(BB_REPLAN_NEEDED, false);
@@ -46,7 +46,7 @@ public:
     getInput("confidence_threshold", threshold);
 
     double confidence = 1.0;
-    config().blackboard->get(BB_VLA_CONFIDENCE, confidence);
+    (void)config().blackboard->get(BB_VLA_CONFIDENCE, confidence);
 
     return (confidence < threshold)
       ? BT::NodeStatus::SUCCESS

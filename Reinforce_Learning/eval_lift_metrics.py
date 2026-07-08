@@ -141,6 +141,7 @@ def main() -> None:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     env_cfg = ApplePickPlaceEnvCfg()
+    env_cfg.sim.log_dir = os.path.join(_THIS_DIR, "logs", "sim_logs")
     env_cfg.scene.num_envs = 1
     env_cfg.sim.render_interval = env_cfg.decimation
     env_cfg.seed = args.seed
@@ -156,8 +157,8 @@ def main() -> None:
     env_cfg.debug_success_log = False
     env_cfg.suppress_align_log = True
     if env_cfg.task_phase >= 2:
-        env_cfg.scene.robot.actuators["gripper"].stiffness = 900.0
-        env_cfg.scene.robot.actuators["gripper"].damping = 45.0
+        env_cfg.scene.robot.actuators["gripper"].stiffness = 550.0
+        env_cfg.scene.robot.actuators["gripper"].damping = 35.0
 
     env = ApplePickPlaceEnv(cfg=env_cfg)
     env = Sb3VecEnvWrapper(env)

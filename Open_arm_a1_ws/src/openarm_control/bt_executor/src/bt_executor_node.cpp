@@ -180,7 +180,7 @@ public:
              std::shared_ptr<std_srvs::srv::Trigger::Response> resp) {
         blackboard_->set(BB_GOAL_CHANGED, true);
         int stamp = 0;
-        blackboard_->get(BB_GOAL_STAMP, stamp);
+        (void)blackboard_->get(BB_GOAL_STAMP, stamp);
         blackboard_->set(BB_GOAL_STAMP, stamp + 1);
         resp->success = true;
         resp->message = "Goal change signaled";
@@ -193,7 +193,7 @@ public:
         blackboard_->set(BB_GRASP_POSE, *msg);
         blackboard_->set(BB_GOAL_CHANGED, true);
         int stamp = 0;
-        blackboard_->get(BB_GOAL_STAMP, stamp);
+        (void)blackboard_->get(BB_GOAL_STAMP, stamp);
         blackboard_->set(BB_GOAL_STAMP, stamp + 1);
         RCLCPP_INFO(get_logger(), "Received target pose update: (%.3f, %.3f, %.3f). Goal changed flagged.",
                     msg->pose.position.x, msg->pose.position.y, msg->pose.position.z);
@@ -351,24 +351,24 @@ private:
     int recovery_count = 0, goal_stamp = 0;
     std::string status_msg = "idle", pipeline_id = "ompl", planner_id = "RRTConnectkConfigDefault", planner_profile = "safe_rrt", planning_mode = "normal";
 
-    blackboard_->get(BB_ACTIVE_ARM, active_arm);
-    blackboard_->get(BB_VEL_SCALE, vel_scale);
-    blackboard_->get(BB_ACC_SCALE, acc_scale);
-    blackboard_->get(BB_REPLAN_NEEDED, replan_needed);
-    blackboard_->get(BB_RECOVERY_COUNT, recovery_count);
-    blackboard_->get(BB_STATUS_MSG, status_msg);
-    blackboard_->get(BB_VLA_CONFIDENCE, confidence);
-    blackboard_->get(BB_NEW_GOAL_READY, new_goal_ready);
-    blackboard_->get(BB_LEFT_GRIP_HOLDING, left_holding);
-    blackboard_->get(BB_RIGHT_GRIP_HOLDING, right_holding);
-    blackboard_->get(BB_OBJECT_VISIBLE, object_visible);
-    blackboard_->get(BB_PLAN_FEASIBLE, plan_feasible);
-    blackboard_->get(BB_PIPELINE_ID, pipeline_id);
-    blackboard_->get(BB_PLANNER_ID, planner_id);
-    blackboard_->get(BB_PLANNER_PROFILE, planner_profile);
-    blackboard_->get(BB_GOAL_CHANGED, goal_changed);
-    blackboard_->get(BB_GOAL_STAMP, goal_stamp);
-    blackboard_->get(BB_PLANNING_MODE, planning_mode);
+    (void)blackboard_->get(BB_ACTIVE_ARM, active_arm);
+    (void)blackboard_->get(BB_VEL_SCALE, vel_scale);
+    (void)blackboard_->get(BB_ACC_SCALE, acc_scale);
+    (void)blackboard_->get(BB_REPLAN_NEEDED, replan_needed);
+    (void)blackboard_->get(BB_RECOVERY_COUNT, recovery_count);
+    (void)blackboard_->get(BB_STATUS_MSG, status_msg);
+    (void)blackboard_->get(BB_VLA_CONFIDENCE, confidence);
+    (void)blackboard_->get(BB_NEW_GOAL_READY, new_goal_ready);
+    (void)blackboard_->get(BB_LEFT_GRIP_HOLDING, left_holding);
+    (void)blackboard_->get(BB_RIGHT_GRIP_HOLDING, right_holding);
+    (void)blackboard_->get(BB_OBJECT_VISIBLE, object_visible);
+    (void)blackboard_->get(BB_PLAN_FEASIBLE, plan_feasible);
+    (void)blackboard_->get(BB_PIPELINE_ID, pipeline_id);
+    (void)blackboard_->get(BB_PLANNER_ID, planner_id);
+    (void)blackboard_->get(BB_PLANNER_PROFILE, planner_profile);
+    (void)blackboard_->get(BB_GOAL_CHANGED, goal_changed);
+    (void)blackboard_->get(BB_GOAL_STAMP, goal_stamp);
+    (void)blackboard_->get(BB_PLANNING_MODE, planning_mode);
 
     std::stringstream ss;
     ss << "{"

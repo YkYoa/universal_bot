@@ -45,7 +45,7 @@ public:
 
     // Guard: don't retry forever
     int count = 0;
-    config().blackboard->get(BB_RECOVERY_COUNT, count);
+    (void)config().blackboard->get(BB_RECOVERY_COUNT, count);
     ++count;
     config().blackboard->set(BB_RECOVERY_COUNT, count);
 
@@ -85,7 +85,7 @@ public:
       config().blackboard->set(BB_GOAL_CHANGED, false);
       
       int stamp = 0;
-      config().blackboard->get(BB_GOAL_STAMP, stamp);
+      (void)config().blackboard->get(BB_GOAL_STAMP, stamp);
       config().blackboard->set(BB_GOAL_STAMP, stamp + 1);
 
       config().blackboard->set(BB_STATUS_MSG, std::string("replanning: success"));

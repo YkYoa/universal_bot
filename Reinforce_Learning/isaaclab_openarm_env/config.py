@@ -473,6 +473,36 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     grasp_lift_max_lat_f: float = 0.09
     grasp_lift_max_dist_f: float = 0.10
     grasp_open_until_dist: float = 0.15      # giữ gripper mở khi ngón xa thân chai
+    # Mimic gripper: require both pads balanced before close / lift (phase2_overrides)
+    grasp_symmetry_gate_enabled: bool = False
+    grasp_sym_max_dist_each: float = 0.058
+    grasp_sym_max_dist_delta: float = 0.012
+    grasp_sym_max_z_delta: float = 0.012
+    grasp_sym_xy_balance_blend: float = 0.55
+    grasp_reopen_asym_dist_delta: float = 0.018   # pause ramp khi L/R lệch nhẹ
+    grasp_reopen_severe_asym_delta: float = 0.030  # reopen sau khép: lệch nặng
+    grasp_reopen_max_count: int = 3               # tối đa N lần reopen / episode
+    grasp_close_done_progress: float = 0.96       # coi là khép xong (lift settle)
+    grasp_reopen_max_tilt_deg: float = 5.0
+    grasp_reopen_min_close_progress: float = 0.92  # không cắt giữa ramp (tránh loop)
+    grasp_reopen_cooldown_steps: int = 45
+    grasp_reopen_abort_tilt_deg: float = 12.0   # trên ngưỡng: không reopen (chai đã ngã)
+    grasp_reopen_mid_tilt_deg: float = 4.0    # mid-ramp reopen khi lệch nặng + tilt nhẹ
+    grasp_reopen_ramp_tilt_deg: float = 5.0   # mid-ramp reopen chỉ vì nghiêng
+    grasp_reopen_ramp_asym_tilt_deg: float = 2.5  # reopen khi pad lệch + tilt nhẹ
+    grasp_reopen_ramp_asym_min_gc: float = 0.45   # gc tối thiểu trước asym-reopen
+    grasp_close_ramp_max_tilt_deg: float = 3.0  # pause ramp khi tilt vượt ngưỡng
+    grasp_grasp_abort_tilt_deg: float = 18.0    # dừng mọi assist GRASP
+    grasp_close_pause_on_asym: bool = True
+    grasp_lift_partial_enabled: bool = False
+    grasp_lift_partial_min_gc: float = 0.55
+    grasp_lift_partial_max_tilt_deg: float = 6.5
+    grasp_lift_partial_settle_steps: int = 1
+    grasp_lift_partial_max_z_finger: float = 0.045
+    grasp_lift_partial_max_dist_f: float = 0.075
+    grasp_lift_partial_world_m: float = 0.024
+    grasp_close_freeze_on_reopen_exhaust: bool = True
+    grasp_sym_hold_steps: int = 0          # giữ sym ổn định N bước trước auto-close
 
     # Option C — assisted training curriculum (blend 1.0 → 0.0 over training)
     grasp_assist_schedule_enabled: bool = False

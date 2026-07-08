@@ -47,7 +47,7 @@ public:
   {
     // Check the explicit change flag
     bool changed = false;
-    config().blackboard->get(BB_GOAL_CHANGED, changed);
+    (void)config().blackboard->get(BB_GOAL_CHANGED, changed);
 
     if (changed) {
       // Consume the flag so we don't re-trigger

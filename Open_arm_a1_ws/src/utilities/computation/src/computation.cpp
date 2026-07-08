@@ -284,15 +284,13 @@ namespace computation
 	}
 	tf2::Vector3 movePoseAlongVector(const tf2::Vector3& vector, const double distance, const tf2::Vector3& base_pose)
 	{
-		tf2::Vector3 result;
-		result = base_pose * distance * vector.normalized();
-		return result;
+		return base_pose + (distance * vector.normalized());
 	}
 	tf2::Vector3 movePoseAlongVector(const tf2::Vector3& pose_begin, const tf2::Vector3& pose_end, const double distance,
 									 const tf2::Vector3& base_pose)
 	{
 		tf2::Vector3 dir_vec = pose_end - pose_begin;
-		return (dir_vec, distance, base_pose);
+		return base_pose + (distance * dir_vec.normalized());
 	}
 	Pose movePoseAlongVector(const Pose& vector, const double distance, const Pose& base_pose)
 	{
@@ -347,7 +345,7 @@ namespace computation
 		}
 
 		std::vector<double> result_joints = {0, 0};
-		for(int i = 0; i < power.size(); i++) {
+		for (std::size_t i = 0; i < power.size(); ++i) {
 			result_joints[0] += coef[0][i] * pow(joints[0], power[i][0]) * pow(joints[1], power[i][1]);
 			result_joints[1] += coef[1][i] * pow(joints[0], power[i][0]) * pow(joints[1], power[i][1]);
 		}
