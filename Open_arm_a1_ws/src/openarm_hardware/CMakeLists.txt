@@ -16,8 +16,10 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(OpenArmCAN QUIET)
 
 add_library(${PROJECT_NAME} SHARED
-  src/hardware_interface.cpp
+  src/v10/openarm_v10_hardware.cpp
 )
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE OPENARM_HARDWARE_BUILDING_DLL)
 
 target_include_directories(${PROJECT_NAME}
   PUBLIC

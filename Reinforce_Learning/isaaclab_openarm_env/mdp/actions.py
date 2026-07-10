@@ -23,7 +23,7 @@ from isaaclab.envs.mdp.actions.actions_cfg import (
 from isaaclab.envs.mdp.actions.task_space_actions import OperationalSpaceControllerAction
 from isaaclab.utils import configclass
 
-from .grasp_assist import apply_grasp_arm_assist, _grip_partial_lift_ok
+from .grasp_assist import apply_grasp_arm_assist
 from .helpers import STAGE_GRASP, STAGE_REACH, finger_descended_for_close, finger_grasp_ready, finger_pad_asymmetric, finger_pad_severe_asymmetric, finger_ready_for_close, finger_symmetric_ready, uses_grasp_lift
 
 
@@ -47,6 +47,7 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
         self._reopen_count = torch.zeros(self.num_envs, dtype=torch.int32, device=self.device)
         self._want_close = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._close_progress = torch.zeros(self.num_envs, device=self.device)
+        self._prev_close_tilt = torch.zeros(self.num_envs, device=self.device)
 
     def reset(self, env_ids: torch.Tensor | None = None):
         if env_ids is None:
@@ -57,6 +58,7 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
             self._reopen_count[:] = 0
             self._want_close[:] = False
             self._close_progress[:] = 0.0
+            self._prev_close_tilt[:] = 0.0
         else:
             self._grasp_latched[env_ids] = False
             self._descend_hold[env_ids] = 0
@@ -65,6 +67,7 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
             self._reopen_count[env_ids] = 0
             self._want_close[env_ids] = False
             self._close_progress[env_ids] = 0.0
+            self._prev_close_tilt[env_ids] = 0.0
 
     def process_actions(self, actions: torch.Tensor):
         env = self._env
@@ -117,7 +120,11 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                     tilt_bad = s["bottle_tilt_deg"] > reopen_tilt
                     abort_tilt = float(getattr(env.cfg, "grasp_reopen_abort_tilt_deg", 12.0))
                     # Không reopen khi chai đã ngã — mở grip chỉ làm tệ hơn
-                    can_reopen = tilt_bad & (s["bottle_tilt_deg"] <= abort_tilt)
+                    can_reopen_tilt = tilt_bad & (s["bottle_tilt_deg"] <= abort_tilt)
+                    pause_tilt_gc = float(
+                        getattr(env.cfg, "grasp_reopen_pause_tilt_min_gc", 0.70)
+                    )
+                    can_reopen_tilt = can_reopen_tilt & (self._close_progress < pause_tilt_gc)
                     bad_close = (
                         in_grasp
                         & gripped
@@ -125,7 +132,7 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                         & (self._reopen_cooldown <= 0)
                         & (self._reopen_count < reopen_max)
                         & (s["bottle_lift"] < lift_thresh)
-                        & (can_reopen | severe_asym)
+                        & (can_reopen_tilt | severe_asym)
                     )
                     # Ramp: reopen sớm — lệch pad trước khi tilt 6° (gc~79% hay lặp lại)
                     ramp_reopen_tilt = float(getattr(env.cfg, "grasp_reopen_ramp_tilt_deg", 7.0))
@@ -137,6 +144,13 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                         getattr(env.cfg, "grasp_reopen_ramp_asym_min_gc", 0.45)
                     )
                     pad_asym = finger_pad_asymmetric(env, s)
+                    pause_tilt_gc = float(
+                        getattr(env.cfg, "grasp_reopen_pause_tilt_min_gc", 0.70)
+                    )
+                    # gc cao: tilt do khép cuối — pause ramp, không reopen chỉ vì tilt
+                    tilt_only_reopen = (s["bottle_tilt_deg"] > ramp_reopen_tilt) & (
+                        self._close_progress < pause_tilt_gc
+                    )
                     mid_ramp = (
                         in_grasp
                         & (self._close_progress > 0.25)
@@ -147,7 +161,7 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                         & (s["bottle_lift"] < lift_thresh)
                         & (
                             (severe_asym & (s["bottle_tilt_deg"] > mid_tilt))
-                            | (s["bottle_tilt_deg"] > ramp_reopen_tilt)
+                            | tilt_only_reopen
                             | (
                                 pad_asym
                                 & (self._close_progress > ramp_asym_gc)
@@ -158,10 +172,13 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                     if mid_ramp.any():
                         bad_close = bad_close | mid_ramp
                     if bad_close.any():
+                        preserve_gc = getattr(env.cfg, "grasp_reopen_preserve_gc_on_final", True)
+                        final_reopen = bad_close & (self._reopen_count + 1 >= reopen_max)
+                        reset_gc = bad_close & ~(final_reopen & preserve_gc)
                         self._reopen_count[bad_close] += 1
                         self._grasp_latched[bad_close] = False
                         self._want_close[bad_close] = False
-                        self._close_progress[bad_close] = 0.0
+                        self._close_progress[reset_gc] = 0.0
                         self._descend_hold[bad_close] = 0
                         self._sym_hold[bad_close] = 0
                         self._reopen_cooldown[bad_close] = reopen_cooldown
@@ -221,6 +238,12 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                 min_z_f = getattr(env.cfg, "grasp_close_min_z_finger", -0.01)
                 may_close_z = s["z_error_finger"] >= min_z_f
                 force_close = latched | (in_grasp & close_ready & hold_done & sym_done & may_close_z)
+                # Sau latch: tiếp tục khép dù z_f hơi tăng do lift thử — không tắt close
+                descended = finger_descended_for_close(env, s)
+                term_gc = self._close_progress
+                partial_gc = float(getattr(env.cfg, "grasp_lift_partial_min_gc", 0.52))
+                keep_close = latched | (term_gc >= partial_gc)
+                force_close = force_close & (descended | keep_close)
                 # Không ép đóng tiếp ngay sau reopen lệch — chờ sym lại
                 if reopen_asym > 0.0:
                     force_close = force_close & ~(
@@ -261,35 +284,89 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
     def apply_actions(self):
         ramp_steps = int(getattr(self._env.cfg, "grasp_close_ramp_steps", 0))
         if ramp_steps > 0 and uses_grasp_lift(getattr(self._env.cfg, "task_phase", 1)):
-            ramping = self._want_close & (self._close_progress < 0.99)
+            ramping = (self._want_close | self._grasp_latched) & (self._close_progress < 0.99)
             can_advance = ramping
             s = getattr(self._env, "_last_state", None)
             if s is not None and getattr(self._env.cfg, "grasp_close_pause_on_asym", True):
                 ramp_tilt_max = float(getattr(self._env.cfg, "grasp_close_ramp_max_tilt_deg", 4.0))
-                # Pause cả lệch nhẹ — tránh gc kẹt ~79% rồi mới reopen
-                pad_bad = finger_pad_asymmetric(self._env, s) | finger_pad_severe_asymmetric(
-                    self._env, s
+                exhaust_tilt = float(
+                    getattr(self._env.cfg, "grasp_close_exhaust_max_tilt_deg", 5.0)
                 )
-                can_advance = ramping & ~pad_bad & (s["bottle_tilt_deg"] < ramp_tilt_max)
-                want_lift = getattr(self._env, "_assist_want_lift", None)
-                lift_active = _grip_partial_lift_ok(self._env, s)
-                if want_lift is not None:
-                    lift_active = lift_active | want_lift
+                pad_bad = finger_pad_severe_asymmetric(self._env, s)
+                mild_asym = finger_pad_asymmetric(self._env, s)
+                asym_pause_gc = float(
+                    getattr(self._env.cfg, "grasp_close_asym_pause_max_gc", 0.55)
+                )
+                pad_bad = pad_bad | (mild_asym & (self._close_progress < asym_pause_gc))
                 reopen_max = int(getattr(self._env.cfg, "grasp_reopen_max_count", 3))
-                if getattr(self._env.cfg, "grasp_close_freeze_on_reopen_exhaust", True):
-                    min_gc = float(getattr(self._env.cfg, "grasp_lift_partial_min_gc", 0.55))
-                    freeze = (
-                        (self._reopen_count >= reopen_max)
-                        & (self._close_progress >= min_gc)
-                        & ~lift_active
+                exhausted = self._reopen_count >= reopen_max
+                freeze_at = float(getattr(self._env.cfg, "grasp_close_freeze_at_progress", 0.0))
+                min_gc = float(getattr(self._env.cfg, "grasp_lift_partial_min_gc", 0.55))
+                creep_cap = float(getattr(self._env.cfg, "grasp_close_slip_creep_progress", 0.88))
+                slip_pause = getattr(self._env, "_lift_slip_pause", None)
+                if slip_pause is None:
+                    slip_pause = torch.zeros_like(self._close_progress, dtype=torch.bool)
+                cap = torch.full_like(self._close_progress, freeze_at if freeze_at > 0.0 else 1.0)
+                cap = torch.where(slip_pause, creep_cap, cap)
+                sym_ok = (
+                    finger_symmetric_ready(self._env, s)
+                    if getattr(self._env.cfg, "grasp_symmetry_gate_enabled", False)
+                    else torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+                )
+                # Sau hết reopen: chỉ khép thêm khi sym OK — lệch pad → freeze gc
+                exhaust_sym_close = (
+                    exhausted
+                    & sym_ok
+                    & ~pad_bad
+                    & (self._close_progress < cap)
+                    & (s["bottle_tilt_deg"] < exhaust_tilt)
+                    & getattr(self._env.cfg, "grasp_close_exhaust_creep_enabled", False)
+                )
+                reopen_tilt = float(getattr(self._env.cfg, "grasp_reopen_max_tilt_deg", 4.5))
+                mid_gc = float(getattr(self._env.cfg, "grasp_reopen_pause_tilt_min_gc", 0.70))
+                tilt_limit = torch.where(
+                    self._close_progress >= mid_gc,
+                    torch.full_like(self._close_progress, ramp_tilt_max),
+                    torch.full_like(self._close_progress, reopen_tilt),
+                )
+                can_normal = (
+                    ramping
+                    & ~exhausted
+                    & ~pad_bad
+                    & (s["bottle_tilt_deg"] < tilt_limit)
+                )
+                exhaust_restart = (
+                    exhausted
+                    & sym_ok
+                    & ~pad_bad
+                    & (s["bottle_tilt_deg"] < ramp_tilt_max)
+                    & (self._close_progress < cap)
+                    & (self._close_progress < min_gc)
+                )
+                can_advance = can_normal | exhaust_sym_close | exhaust_restart
+                # Luôn dừng ramp tại freeze_at — tránh khép quá → tilt terminate
+                if freeze_at > 0.0:
+                    can_advance = can_advance & (self._close_progress < cap)
+                if getattr(self._env.cfg, "grasp_close_pause_on_tilt_rise", True):
+                    tilt_rise = (s["bottle_tilt_deg"] > self._prev_close_tilt + 0.05) & (
+                        self._close_progress > 0.65
                     )
+                    can_advance = can_advance & ~tilt_rise
+                self._prev_close_tilt = s["bottle_tilt_deg"].clone()
+                if getattr(self._env.cfg, "grasp_close_freeze_on_reopen_exhaust", True):
+                    freeze_cap = exhausted & (self._close_progress >= cap)
+                    # Lệch sau hết reopen: khóa ngay (không ép khép thêm → tilt)
+                    freeze_asym = exhausted & ~sym_ok & (self._close_progress >= min_gc)
+                    freeze = freeze_cap | freeze_asym
                     can_advance = can_advance & ~freeze
-            else:
-                lift_active = torch.zeros_like(ramping)
             self._close_progress[can_advance] += 1.0 / float(ramp_steps)
             self._close_progress.clamp_(0.0, 1.0)
-            if not self._want_close.any() and not self._grasp_latched.any():
-                self._close_progress[:] = 0.0
+            stale = ~self._want_close & ~self._grasp_latched
+            if s is not None:
+                reopen_max = int(getattr(self._env.cfg, "grasp_reopen_max_count", 3))
+                exhausted = self._reopen_count >= reopen_max
+                stale = stale & ~exhausted
+            self._close_progress[stale] = 0.0
 
             prog = self._close_progress.unsqueeze(-1)
             open_t = self._open_command.unsqueeze(0)

@@ -360,17 +360,33 @@ def calibrate_bottle_local_xy_offset(env: ManagerBasedRLEnv) -> torch.Tensor:
 def get_gripper_state(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Return gripper state in [0, 1]: 0=open, 1=closed."""
     terms = env.action_manager._terms
-    cmd_state = torch.zeros(env.num_envs, device=env.device)
     if "openarm_action" in terms:
         return terms["openarm_action"].gripper_state[:, 0]
+    ramp_steps = int(getattr(env.cfg, "grasp_close_ramp_steps", 0))
     if "gripper_action" in terms:
-        raw = terms["gripper_action"].raw_actions[:, 0]
+        term = terms["gripper_action"]
+        if ramp_steps > 0 and hasattr(term, "_close_progress"):
+            if hasattr(env, "_gripper_joint_ids"):
+                finger_pos = env._robot.data.joint_pos[:, env._gripper_joint_ids].mean(dim=1)
+                actual = (1.0 - finger_pos / 0.044).clamp(0.0, 1.0)
+                return actual
+            return term._close_progress
+        raw = term.raw_actions[:, 0]
         cmd_state = (raw <= 0.0).float()
+        if hasattr(env, "_gripper_joint_ids"):
+            finger_pos = env._robot.data.joint_pos[:, env._gripper_joint_ids].mean(dim=1)
+            actual = (1.0 - finger_pos / 0.044).clamp(0.0, 1.0)
+            return actual
+        return cmd_state
+    return torch.zeros(env.num_envs, device=env.device)
+
+
+def gripper_physical_fraction(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Fraction closed from joint position (0=open, 1=closed)."""
     if hasattr(env, "_gripper_joint_ids"):
         finger_pos = env._robot.data.joint_pos[:, env._gripper_joint_ids].mean(dim=1)
-        actual = (1.0 - finger_pos / 0.044).clamp(0.0, 1.0)
-        return torch.maximum(cmd_state, actual)
-    return cmd_state
+        return (1.0 - finger_pos / 0.044).clamp(0.0, 1.0)
+    return get_gripper_state(env)
 
 
 def _finger_tip_link_offsets(env: ManagerBasedRLEnv) -> tuple[torch.Tensor, torch.Tensor]:
@@ -477,6 +493,14 @@ def reset_action_terms(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
             term._want_close[env_ids] = False
     if hasattr(env, "_lift_settle_steps"):
         env._lift_settle_steps[env_ids] = 0
+    if hasattr(env, "_lift_armed"):
+        env._lift_armed[env_ids] = False
+    if hasattr(env, "_lift_slip_pause"):
+        env._lift_slip_pause[env_ids] = False
+    if hasattr(env, "_prev_lift_z_f"):
+        env._prev_lift_z_f[env_ids] = 0.0
+    if hasattr(env, "_prev_lift_bottle"):
+        env._prev_lift_bottle[env_ids] = 0.0
 
 
 def compute_state(env: ManagerBasedRLEnv) -> dict:

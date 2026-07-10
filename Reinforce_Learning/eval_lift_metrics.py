@@ -157,7 +157,7 @@ def main() -> None:
     env_cfg.debug_success_log = False
     env_cfg.suppress_align_log = True
     if env_cfg.task_phase >= 2:
-        env_cfg.scene.robot.actuators["gripper"].stiffness = 550.0
+        env_cfg.scene.robot.actuators["gripper"].stiffness = 700.0
         env_cfg.scene.robot.actuators["gripper"].damping = 35.0
 
     env = ApplePickPlaceEnv(cfg=env_cfg)
@@ -186,6 +186,10 @@ def main() -> None:
     ep_last_top = 0.0
     ep_last_lat_f = 0.0
     ep_last_dist_f = 0.0
+    ep_max_gc = 0.0
+    ep_min_gc_after_exhaust = 1.0
+    ep_saw_lift_assist = False
+    ep_max_span = 999.0
 
     while simulation_app.is_running() and episodes_done < args.episodes:
         with torch.no_grad():
@@ -212,6 +216,18 @@ def main() -> None:
             ep_last_top = float(ls["top_down_align"][0].item())
             ep_last_lat_f = float(ls["lateral_finger_xy"][0].item())
             ep_last_dist_f = float(ls["dist_finger_body"][0].item())
+            term = env.unwrapped.action_manager._terms.get("gripper_action")
+            if term is not None and hasattr(term, "_close_progress"):
+                gc_now = float(term._close_progress[0].item())
+                ep_max_gc = max(ep_max_gc, gc_now)
+                reopen_max = int(getattr(cfg, "grasp_reopen_max_count", 3))
+                if hasattr(term, "_reopen_count") and int(term._reopen_count[0].item()) >= reopen_max:
+                    ep_min_gc_after_exhaust = min(ep_min_gc_after_exhaust, gc_now)
+            if hasattr(env.unwrapped, "_assist_want_lift"):
+                if bool(env.unwrapped._assist_want_lift[0].item()):
+                    ep_saw_lift_assist = True
+            if "finger_span_xy" in ls:
+                ep_max_span = min(ep_max_span, float(ls["finger_span_xy"][0].item()))
 
         if not dones[0]:
             continue
@@ -260,6 +276,10 @@ def main() -> None:
             "tilt_deg": bottle_tilt,
             "stage": stage_end,
             "fail_mode": fail_mode,
+            "max_gc": ep_max_gc,
+            "min_gc_after_exhaust": ep_min_gc_after_exhaust if ep_min_gc_after_exhaust < 1.0 else None,
+            "saw_lift_assist": ep_saw_lift_assist,
+            "min_span_m": ep_max_span if ep_max_span < 999.0 else None,
         })
         episodes_done += 1
         ep_max_stage = 0
@@ -267,6 +287,10 @@ def main() -> None:
         ep_max_lift_hold = 0
         ep_last_gripper = 0.0
         ep_last_tilt = 0.0
+        ep_max_gc = 0.0
+        ep_min_gc_after_exhaust = 1.0
+        ep_saw_lift_assist = False
+        ep_max_span = 999.0
 
     env.close()
 
@@ -281,6 +305,13 @@ def main() -> None:
     if run_name.startswith("best_policy_"):
         run_name = run_name[len("best_policy_") : -3] if run_name.endswith(".pt") else run_name
 
+    smoke_pass = all(
+        (r.get("max_gc", 0) >= 0.65 or (r.get("min_span_m") is not None and r["min_span_m"] < 0.05))
+        for r in results
+    ) if results else False
+    any_lift = any(r["lift_m"] > 0.03 for r in results)
+    any_lift_assist = any(r.get("saw_lift_assist") for r in results)
+
     metrics = {
         "success_rate": successes / len(results) if results else 0.0,
         "mean_lift_m": float(np.mean([r["lift_m"] for r in results])) if results else 0.0,
@@ -289,6 +320,9 @@ def main() -> None:
         "fail_modes": fail_modes,
         "episodes": len(results),
         "per_episode": results,
+        "smoke_no_deadlock": smoke_pass,
+        "smoke_any_lift": any_lift,
+        "smoke_saw_lift_assist": any_lift_assist,
         "run": run_name,
         "iteration": args.iteration,
         "model": os.path.basename(model_path),

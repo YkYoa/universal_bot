@@ -1,22 +1,5 @@
 import os
 
-# Đường dẫn chứa package openarm_description (thư mục CHA của openarm_description)
-_src_path = "/home/huudung/project/universal_bot/Open_arm_a1_ws/src"
-_install_share_path = "/home/huudung/project/universal_bot/Open_arm_a1_ws/install/openarm_description/share"
-
-# Thêm cả src và install/share vào resource path để Gazebo tìm thấy mesh
-_extra_paths = os.pathsep.join([_src_path, _install_share_path])
-
-for env_var in ["GZ_SIM_RESOURCE_PATH", "IGN_GAZEBO_RESOURCE_PATH", "GZ_SIM_MODEL_PATH"]:
-    if env_var in os.environ:
-        os.environ[env_var] += os.pathsep + _extra_paths
-    else:
-        os.environ[env_var] = _extra_paths
-# Automatically fix CycloneDDS buffer issues for large URDFs
-if "CYCLONEDDS_URI" not in os.environ:
-    os.environ["CYCLONEDDS_URI"] = "<CycloneDDS><Domain><General><MaxMessageSize>65535B</MaxMessageSize><FragmentSize>1300B</FragmentSize></General></Domain></CycloneDDS>"
-
-
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, RegisterEventHandler
@@ -28,8 +11,40 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
+
+def _setup_gazebo_resource_paths():
+    """Let Gazebo find meshes from both source and install trees."""
+    try:
+        desc_share = get_package_share_directory("openarm_description")
+        ws_src = os.path.abspath(os.path.join(desc_share, "..", "..", "..", "..", "src"))
+        extra_paths = os.pathsep.join([ws_src, desc_share])
+        for env_var in ["GZ_SIM_RESOURCE_PATH", "IGN_GAZEBO_RESOURCE_PATH", "GZ_SIM_MODEL_PATH"]:
+            if env_var in os.environ:
+                os.environ[env_var] += os.pathsep + extra_paths
+            else:
+                os.environ[env_var] = extra_paths
+    except Exception:
+        pass
+
+
 def generate_launch_description():
-    # Khai báo argument để người dùng lựa chọn: false (chạy Gazebo) hoặc true (chạy Fake Hardware)
+    _setup_gazebo_resource_paths()
+
+    # CycloneDDS: large URDF / many joints
+    if "CYCLONEDDS_URI" not in os.environ:
+        os.environ["CYCLONEDDS_URI"] = (
+            "<CycloneDDS><Domain><General>"
+            "<MaxMessageSize>10MB</MaxMessageSize>"
+            "<FragmentSize>4000B</FragmentSize>"
+            "</General></Domain></CycloneDDS>"
+        )
+
+    # ── Bringup modes (pick ONE via launch args) ───────────────────────────────
+    # 1) Simulation (Gazebo):  use_fake_hardware:=false gazebo:=true
+    # 2) Software-only fake:   use_fake_hardware:=true  gazebo:=false
+    # 3) Real hardware (CAN):  use_fake_hardware:=false gazebo:=false
+    #    → uses openarm_hardware/OpenArm_v10HW per arm (can0/can1)
+    # MoveIt launch files should include this file, not duplicate ros2_control.
     use_fake_hardware_arg = DeclareLaunchArgument(
         "use_fake_hardware",
         default_value="false",
@@ -40,11 +55,30 @@ def generate_launch_description():
     gazebo_arg = DeclareLaunchArgument(
         "gazebo",
         default_value="true",
-        description="Run with Gazebo simulation (true) or Real Hardware (false)."
+        description="Run with Gazebo simulation (true) or Real Hardware (false).",
+    )
+
+    left_can_interface_arg = DeclareLaunchArgument(
+        "left_can_interface",
+        default_value="can1",
+        description="SocketCAN interface for left arm (real hardware only).",
+    )
+    right_can_interface_arg = DeclareLaunchArgument(
+        "right_can_interface",
+        default_value="can0",
+        description="SocketCAN interface for right arm (real hardware only).",
+    )
+    hand_arg = DeclareLaunchArgument(
+        "hand",
+        default_value="true",
+        description="Enable gripper joints in ros2_control.",
     )
     
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     gazebo = LaunchConfiguration("gazebo")
+    left_can_interface = LaunchConfiguration("left_can_interface")
+    right_can_interface = LaunchConfiguration("right_can_interface")
+    hand = LaunchConfiguration("hand")
     
     # Tính toán động giá trị use_sim_time: 'true' nếu không chạy fake hardware VÀ chạy gazebo, ngược lại là 'false'
     # Để đơn giản, ta kiểm tra xem có chạy Gazebo không: nếu gazebo == 'true' và use_fake_hardware == 'false'
@@ -66,7 +100,13 @@ def generate_launch_description():
             " ",
             "use_fake_hardware:=", use_fake_hardware,
             " ",
-            "gazebo:=", gazebo, # <--- TRUYỀN BIẾN GAZBO SANG XACRO
+            "gazebo:=", gazebo,
+            " ",
+            "hand:=", hand,
+            " ",
+            "left_can_interface:=", left_can_interface,
+            " ",
+            "right_can_interface:=", right_can_interface,
             " ",
             "mobile_base:=true",
             " ",
@@ -250,6 +290,9 @@ def generate_launch_description():
         [
             use_fake_hardware_arg,
             gazebo_arg,
+            left_can_interface_arg,
+            right_can_interface_arg,
+            hand_arg,
             robot_state_publisher_node,
             # Gazebo
             gazebo_sim,

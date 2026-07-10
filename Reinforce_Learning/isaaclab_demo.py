@@ -122,7 +122,7 @@ from stable_baselines3 import PPO
 from isaaclab_rl.sb3 import Sb3VecEnvWrapper
 from isaaclab_openarm_env.env import ApplePickPlaceEnv
 from isaaclab_openarm_env.config import ApplePickPlaceEnvCfg
-from isaaclab_openarm_env.mdp.helpers import finger_grasp_ready, save_pregrasp_joints, compute_state, format_bottle_debug, format_finger_debug
+from isaaclab_openarm_env.mdp.helpers import finger_grasp_ready, save_pregrasp_joints, compute_state, format_bottle_debug, format_finger_debug, gripper_physical_fraction
 from isaaclab_openarm_env.scene import patch_qvic_usd_once
 
 # Permanently patch qvic.usd to remove duplicate robot prims and nested RigidBodyAPIs.
@@ -237,7 +237,7 @@ def main():
         env_cfg.bottle_pos_noise = 0.0
     # Mimic gripper: nhẹ hơn — khép nhanh làm chai nghiêng trước khi gc đạt 96%
     if env_cfg.task_phase >= 2:
-        env_cfg.scene.robot.actuators["gripper"].stiffness = 550.0
+        env_cfg.scene.robot.actuators["gripper"].stiffness = 700.0
         env_cfg.scene.robot.actuators["gripper"].damping = 35.0
     if args.marker_offset_x is not None:
         env_cfg.bottle_grasp_xy_offset_x = args.marker_offset_x
@@ -498,6 +498,19 @@ def main():
                                 if ramp > 0:
                                     pct = int(grip_term._close_progress[0].item() * 100)
                                     line += f"gc:{pct}% "
+                                    reopen_max = int(
+                                        getattr(env.unwrapped.cfg, "grasp_reopen_max_count", 3)
+                                    )
+                                    if hasattr(grip_term, "_reopen_count"):
+                                        rc = int(grip_term._reopen_count[0].item())
+                                        if rc >= reopen_max:
+                                            line += "exhaust:Y "
+                                    if hasattr(env.unwrapped, "_last_state"):
+                                        ls0 = env.unwrapped._last_state
+                                        span = float(ls0["finger_span_xy"][0].item())
+                                        line += f"span:{span:.3f}m "
+                                        phys = float(gripper_physical_fraction(env.unwrapped)[0].item())
+                                        line += f"phys:{phys:.2f} "
                             if hasattr(env.unwrapped, "_lift_settle_steps"):
                                 settle_req = int(getattr(env.unwrapped.cfg, "grasp_lift_settle_steps", 8))
                                 st = int(env.unwrapped._lift_settle_steps[0].item())

@@ -491,6 +491,9 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     grasp_reopen_ramp_tilt_deg: float = 5.0   # mid-ramp reopen chỉ vì nghiêng
     grasp_reopen_ramp_asym_tilt_deg: float = 2.5  # reopen khi pad lệch + tilt nhẹ
     grasp_reopen_ramp_asym_min_gc: float = 0.45   # gc tối thiểu trước asym-reopen
+    grasp_reopen_preserve_gc_on_final: bool = True
+    grasp_reopen_pause_tilt_min_gc: float = 0.70
+    grasp_close_pause_on_tilt_rise: bool = True
     grasp_close_ramp_max_tilt_deg: float = 3.0  # pause ramp khi tilt vượt ngưỡng
     grasp_grasp_abort_tilt_deg: float = 18.0    # dừng mọi assist GRASP
     grasp_close_pause_on_asym: bool = True
@@ -501,6 +504,21 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     grasp_lift_partial_max_z_finger: float = 0.045
     grasp_lift_partial_max_dist_f: float = 0.075
     grasp_lift_partial_world_m: float = 0.024
+    grasp_lift_partial_align_blend: float = 0.0
+    grasp_close_freeze_at_progress: float = 0.0
+    grasp_close_slip_creep_progress: float = 0.88
+    grasp_partial_lift_require_sym: bool = True
+    grasp_close_exhaust_creep_enabled: bool = False
+    grasp_close_exhaust_max_tilt_deg: float = 7.0
+    grasp_lift_slip_z_finger: float = 0.022
+    grasp_lift_slip_bottle_m: float = 0.004
+    grasp_lift_contact_z_finger: float = 0.022
+    grasp_lift_contact_dist_f: float = 0.040
+    grasp_lift_contact_min_follow: float = 0.72
+    grasp_lift_pad_balance_blend: float = 0.0
+    grasp_lift_max_span_xy: float = 0.065
+    grasp_phys_close_max_span: float = 0.062
+    grasp_phys_close_max_joint_ratio: float = 0.40
     grasp_close_freeze_on_reopen_exhaust: bool = True
     grasp_sym_hold_steps: int = 0          # giữ sym ổn định N bước trước auto-close
 

@@ -8,65 +8,90 @@
 #include <hardware_interface/system_interface.hpp>
 #include <rclcpp_lifecycle/state.hpp>
 
+#include "v10/visibility.hpp"
+
 namespace openarm_hardware {
 
+/**
+ * @brief OpenArm V10 ros2_control hardware interface (one arm per instance).
+ *
+ * Bimanual setup uses two plugin instances with different:
+ *   - can_interface (e.g. can0 / can1)
+ *   - arm_prefix    (e.g. left_ / right_)
+ */
 class OpenArm_v10HW : public hardware_interface::SystemInterface
 {
 public:
   OpenArm_v10HW();
 
+  OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams& params) override;
 
+  OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_configure(
     const rclcpp_lifecycle::State& previous_state) override;
 
+  OPENARM_HARDWARE_PUBLIC
   std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
+
+  OPENARM_HARDWARE_PUBLIC
   std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
 
+  OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_activate(
     const rclcpp_lifecycle::State& previous_state) override;
 
+  OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_deactivate(
     const rclcpp_lifecycle::State& previous_state) override;
 
+  OPENARM_HARDWARE_PUBLIC
   hardware_interface::return_type read(
     const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
+  OPENARM_HARDWARE_PUBLIC
   hardware_interface::return_type write(
     const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 private:
   static constexpr std::size_t ARM_DOF = 7;
 
+  static constexpr double GRIPPER_JOINT_OPEN = 0.044;
+  static constexpr double GRIPPER_MOTOR_CLOSED = 0.0;
+  static constexpr double GRIPPER_MOTOR_OPEN = -1.0472;
+  static constexpr double DEFAULT_GRIPPER_KP = 5.0;
+  static constexpr double DEFAULT_GRIPPER_KD = 0.1;
+
   bool parse_config();
   void generate_joint_names();
+  void return_to_zero();
 
-  // Params from URDF ros2_control <hardware><param ...>
+  double joint_to_motor_radians(double joint_value) const;
+  double motor_radians_to_joint(double motor_radians) const;
+
   std::string can_interface_{"can0"};
-  std::string arm_prefix_{""};     // e.g. "left_" / "right_" (already includes underscore)
+  std::string arm_prefix_;
+  std::string ee_type_{"parallel_link"};
   bool hand_{false};
   bool can_fd_{true};
 
-  std::array<double, ARM_DOF> kp_{};
-  std::array<double, ARM_DOF> kd_{};
-  double gripper_kp_{0.0};
-  double gripper_kd_{0.0};
+  std::array<double, ARM_DOF> kp_{70.0, 70.0, 70.0, 60.0, 10.0, 10.0, 10.0};
+  std::array<double, ARM_DOF> kd_{2.75, 2.5, 2.0, 2.0, 0.7, 0.6, 0.5};
+  double gripper_kp_{DEFAULT_GRIPPER_KP};
+  double gripper_kd_{DEFAULT_GRIPPER_KD};
 
   std::vector<std::string> joint_names_;
 
   std::vector<double> pos_commands_;
   std::vector<double> vel_commands_;
   std::vector<double> tau_commands_;
-
   std::vector<double> pos_states_;
   std::vector<double> vel_states_;
   std::vector<double> tau_states_;
 
-  // PImpl so we can build without OpenArmCAN installed.
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace openarm_hardware
-
