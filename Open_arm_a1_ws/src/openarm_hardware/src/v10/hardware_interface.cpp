@@ -1,4 +1,4 @@
-#include "v10/openarm_v10_hardware.hpp"
+#include "v10/hardware_interface.hpp"
 
 #include <algorithm>
 #include <chrono>
