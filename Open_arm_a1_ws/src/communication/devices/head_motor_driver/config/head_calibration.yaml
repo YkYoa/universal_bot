@@ -1,0 +1,30 @@
+# Per-unit calibration for MG996R + custom analog tap.
+# MG996R potentiometers vary between units - measure adc_min/adc_max by hand
+# (sweep to physical limit, read raw ADC) before integration testing.
+# Angle limits must match HEAD_DRIVER_SPEC.md section 5.
+
+pan:
+  adc_min: 180          # raw ADC count at min_angle_rad
+  adc_max: 3900          # raw ADC count at max_angle_rad
+  min_angle_rad: -1.57   # -90 deg
+  max_angle_rad: 1.57    # +90 deg
+  pwm_min_us: 500
+  pwm_max_us: 2500
+  invert: false          # set true if wiper wiring gives inverted reading vs angle
+
+tilt:
+  adc_min: 300
+  adc_max: 3700
+  min_angle_rad: -0.52   # -30 deg
+  max_angle_rad: 0.52    # +30 deg
+  pwm_min_us: 900
+  pwm_max_us: 2100
+  invert: false
+
+# stall detection: if |commanded_rad - filtered_measured_rad| stays above
+# stall_error_threshold_rad for longer than stall_timeout_ms, is_healthy=false
+stall_error_threshold_rad: 0.15
+stall_timeout_ms: 400
+
+# EMA low-pass filter applied to raw angle before use (analog tap is noisy)
+position_filter_alpha: 0.3

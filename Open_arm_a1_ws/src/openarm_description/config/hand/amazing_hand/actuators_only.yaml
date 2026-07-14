@@ -1,0 +1,312 @@
+# Auto-generated: locks every non-actuator movable joint of the amazing_hand
+# so joint_state_publisher_gui only shows sliders for the 8 real SCS0009 servo joints
+# (revolute_5, revolute_5_1..3, revolute_6, revolute_6_1..3). factor=0 => value stays
+# fixed at the assembled rest pose regardless of the (arbitrary) parent joint's motion,
+# since the passive rod/gimbal linkage is not solved here.
+/**:
+  ros__parameters:
+    dependent_joints:
+      ball_1:
+        parent: revolute_5
+        factor: 0.0
+        offset: 0.0
+      ball_1_1:
+        parent: revolute_5
+        factor: 0.0
+        offset: 0.0
+      ball_1_10:
+        parent: revolute_6_1
+        factor: 0.0
+        offset: 0.0
+      ball_1_11:
+        parent: revolute_6_1
+        factor: 0.0
+        offset: 0.0
+      ball_1_12:
+        parent: revolute_5_2
+        factor: 0.0
+        offset: 0.0
+      ball_1_13:
+        parent: revolute_5_2
+        factor: 0.0
+        offset: 0.0
+      ball_1_14:
+        parent: revolute_5_2
+        factor: 0.0
+        offset: 0.0
+      ball_1_15:
+        parent: revolute_6_2
+        factor: 0.0
+        offset: 0.0
+      ball_1_16:
+        parent: revolute_6_2
+        factor: 0.0
+        offset: 0.0
+      ball_1_17:
+        parent: revolute_6_2
+        factor: 0.0
+        offset: 0.0
+      ball_1_18:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1_19:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1_2:
+        parent: revolute_5
+        factor: 0.0
+        offset: 0.0
+      ball_1_20:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1_21:
+        parent: revolute_6_3
+        factor: 0.0
+        offset: 0.0
+      ball_1_22:
+        parent: revolute_6_3
+        factor: 0.0
+        offset: 0.0
+      ball_1_23:
+        parent: revolute_6_3
+        factor: 0.0
+        offset: 0.0
+      ball_1_3:
+        parent: revolute_6
+        factor: 0.0
+        offset: 0.0
+      ball_1_4:
+        parent: revolute_6
+        factor: 0.0
+        offset: 0.0
+      ball_1_5:
+        parent: revolute_6
+        factor: 0.0
+        offset: 0.0
+      ball_1_6:
+        parent: revolute_5_1
+        factor: 0.0
+        offset: 0.0
+      ball_1_7:
+        parent: revolute_5_1
+        factor: 0.0
+        offset: 0.0
+      ball_1_8:
+        parent: revolute_5_1
+        factor: 0.0
+        offset: 0.0
+      ball_1_9:
+        parent: revolute_6_1
+        factor: 0.0
+        offset: 0.0
+      ball_1__1_:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__1:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__2:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__3:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__4:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__5:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_1:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_10:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_11:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_12:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_13:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_14:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_15:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_16:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_17:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_2:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_3:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_4:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_5:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_6:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_7:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_8:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      ball_1__1__loop_closure_9:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      cylindrical_1:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      cylindrical_1_1:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      cylindrical_1_2:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      cylindrical_1_3:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      cylindrical_1_4:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      cylindrical_1_5:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      cylindrical_1_6:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      cylindrical_1_7:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_1:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_1_1:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_1_2:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_1_3:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_1_4:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_2:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_2_1:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_2_2:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_2_3:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_2_4:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_3:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_3_1:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_3_2:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_3_3:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_3_4:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_4:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_4_loop_closure:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_4_loop_closure_1:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_4_loop_closure_2:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
+      revolute_4_loop_closure_3:
+        parent: revolute_5_3
+        factor: 0.0
+        offset: 0.0
