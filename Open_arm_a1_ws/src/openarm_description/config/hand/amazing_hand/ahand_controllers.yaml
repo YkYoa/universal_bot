@@ -1,0 +1,28 @@
+# ros2_control controllers for the amazing_hand.
+# Joint groups (aliases served by hand_kinematics_node):
+#   j1_group_controller: j11..j14 -- yaw/abduction of fingers 1..4 (4 = thumb)
+#   j2_group_controller: j21..j24 -- proximal flexion of fingers 1..4
+controller_manager:
+  ros__parameters:
+    update_rate: 50
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    j1_group_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    j2_group_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+j1_group_controller:
+  ros__parameters:
+    joints: [j11, j12, j13, j14]
+    command_interfaces: [position]
+    state_interfaces: [position]
+
+j2_group_controller:
+  ros__parameters:
+    joints: [j21, j22, j23, j24]
+    command_interfaces: [position]
+    state_interfaces: [position]

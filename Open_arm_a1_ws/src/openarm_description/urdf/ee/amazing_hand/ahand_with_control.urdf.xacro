@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Amazing hand + ros2_control system (topic-based hardware).
+
+  Command joints are the per-finger knuckle aliases solved by
+  hand_kinematics_node (scripts/hand_kinematics_node.py):
+    j1<i> = yaw/abduction of finger i     (i = 1..3 top-down across the palm, 4 = thumb)
+    j2<i> = proximal flexion of finger i  (distal knuckle is mechanically coupled)
+
+  The topic_based_ros2_control hardware publishes position commands on
+  /ahand/joint_commands and reads states from /ahand/joint_states, both of
+  which hand_kinematics_node serves (it translates the aliases, solves the
+  closed-loop linkage IK, and republishes the full /joint_states for TF/RViz).
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="amazing_hand">
+  <xacro:arg name="side" default="right"/>
+  <xacro:property name="side" value="$(arg side)"/>
+
+  <xacro:include filename="$(find openarm_description)/urdf/ee/amazing_hand/${'r_ahand.urdf' if side == 'right' else 'l_ahand.urdf'}"/>
+
+  <xacro:property name="yaw_lower" value="-0.349066"/>
+  <xacro:property name="yaw_upper" value="0.349066"/>
+  <xacro:property name="flex_lower" value="-0.0924772"/>
+  <xacro:property name="flex_upper" value="1.35615"/>
+
+  <!-- ros2_control requires every controlled joint to exist in the URDF tree,
+       but the aliases are virtual (hand_kinematics_node maps them onto the real
+       knuckle joints), so give each one a massless reference link off root. -->
+  <xacro:macro name="alias_joint" params="name lower upper">
+    <link name="${name}_ref"/>
+    <joint name="${name}" type="revolute">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <parent link="root"/>
+      <child link="${name}_ref"/>
+      <limit effort="1" velocity="1" lower="${lower}" upper="${upper}"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:alias_joint name="j11" lower="${yaw_lower}" upper="${yaw_upper}"/>
+  <xacro:alias_joint name="j12" lower="${yaw_lower}" upper="${yaw_upper}"/>
+  <xacro:alias_joint name="j13" lower="${yaw_lower}" upper="${yaw_upper}"/>
+  <xacro:alias_joint name="j14" lower="${yaw_lower}" upper="${yaw_upper}"/>
+  <xacro:alias_joint name="j21" lower="${flex_lower}" upper="${flex_upper}"/>
+  <xacro:alias_joint name="j22" lower="${flex_lower}" upper="${flex_upper}"/>
+  <xacro:alias_joint name="j23" lower="${flex_lower}" upper="${flex_upper}"/>
+  <xacro:alias_joint name="j24" lower="${flex_lower}" upper="${flex_upper}"/>
+
+  <xacro:macro name="command_joint" params="name lower upper">
+    <joint name="${name}">
+      <command_interface name="position">
+        <param name="min">${lower}</param>
+        <param name="max">${upper}</param>
+      </command_interface>
+      <state_interface name="position"/>
+    </joint>
+  </xacro:macro>
+
+  <ros2_control name="AmazingHandSystem" type="system">
+    <hardware>
+      <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
+      <param name="joint_commands_topic">/ahand/joint_commands</param>
+      <param name="joint_states_topic">/ahand/joint_states</param>
+    </hardware>
+    <xacro:command_joint name="j11" lower="${yaw_lower}" upper="${yaw_upper}"/>
+    <xacro:command_joint name="j12" lower="${yaw_lower}" upper="${yaw_upper}"/>
+    <xacro:command_joint name="j13" lower="${yaw_lower}" upper="${yaw_upper}"/>
+    <xacro:command_joint name="j14" lower="${yaw_lower}" upper="${yaw_upper}"/>
+    <xacro:command_joint name="j21" lower="${flex_lower}" upper="${flex_upper}"/>
+    <xacro:command_joint name="j22" lower="${flex_lower}" upper="${flex_upper}"/>
+    <xacro:command_joint name="j23" lower="${flex_lower}" upper="${flex_upper}"/>
+    <xacro:command_joint name="j24" lower="${flex_lower}" upper="${flex_upper}"/>
+  </ros2_control>
+</robot>
