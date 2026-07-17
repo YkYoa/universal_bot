@@ -8,6 +8,10 @@
         - right_arm_controller
         - left_gripper_controller
         - right_gripper_controller
+        - left_hand_j1_controller
+        - left_hand_j2_controller
+        - right_hand_j1_controller
+        - right_hand_j2_controller
 
       left_arm_controller:
         type: FollowJointTrajectory
@@ -50,3 +54,47 @@
         joints:
           - openarm_right_finger_joint1
           - openarm_right_finger_joint2
+
+      # amazing_hand fingers (ee_type:=amazing_hand only; mutually exclusive
+      # with the grippers above). MoveIt splits a left_hand_fingers/
+      # right_hand_fingers group trajectory across the j1 (yaw) + j2 (flex)
+      # controller pair for that side.
+      left_hand_j1_controller:
+        type: FollowJointTrajectory
+        action_ns: follow_joint_trajectory
+        default: true
+        joints:
+          - openarm_left_j11
+          - openarm_left_j12
+          - openarm_left_j13
+          - openarm_left_j14
+
+      left_hand_j2_controller:
+        type: FollowJointTrajectory
+        action_ns: follow_joint_trajectory
+        default: true
+        joints:
+          - openarm_left_j21
+          - openarm_left_j22
+          - openarm_left_j23
+          - openarm_left_j24
+
+      right_hand_j1_controller:
+        type: FollowJointTrajectory
+        action_ns: follow_joint_trajectory
+        default: true
+        joints:
+          - openarm_right_j11
+          - openarm_right_j12
+          - openarm_right_j13
+          - openarm_right_j14
+
+      right_hand_j2_controller:
+        type: FollowJointTrajectory
+        action_ns: follow_joint_trajectory
+        default: true
+        joints:
+          - openarm_right_j21
+          - openarm_right_j22
+          - openarm_right_j23
+          - openarm_right_j24

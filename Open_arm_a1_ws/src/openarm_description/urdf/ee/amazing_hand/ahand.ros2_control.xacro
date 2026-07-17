@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ros2_control system for one amazing_hand instance, parameterized by prefix
+  so it can be instantiated per-side in a combined bimanual robot_description
+  (see openarm_robot.xacro). Command joints are the same knuckle aliases used
+  by the standalone control_amazing_hand.launch.py:
+    ${prefix}j11..j14 = yaw/abduction of fingers 1..4 (4 = thumb)
+    ${prefix}j21..j24 = proximal flexion of fingers 1..4
+  hand_kinematics_node (with matching link_prefix/alias_prefix/topic params)
+  solves the closed-loop linkage and republishes the full joint state.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="ahand_yaw_lower" value="-0.349066"/>
+  <xacro:property name="ahand_yaw_upper" value="0.349066"/>
+  <xacro:property name="ahand_flex_lower" value="-0.0924772"/>
+  <xacro:property name="ahand_flex_upper" value="1.35615"/>
+
+  <xacro:macro name="amazing_hand_alias_joint" params="prefix link_prefix name lower upper">
+    <link name="${prefix}${name}_ref"/>
+    <joint name="${prefix}${name}" type="revolute">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <parent link="${link_prefix}root"/>
+      <child link="${prefix}${name}_ref"/>
+      <limit effort="1" velocity="1" lower="${lower}" upper="${upper}"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="amazing_hand_command_joint" params="prefix name lower upper">
+    <joint name="${prefix}${name}">
+      <command_interface name="position">
+        <param name="min">${lower}</param>
+        <param name="max">${upper}</param>
+      </command_interface>
+      <state_interface name="position"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="amazing_hand_ros2_control"
+               params="prefix link_prefix joint_commands_topic joint_states_topic">
+    <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j11" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
+    <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j12" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
+    <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j13" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
+    <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j14" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
+    <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j21" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
+    <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j22" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
+    <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j23" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
+    <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j24" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
+
+    <ros2_control name="${prefix}AmazingHandSystem" type="system">
+      <hardware>
+        <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
+        <param name="joint_commands_topic">${joint_commands_topic}</param>
+        <param name="joint_states_topic">${joint_states_topic}</param>
+      </hardware>
+      <xacro:amazing_hand_command_joint prefix="${prefix}" name="j11" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
+      <xacro:amazing_hand_command_joint prefix="${prefix}" name="j12" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
+      <xacro:amazing_hand_command_joint prefix="${prefix}" name="j13" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
+      <xacro:amazing_hand_command_joint prefix="${prefix}" name="j14" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
+      <xacro:amazing_hand_command_joint prefix="${prefix}" name="j21" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
+      <xacro:amazing_hand_command_joint prefix="${prefix}" name="j22" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
+      <xacro:amazing_hand_command_joint prefix="${prefix}" name="j23" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
+      <xacro:amazing_hand_command_joint prefix="${prefix}" name="j24" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
+    </ros2_control>
+  </xacro:macro>
+</robot>

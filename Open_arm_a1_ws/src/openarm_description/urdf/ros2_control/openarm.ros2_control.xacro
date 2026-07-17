@@ -8,6 +8,7 @@
              use_fake_hardware:=^|false
              fake_sensor_commands:=^|false
              hand:=^|false
+             ee_type:=^|openarm_hand
              gazebo_effort:=^|false
              arm_prefix:=''
              bimanual:=false
@@ -80,7 +81,7 @@
       <xacro:configure_joint joint_name="openarm_${arm_prefix}joint6" initial_position="0.0"/>
       <xacro:configure_joint joint_name="openarm_${arm_prefix}joint7" initial_position="0.0"/>
 
-      <xacro:if value="${hand}">
+      <xacro:if value="${hand and ee_type == 'openarm_hand'}">
         <xacro:configure_joint joint_name="openarm_${arm_prefix}finger_joint1" initial_position="0.0" />
       </xacro:if>
 

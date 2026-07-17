@@ -10,6 +10,7 @@
              use_isaac_sim:=^|false
              fake_sensor_commands:=^|false
              hand:=^|false
+             ee_type:=^|openarm_hand
              left_arm_prefix:=^|left_
              right_arm_prefix:=^|right_
              gazebo:=^|false
@@ -87,7 +88,7 @@
     </ros2_control>
 
     <!-- LEFT GRIPPER -->
-    <xacro:if value="${hand}">
+    <xacro:if value="${hand and ee_type == 'openarm_hand'}">
       <ros2_control name="openarm_left_gripper_hardware_interface" type="system">
         <hardware>
           <xacro:if value="${use_isaac_sim}">
@@ -171,7 +172,7 @@
     </ros2_control>
 
     <!-- RIGHT GRIPPER -->
-    <xacro:if value="${hand}">
+    <xacro:if value="${hand and ee_type == 'openarm_hand'}">
       <ros2_control name="openarm_right_gripper_hardware_interface" type="system">
         <hardware>
           <xacro:if value="${use_isaac_sim}">

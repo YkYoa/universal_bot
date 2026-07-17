@@ -132,16 +132,23 @@ class Kinematics:
         return path
 
 
-def discover_fingers(hand):
+def discover_fingers(hand, link_prefix=''):
     """Find each finger's gimbal/servo/rod-ball/knuckle joints and links.
 
     See the amazing_hand mechanism notes in this file's module docstring.
     Discovery is purely structural (joint types + tree ancestry), not
     dependent on any particular Onshape instance-numbering convention,
     since that numbering is inconsistent across the 4 fingers as exported.
+
+    link_prefix restricts discovery to one hand's links when the combined
+    robot_description contains both (e.g. 'openarm_left_ahand_'); the two
+    hands' subtrees are disjoint (different mount points) so this only
+    needs to scope the servo_links/bushing_links seed patterns -- ancestry
+    walks never cross between them regardless.
     """
-    servo_links = sorted(l for l in hand.all_links if re.fullmatch(r'scs0009(_\d+)?', l))
-    bushing_links = sorted(l for l in hand.all_links if re.fullmatch(r'bushing_0608_04(_\d+)?', l))
+    p = re.escape(link_prefix)
+    servo_links = sorted(l for l in hand.all_links if re.fullmatch(rf'{p}scs0009(_\d+)?', l))
+    bushing_links = sorted(l for l in hand.all_links if re.fullmatch(rf'{p}bushing_0608_04(_\d+)?', l))
 
     gimbals = [(jn, j['parent'], j['child']) for jn, j in hand.joints.items()
                if j['type'] == 'revolute' and j['parent'] in bushing_links]
@@ -328,6 +335,8 @@ class HandKinematicsNode(Node):
         super().__init__('hand_kinematics_node')
         self.declare_parameter('robot_description', '')
         self.declare_parameter('command_space', 'knuckle')
+        self.declare_parameter('link_prefix', '')
+        self.declare_parameter('alias_prefix', '')
         urdf_xml = self.get_parameter('robot_description').value
         if not urdf_xml:
             self.get_logger().error("robot_description parameter is empty; can't build kinematics")
@@ -336,14 +345,20 @@ class HandKinematicsNode(Node):
         if self.command_space not in ('servo', 'knuckle'):
             self.get_logger().error(f"command_space must be 'servo' or 'knuckle', got '{self.command_space}'")
             raise SystemExit(1)
+        link_prefix = self.get_parameter('link_prefix').value
+        alias_prefix = self.get_parameter('alias_prefix').value
 
         self.hand = Kinematics(urdf_xml)
-        fingers = discover_fingers(self.hand)
+        fingers = discover_fingers(self.hand, link_prefix=link_prefix)
         self.fingers = calibrate(self.hand, fingers)
         # Deterministic finger numbering, identical for both hands: sort by rest
-        # height of the gimbal -- fingers 1..3 across the palm top-down, 4 = thumb
-        # (its gimbal sits much lower, palm-front).
-        self.fingers.sort(key=lambda f: -self.hand.fk(f['gimbal'])[2, 3])
+        # height of the gimbal in the hand's OWN frame (not the combined robot's
+        # root) -- fingers 1..3 across the palm top-down, 4 = thumb (its gimbal
+        # sits much lower, palm-front). Using the hand's local frame keeps this
+        # correct regardless of how the hand is mounted/rotated onto an arm.
+        root_link = f'{link_prefix}root'
+        T_root_inv = np.linalg.inv(self.hand.fk(root_link))
+        self.fingers.sort(key=lambda f: -(T_root_inv @ self.hand.fk(f['gimbal']))[2, 3])
         if self.command_space == 'servo':
             self.residual_fns = [make_residual_fn(self.hand, f) for f in self.fingers]
         else:
@@ -352,29 +367,39 @@ class HandKinematicsNode(Node):
         self.rod_warm_start = [[np.zeros(3) for _ in f['rod_chains']] for f in self.fingers]
 
         # ros2_control-facing alias names: j1<i> = yaw, j2<i> = flexion of finger i
+        # (alias_prefix distinguishes left/right when both hands share one
+        # combined robot_description, e.g. 'openarm_left_' -> 'openarm_left_j11')
         self.alias_of = {}   # alias -> real joint name
         self.alias_state = {}  # alias -> last solved/clamped value
         for i, f in enumerate(self.fingers, start=1):
-            self.alias_of[f'j1{i}'] = f['q1_joint']
-            self.alias_of[f'j2{i}'] = f['prox_joint']
-            self.alias_state[f'j1{i}'] = 0.0
-            self.alias_state[f'j2{i}'] = 0.0
+            self.alias_of[f'{alias_prefix}j1{i}'] = f['q1_joint']
+            self.alias_of[f'{alias_prefix}j2{i}'] = f['prox_joint']
+            self.alias_state[f'{alias_prefix}j1{i}'] = 0.0
+            self.alias_state[f'{alias_prefix}j2{i}'] = 0.0
 
         self.get_logger().info(
-            f"command_space={self.command_space}; discovered {len(self.fingers)} fingers, rod lengths: "
-            f"{[tuple(round(x, 5) for x in f['rod_lengths']) for f in self.fingers]}")
+            f"command_space={self.command_space}, link_prefix='{link_prefix}'; discovered {len(self.fingers)} "
+            f"fingers, rod lengths: {[tuple(round(x, 5) for x in f['rod_lengths']) for f in self.fingers]}")
         for i, f in enumerate(self.fingers, start=1):
             self.get_logger().info(
-                f"  finger {i}: j1{i}=yaw({f['q1_joint']}) j2{i}=flex({f['prox_joint']}) "
+                f"  finger {i}: {alias_prefix}j1{i}=yaw({f['q1_joint']}) {alias_prefix}j2{i}=flex({f['prox_joint']}) "
                 f"gimbal={f['gimbal']} servos={f['servo_data'][0]['actuator_joint']},"
                 f"{f['servo_data'][1]['actuator_joint']}")
 
-        # Every movable URDF joint must appear in the published joint state --
-        # robot_state_publisher only emits TF for joints it has seen, and the
-        # URDF's disconnected passive branches (ball chains, loop-closure stubs)
-        # are not part of any finger solve; they stay at the assembled rest pose.
+        # Every movable joint of THIS hand must appear in the published joint
+        # state -- robot_state_publisher only emits TF for joints it has seen,
+        # and the URDF's disconnected passive branches (ball chains,
+        # loop-closure stubs) are not part of any finger solve; they stay at
+        # the assembled rest pose. Scoped to link_prefix so that, when both
+        # hands share one robot_description, each node instance only reports
+        # its own side -- otherwise two instances racing on the shared
+        # /joint_states topic would each try to zero out the other's joints.
         self.all_movable = [jn for jn, j in self.hand.joints.items()
-                            if j['type'] != 'fixed' and jn not in self.alias_of]
+                            if j['type'] != 'fixed' and jn not in self.alias_of
+                            and j['parent'].startswith(link_prefix)]
+
+        joint_commands_topic = self.declare_parameter('joint_commands_topic', 'ahand/joint_commands').value
+        joint_states_topic = self.declare_parameter('joint_states_topic', 'ahand/joint_states').value
 
         self.pub = self.create_publisher(JointState, 'joint_states', 10)
         # queue depth 1: a solve takes tens of ms, so under a fast command stream
@@ -383,8 +408,8 @@ class HandKinematicsNode(Node):
         self.sub = self.create_subscription(JointState, 'joint_states_raw', self.on_joint_states, 1)
         # ros2_control bridge (topic_based_ros2_control hardware): commands arrive
         # with alias names; alias states are fed back for the hardware interface.
-        self.cmd_sub = self.create_subscription(JointState, 'ahand/joint_commands', self.on_joint_states, 1)
-        self.alias_pub = self.create_publisher(JointState, 'ahand/joint_states', 10)
+        self.cmd_sub = self.create_subscription(JointState, joint_commands_topic, self.on_joint_states, 1)
+        self.alias_pub = self.create_publisher(JointState, joint_states_topic, 10)
         self.last_full_state = None
         self.on_joint_states(JointState())  # publish the solved rest pose immediately
         # The hardware only publishes commands when they change, so keep both the

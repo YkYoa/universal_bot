@@ -2,7 +2,7 @@ import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import Command, FindExecutable, PathJoinSubstitution, LaunchConfiguration
+from launch.substitutions import Command, FindExecutable, PathJoinSubstitution, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -33,10 +33,20 @@ def generate_launch_description():
         default_value="false",
         description="Whether to use simulation clock (true) or not (false).",
     )
+    ee_type_arg = DeclareLaunchArgument(
+        "ee_type",
+        default_value="openarm_hand",
+        description="End-effector type: 'openarm_hand' (default 2-finger gripper) or "
+                     "'amazing_hand' (8-DOF finger hand, adds left_hand_fingers/right_hand_fingers "
+                     "MoveIt groups and per-finger hand_kinematics_node + controllers).",
+    )
 
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     use_rviz = LaunchConfiguration("use_rviz")
     use_sim_time = LaunchConfiguration("use_sim_time")
+    ee_type = LaunchConfiguration("ee_type")
+    is_amazing_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'amazing_hand'"]))
+    is_openarm_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'openarm_hand'"]))
 
     # ── Robot Description (URDF) ──
     robot_description_content = Command(
@@ -48,6 +58,9 @@ def generate_launch_description():
             "bimanual:=true",
             " ",
             "ros2_control:=true",
+            " ",
+            "ee_type:=",
+            ee_type,
             " ",
             "use_fake_hardware:=",
             use_fake_hardware,
@@ -155,13 +168,49 @@ def generate_launch_description():
         package="controller_manager",
         executable="spawner",
         arguments=["left_gripper_controller", "-c", "/controller_manager"],
+        condition=is_openarm_hand,
     )
 
     right_gripper_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
         arguments=["right_gripper_controller", "-c", "/controller_manager"],
+        condition=is_openarm_hand,
     )
+
+    # ── amazing_hand: controllers + per-side kinematics solver ──
+    # (ee_type:=amazing_hand only; see hand_kinematics_node.py for what it does)
+    hand_controller_spawners = [
+        Node(
+            package="controller_manager",
+            executable="spawner",
+            arguments=[name, "-c", "/controller_manager"],
+            condition=is_amazing_hand,
+        )
+        for name in ("left_hand_j1_controller", "left_hand_j2_controller",
+                     "right_hand_j1_controller", "right_hand_j2_controller")
+    ]
+
+    hand_kinematics_nodes = [
+        Node(
+            package="openarm_description",
+            executable="hand_kinematics_node.py",
+            name=f"hand_kinematics_node_{side}",
+            parameters=[
+                robot_description,
+                {
+                    "command_space": "knuckle",
+                    "link_prefix": f"openarm_{side}_ahand_",
+                    "alias_prefix": f"openarm_{side}_",
+                    "joint_commands_topic": f"/{side}_ahand/joint_commands",
+                    "joint_states_topic": f"/{side}_ahand/joint_states",
+                    "use_sim_time": use_sim_time,
+                },
+            ],
+            condition=is_amazing_hand,
+        )
+        for side in ("left", "right")
+    ]
 
     # ── MoveIt Move Group Node ──
     move_group_node = Node(
@@ -234,6 +283,7 @@ def generate_launch_description():
             use_fake_hardware_arg,
             use_rviz_arg,
             use_sim_time_arg,
+            ee_type_arg,
             robot_state_publisher_node,
             ros2_control_node,
             joint_state_broadcaster_spawner,
@@ -241,6 +291,8 @@ def generate_launch_description():
             right_arm_controller_spawner,
             left_gripper_controller_spawner,
             right_gripper_controller_spawner,
+            *hand_controller_spawners,
+            *hand_kinematics_nodes,
             move_group_node,
             robot_skills_node,
             rviz_node,

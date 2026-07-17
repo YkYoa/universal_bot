@@ -56,6 +56,8 @@
     <xacro:include filename="$(find openarm_description)/urdf/body/openarm_body.xacro" />
     <xacro:include filename="$(find openarm_description)/urdf/ee/openarm_hand.xacro" />
     <xacro:include filename="$(find openarm_description)/urdf/ee/openarm_hand_macro.xacro" />
+    <xacro:include filename="$(find openarm_description)/urdf/ee/amazing_hand/r_ahand_macro.xacro" />
+    <xacro:include filename="$(find openarm_description)/urdf/ee/amazing_hand/l_ahand_macro.xacro" />
     <xacro:include filename="$(find openarm_description)/urdf/ros2_control/openarm.ros2_control.xacro" />
     <xacro:include filename="$(find openarm_description)/urdf/ros2_control/openarm.bimanual.ros2_control.xacro" />
     <xacro:if value="${ee_type != 'none'}">
@@ -132,7 +134,8 @@
             left_arm_prefix="${left_arm_prefix}"
             right_arm_prefix="${right_arm_prefix}"
             gazebo="${gazebo}"
-            hand="${hand}"/>
+            hand="${hand}"
+            ee_type="${ee_type}"/>
         </xacro:if>
 
         <xacro:if value="$(eval hand and ee_type == 'openarm_hand')">
@@ -163,6 +166,54 @@
                 description_pkg="$(arg description_pkg)"
             />
           </xacro:if>
+
+        <xacro:if value="$(eval hand and ee_type == 'amazing_hand')">
+            <xacro:amazing_hand_left
+                connected_to="openarm_left_link7"
+                prefix="openarm_left_ahand_"
+                xyz="$(arg xyz_ee)"
+                rpy="$(arg rpy_ee)"
+            />
+            <xacro:amazing_hand_right
+                connected_to="openarm_right_link7"
+                prefix="openarm_right_ahand_"
+                xyz="$(arg xyz_ee)"
+                rpy="$(arg rpy_ee)"
+            />
+            <!-- left_arm/right_arm MoveIt groups (defined once, shared across
+                 ee_type values) chain to openarm_<side>_hand_tcp regardless of
+                 which hand is attached; openarm_hand's own macro creates that
+                 link itself, so amazing_hand must too. Placed at the hand's
+                 mount point (same placeholder-calibration caveat as xyz_ee/
+                 rpy_ee above, not the true fingertip/grasp frame). -->
+            <link name="openarm_left_hand_tcp" />
+            <joint name="openarm_left_ahand_tcp_joint" type="fixed">
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <parent link="openarm_left_ahand_root" />
+                <child link="openarm_left_hand_tcp" />
+            </joint>
+            <link name="openarm_right_hand_tcp" />
+            <joint name="openarm_right_ahand_tcp_joint" type="fixed">
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <parent link="openarm_right_ahand_root" />
+                <child link="openarm_right_hand_tcp" />
+            </joint>
+            <xacro:if value="${ros2_control}">
+                <xacro:include filename="$(find openarm_description)/urdf/ee/amazing_hand/ahand.ros2_control.xacro" />
+                <xacro:amazing_hand_ros2_control
+                    prefix="openarm_left_"
+                    link_prefix="openarm_left_ahand_"
+                    joint_commands_topic="/left_ahand/joint_commands"
+                    joint_states_topic="/left_ahand/joint_states"
+                />
+                <xacro:amazing_hand_ros2_control
+                    prefix="openarm_right_"
+                    link_prefix="openarm_right_ahand_"
+                    joint_commands_topic="/right_ahand/joint_commands"
+                    joint_states_topic="/right_ahand/joint_states"
+                />
+            </xacro:if>
+        </xacro:if>
     </xacro:if>
 
     <xacro:if value="${not bimanual}">
@@ -190,6 +241,7 @@
             use_fake_hardware="${use_fake_hardware}"
             fake_sensor_commands="${fake_sensor_commands}"
             hand="${hand}"
+            ee_type="${ee_type}"
             bimanual="false"
             can_fd="${can_fd}"/>
         </xacro:if>
@@ -213,6 +265,26 @@
             tcp_xyz="$(arg tcp_xyz)"
             tcp_rpy="$(arg tcp_rpy)"
             description_pkg="$(arg description_pkg)"/>
+        </xacro:if>
+        </xacro:if>
+
+        <xacro:if value="${hand and ee_type == 'amazing_hand'}">
+        <xacro:property name="special_connection" value="$(arg special_connection)" />
+        <xacro:property name="connection" value="${special_connection if special_connection != '' else 'openarm' + '_link7'}" />
+        <xacro:amazing_hand_right
+            connected_to="${arm_prefix_modified}${connection}"
+            prefix="${arm_prefix_modified}ahand_"
+            xyz="$(arg xyz_ee)"
+            rpy="$(arg rpy_ee)"
+        />
+        <xacro:if value="${ros2_control}">
+            <xacro:include filename="$(find openarm_description)/urdf/ee/amazing_hand/ahand.ros2_control.xacro" />
+            <xacro:amazing_hand_ros2_control
+                prefix="${arm_prefix_modified}"
+                link_prefix="${arm_prefix_modified}ahand_"
+                joint_commands_topic="/ahand/joint_commands"
+                joint_states_topic="/ahand/joint_states"
+            />
         </xacro:if>
         </xacro:if>
 
