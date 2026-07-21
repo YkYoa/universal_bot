@@ -168,17 +168,56 @@
           </xacro:if>
 
         <xacro:if value="$(eval hand and ee_type == 'amazing_hand')">
+            <!-- Physical connector plate between the arm flange and the hand
+                 root (see amazing_hand_arguments.xacro for connector_xyz/
+                 connector_rpy/connector_xyz_left/connector_rpy_left/
+                 connector_scale). One macro, instantiated once per side since
+                 each needs its own link/joint names and can take its own
+                 mount xyz/rpy. -->
+            <xacro:macro name="amazing_hand_connector" params="side parent xyz rpy">
+                <link name="openarm_${side}_ahand_connector">
+                    <visual>
+                        <origin xyz="0 0 -0.035" rpy="0 0 0" />
+                        <geometry>
+                            <mesh filename="package://openarm_description/meshes/ee/amazing_hand/visual/connector.STL"
+                                  scale="$(arg connector_scale)" />
+                        </geometry>
+                    </visual>
+                    <collision>
+                        <origin xyz="0 0 0" rpy="0 0 0" />
+                        <geometry>
+                            <mesh filename="package://openarm_description/meshes/ee/amazing_hand/collision/connector.STL"
+                                  scale="$(arg connector_scale)" />
+                        </geometry>
+                    </collision>
+                </link>
+                <joint name="openarm_${side}_ahand_connector_joint" type="fixed">
+                    <origin xyz="${xyz}" rpy="${rpy}" />
+                    <parent link="${parent}" />
+                    <child link="openarm_${side}_ahand_connector" />
+                </joint>
+            </xacro:macro>
+
+            <xacro:amazing_hand_connector side="left" parent="openarm_left_link7"
+                xyz="$(arg connector_xyz_left)" rpy="$(arg connector_rpy_left)" />
             <xacro:amazing_hand_left
-                connected_to="openarm_left_link7"
+                connected_to="openarm_left_ahand_connector"
                 prefix="openarm_left_ahand_"
                 xyz="$(arg xyz_ee)"
                 rpy="$(arg rpy_ee)"
             />
+            <!-- The old ad-hoc 180-flip link that used to sit between
+                 openarm_right_link7 and the right connector is gone: it's
+                 now folded into connector_rpy_right's own mirror default
+                 (see amazing_hand_arguments.xacro), so right's connector
+                 attaches directly to link7 just like left's does. -->
+            <xacro:amazing_hand_connector side="right" parent="openarm_right_link7"
+                xyz="$(arg connector_xyz_right)" rpy="$(arg connector_rpy_right)" />
             <xacro:amazing_hand_right
-                connected_to="openarm_right_link7"
+                connected_to="openarm_right_ahand_connector"
                 prefix="openarm_right_ahand_"
-                xyz="$(arg xyz_ee)"
-                rpy="$(arg rpy_ee)"
+                xyz="$(arg xyz_ee_right)"
+                rpy="$(arg rpy_ee_right)"
             />
             <!-- left_arm/right_arm MoveIt groups (defined once, shared across
                  ee_type values) chain to openarm_<side>_hand_tcp regardless of

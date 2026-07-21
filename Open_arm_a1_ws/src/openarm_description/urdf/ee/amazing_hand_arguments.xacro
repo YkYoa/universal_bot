@@ -4,12 +4,48 @@
   <!-- Where is the end-effector connected to, if different from the robot flange?  -->
   <xacro:arg name="special_connection" default="" />
 
-  <!-- Position offset between the arm's wrist flange and the hand's root link.
-       Not yet calibrated against real hardware: the standalone amazing_hand
-       display/control launches place root at the world origin directly, so
-       this mount transform is an untested placeholder. Expect to tune it. -->
-  <xacro:arg name="xyz_ee" default="0 0 0" />
-  <xacro:arg name="rpy_ee" default="0 0 0" />
+  <!-- Hand mount: position/rotation of the hand's root link relative to the
+       connector (left side; right has its own override below). Empirically
+       tuned in RViz against real hardware. -->
+  <xacro:arg name="xyz_ee" default="0.0358 -0.0148 0.1" />
+  <xacro:arg name="rpy_ee" default="0 0 -1.047" />
+
+  <!-- Right-hand-only overrides. Left is untouched by these. Also tuned
+       empirically; not a pure mirror of xyz_ee/rpy_ee (a geometric mirror
+       about the body's Y=0 plane gets close but doesn't match real hardware
+       exactly, position and rotation both needed further hand adjustment). -->
+  <xacro:arg name="xyz_ee_right" default="0.0358 0.0148 0.1" />
+  <xacro:arg name="rpy_ee_right" default="0 0 4.1887" />
+
+  <!-- Physical connector plate between the arm's wrist flange and the hand's
+       root link (meshes/ee/amazing_hand/{visual,collision}/connector.STL).
+       Position/rotation of the connector's own origin relative to link7;
+       the hand mount above is then relative to THIS link, not to link7
+       directly. Shared fallback for both sides; connector_*_left/right
+       below override per side. Empirically tuned; the shared fallback here
+       is what left actually uses (connector_xyz_left/connector_rpy_left
+       just default to these). -->
+  <xacro:arg name="connector_xyz" default="0 0 0.0055" />
+  <xacro:arg name="connector_rpy" default="0 0 1.047" />
+
+  <!-- Per-side connector overrides, on top of connector_xyz/connector_rpy
+       above. Each only touches its own side. Rotating a connector alone
+       also rotates that side's hand (parent-child propagation); compensate
+       via rpy_ee (left) / rpy_ee_right (right) if the hand needs to hold
+       its orientation. Right's default is the Y=0-plane mirror of left's
+       (Z: 1.047 -> -1.047); there is no separate "flip" joint in the
+       URDF, right's connector attaches directly to openarm_right_link7,
+       same as left's does to openarm_left_link7. -->
+  <xacro:arg name="connector_xyz_left" default="$(arg connector_xyz)" />
+  <xacro:arg name="connector_rpy_left" default="$(arg connector_rpy)" />
+  <xacro:arg name="connector_xyz_right" default="0 0 0.0055" />
+  <xacro:arg name="connector_rpy_right" default="0 0 -1.047" />
+
+  <!-- connector.STL bounding box is ~49x49x11 in file units; that reads as
+       millimeters against the rest of this URDF (meters), hence 0.001 scale.
+       If it renders house-sized or invisible-tiny in RViz, this guess is
+       backwards, try "1 1 1" instead. -->
+  <xacro:arg name="connector_scale" default="0.001 0.001 0.001" />
 
   <!-- Position/rotation offset between ee frame and tcp frame, unused by
        amazing_hand today; kept for interface parity with openarm_hand. -->
