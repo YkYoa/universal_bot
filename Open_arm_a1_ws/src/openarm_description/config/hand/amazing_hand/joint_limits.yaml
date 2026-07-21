@@ -1,0 +1,48 @@
+# Joint limits for MoveIt 2 planning (standalone amazing_hand).
+# Position limits come from the URDF; these add planning-specific
+# velocity/acceleration bounds. Values are placeholders (not from real
+# servo datasheets) -- tune if planned trajectories move too fast/slow.
+/**:
+  ros__parameters:
+    robot_description_planning:
+      joint_limits:
+        j11:
+          has_velocity_limits: true
+          max_velocity: 1.0
+          has_acceleration_limits: true
+          max_acceleration: 2.0
+        j12:
+          has_velocity_limits: true
+          max_velocity: 1.0
+          has_acceleration_limits: true
+          max_acceleration: 2.0
+        j13:
+          has_velocity_limits: true
+          max_velocity: 1.0
+          has_acceleration_limits: true
+          max_acceleration: 2.0
+        j14:
+          has_velocity_limits: true
+          max_velocity: 1.0
+          has_acceleration_limits: true
+          max_acceleration: 2.0
+        j21:
+          has_velocity_limits: true
+          max_velocity: 1.0
+          has_acceleration_limits: true
+          max_acceleration: 2.0
+        j22:
+          has_velocity_limits: true
+          max_velocity: 1.0
+          has_acceleration_limits: true
+          max_acceleration: 2.0
+        j23:
+          has_velocity_limits: true
+          max_velocity: 1.0
+          has_acceleration_limits: true
+          max_acceleration: 2.0
+        j24:
+          has_velocity_limits: true
+          max_velocity: 1.0
+          has_acceleration_limits: true
+          max_acceleration: 2.0

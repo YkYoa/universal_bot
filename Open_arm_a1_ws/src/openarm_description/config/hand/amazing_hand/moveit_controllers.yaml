@@ -1,0 +1,28 @@
+/**:
+  ros__parameters:
+    moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+
+    moveit_simple_controller_manager:
+      controller_names:
+        - j1_group_controller
+        - j2_group_controller
+
+      j1_group_controller:
+        type: FollowJointTrajectory
+        action_ns: follow_joint_trajectory
+        default: true
+        joints:
+          - j11
+          - j12
+          - j13
+          - j14
+
+      j2_group_controller:
+        type: FollowJointTrajectory
+        action_ns: follow_joint_trajectory
+        default: true
+        joints:
+          - j21
+          - j22
+          - j23
+          - j24

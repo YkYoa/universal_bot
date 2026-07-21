@@ -54,15 +54,6 @@
             <origin xyz="1.21818e-19 -1.97273e-35 -0.000375" rpy="0 -0 0" />
             <inertia ixx="1.57158e-12" ixy="-0" ixz="-0" iyy="1.57158e-12" iyz="0" izz="2.73319e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.001" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Bushing_0608_04.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.301961_0.301961_0.301961_0.000000_0.000000">
-                <color rgba="0.301961 0.301961 0.301961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}bushing_0608_04_1">
         <inertial>
@@ -70,15 +61,6 @@
             <origin xyz="1.21818e-19 -1.97273e-35 -0.000375" rpy="0 -0 0" />
             <inertia ixx="1.57158e-12" ixy="-0" ixz="-0" iyy="1.57158e-12" iyz="0" izz="2.73319e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.001" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Bushing_0608_04.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.301961_0.301961_0.301961_0.000000_0.000000">
-                <color rgba="0.301961 0.301961 0.301961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}bushing_0608_04_2">
         <inertial>
@@ -86,15 +68,6 @@
             <origin xyz="1.21818e-19 -1.97273e-35 -0.000375" rpy="0 -0 0" />
             <inertia ixx="1.57158e-12" ixy="-0" ixz="-0" iyy="1.57158e-12" iyz="0" izz="2.73319e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.001" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Bushing_0608_04.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.301961_0.301961_0.301961_0.000000_0.000000">
-                <color rgba="0.301961 0.301961 0.301961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}bushing_0608_04_3">
         <inertial>
@@ -102,15 +75,6 @@
             <origin xyz="1.21818e-19 -1.97273e-35 -0.000375" rpy="0 -0 0" />
             <inertia ixx="1.57158e-12" ixy="-0" ixz="-0" iyy="1.57158e-12" iyz="0" izz="2.73319e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.001" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Bushing_0608_04.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.301961_0.301961_0.301961_0.000000_0.000000">
-                <color rgba="0.301961 0.301961 0.301961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}bushing_0608_04_4">
         <inertial>
@@ -118,15 +82,6 @@
             <origin xyz="1.21818e-19 -1.97273e-35 -0.000375" rpy="0 -0 0" />
             <inertia ixx="1.57158e-12" ixy="-0" ixz="-0" iyy="1.57158e-12" iyz="0" izz="2.73319e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.001" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Bushing_0608_04.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.301961_0.301961_0.301961_0.000000_0.000000">
-                <color rgba="0.301961 0.301961 0.301961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}bushing_0608_04_5">
         <inertial>
@@ -134,15 +89,6 @@
             <origin xyz="1.21818e-19 -1.97273e-35 -0.000375" rpy="0 -0 0" />
             <inertia ixx="1.57158e-12" ixy="-0" ixz="-0" iyy="1.57158e-12" iyz="0" izz="2.73319e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.001" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Bushing_0608_04.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.301961_0.301961_0.301961_0.000000_0.000000">
-                <color rgba="0.301961 0.301961 0.301961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}bushing_0608_04_6">
         <inertial>
@@ -150,15 +96,6 @@
             <origin xyz="1.21818e-19 -1.97273e-35 -0.000375" rpy="0 -0 0" />
             <inertia ixx="1.57158e-12" ixy="-0" ixz="-0" iyy="1.57158e-12" iyz="0" izz="2.73319e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.001" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Bushing_0608_04.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.301961_0.301961_0.301961_0.000000_0.000000">
-                <color rgba="0.301961 0.301961 0.301961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}bushing_0608_04_7">
         <inertial>
@@ -166,15 +103,6 @@
             <origin xyz="1.21818e-19 -1.97273e-35 -0.000375" rpy="0 -0 0" />
             <inertia ixx="1.57158e-12" ixy="-0" ixz="-0" iyy="1.57158e-12" iyz="0" izz="2.73319e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.001" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Bushing_0608_04.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.301961_0.301961_0.301961_0.000000_0.000000">
-                <color rgba="0.301961 0.301961 0.301961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}custom_servo_horn">
         <inertial>
@@ -662,15 +590,6 @@
             <origin xyz="1.77812e-13 -1.8609e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_1">
         <inertial>
@@ -678,15 +597,6 @@
             <origin xyz="1.77813e-13 -1.86083e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="-2.19416e-20 -4.38833e-20 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_10">
         <inertial>
@@ -694,15 +604,6 @@
             <origin xyz="1.77813e-13 -1.86074e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_11">
         <inertial>
@@ -710,15 +611,6 @@
             <origin xyz="1.77813e-13 -1.86078e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="-2.19416e-20 -4.38833e-20 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_12">
         <inertial>
@@ -726,15 +618,6 @@
             <origin xyz="1.77813e-13 -1.86078e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="-2.19416e-20 -4.38833e-20 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_13">
         <inertial>
@@ -742,15 +625,6 @@
             <origin xyz="1.77813e-13 -1.86078e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="-2.19416e-20 -4.38833e-20 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_14">
         <inertial>
@@ -758,15 +632,6 @@
             <origin xyz="1.77813e-13 -1.86074e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_15">
         <inertial>
@@ -774,15 +639,6 @@
             <origin xyz="1.77813e-13 -1.86074e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_2">
         <inertial>
@@ -790,15 +646,6 @@
             <origin xyz="1.77813e-13 -1.86078e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="-2.19416e-20 -4.38833e-20 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_3">
         <inertial>
@@ -806,15 +653,6 @@
             <origin xyz="1.77813e-13 -1.86074e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_4">
         <inertial>
@@ -822,15 +660,6 @@
             <origin xyz="1.77813e-13 -1.86074e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_5">
         <inertial>
@@ -838,15 +667,6 @@
             <origin xyz="1.77813e-13 -1.86078e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="-2.19416e-20 -4.38833e-20 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_6">
         <inertial>
@@ -854,15 +674,6 @@
             <origin xyz="1.77813e-13 -1.86074e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_7">
         <inertial>
@@ -870,15 +681,6 @@
             <origin xyz="1.77813e-13 -1.86078e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="-2.19416e-20 -4.38833e-20 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_8">
         <inertial>
@@ -886,15 +688,6 @@
             <origin xyz="1.77813e-13 -1.86078e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="-2.19416e-20 -4.38833e-20 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}hex_nut_grade_a___b_m2x0_4_9">
         <inertial>
@@ -902,15 +695,6 @@
             <origin xyz="1.77813e-13 -1.86074e-15 0.0008" rpy="0 -0 0" />
             <inertia ixx="2.12583e-10" ixy="-0" ixz="-0" iyy="2.12583e-10" iyz="0" izz="3.66531e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Hex_nut_grade_A___B_M2x0_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}link">
         <inertial>
@@ -982,15 +766,6 @@
             <origin xyz="3.03462e-21 0 4.81482e-35" rpy="0 -0 0" />
             <inertia ixx="1.54095e-12" ixy="-0" ixz="-0" iyy="2.82743e-14" iyz="0" izz="1.54095e-12" />
         </inertial>
-        <visual>
-            <origin xyz="6.50521e-19 0.0165 -6.12323e-20" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L18.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l18_1">
         <inertial>
@@ -998,15 +773,6 @@
             <origin xyz="3.03462e-21 0 4.81482e-35" rpy="0 -0 0" />
             <inertia ixx="1.54095e-12" ixy="-0" ixz="-0" iyy="2.82743e-14" iyz="0" izz="1.54095e-12" />
         </inertial>
-        <visual>
-            <origin xyz="6.50521e-19 0.0165 -6.12323e-20" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L18.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l18_2">
         <inertial>
@@ -1014,15 +780,6 @@
             <origin xyz="3.03462e-21 0 4.81482e-35" rpy="0 -0 0" />
             <inertia ixx="1.54095e-12" ixy="-0" ixz="-0" iyy="2.82743e-14" iyz="0" izz="1.54095e-12" />
         </inertial>
-        <visual>
-            <origin xyz="6.50521e-19 0.0165 -6.12323e-20" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L18.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l18_3">
         <inertial>
@@ -1030,15 +787,6 @@
             <origin xyz="3.03462e-21 0 4.81482e-35" rpy="0 -0 0" />
             <inertia ixx="1.54095e-12" ixy="-0" ixz="-0" iyy="2.82743e-14" iyz="0" izz="1.54095e-12" />
         </inertial>
-        <visual>
-            <origin xyz="6.50521e-19 0.0165 -6.12323e-20" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L18.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l18_4">
         <inertial>
@@ -1046,15 +794,6 @@
             <origin xyz="3.03462e-21 0 4.81482e-35" rpy="0 -0 0" />
             <inertia ixx="1.54095e-12" ixy="-0" ixz="-0" iyy="2.82743e-14" iyz="0" izz="1.54095e-12" />
         </inertial>
-        <visual>
-            <origin xyz="6.50521e-19 0.0165 -6.12323e-20" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L18.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l18_5">
         <inertial>
@@ -1062,15 +801,6 @@
             <origin xyz="3.03462e-21 0 4.81482e-35" rpy="0 -0 0" />
             <inertia ixx="1.54095e-12" ixy="-0" ixz="-0" iyy="2.82743e-14" iyz="0" izz="1.54095e-12" />
         </inertial>
-        <visual>
-            <origin xyz="6.50521e-19 0.0165 -6.12323e-20" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L18.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l18_6">
         <inertial>
@@ -1078,15 +808,6 @@
             <origin xyz="3.03462e-21 0 4.81482e-35" rpy="0 -0 0" />
             <inertia ixx="1.54095e-12" ixy="-0" ixz="-0" iyy="2.82743e-14" iyz="0" izz="1.54095e-12" />
         </inertial>
-        <visual>
-            <origin xyz="6.50521e-19 0.0165 -6.12323e-20" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L18.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l18_7">
         <inertial>
@@ -1094,15 +815,6 @@
             <origin xyz="3.03462e-21 0 4.81482e-35" rpy="0 -0 0" />
             <inertia ixx="1.54095e-12" ixy="-0" ixz="-0" iyy="2.82743e-14" iyz="0" izz="1.54095e-12" />
         </inertial>
-        <visual>
-            <origin xyz="6.50521e-19 0.0165 -6.12323e-20" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L18.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l25">
         <inertial>
@@ -1110,15 +822,6 @@
             <origin xyz="2.633e-18 -4.33681e-19 -6.93889e-18" rpy="0 -0 0" />
             <inertia ixx="3.92699e-14" ixy="-0" ixz="-0" iyy="4.11025e-12" iyz="0" izz="4.11025e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 -0.00359574 0.0110508" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L25.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l25_1">
         <inertial>
@@ -1126,15 +829,6 @@
             <origin xyz="2.633e-18 -4.33681e-19 -6.93889e-18" rpy="0 -0 0" />
             <inertia ixx="3.92699e-14" ixy="-0" ixz="-0" iyy="4.11025e-12" iyz="0" izz="4.11025e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 -0.00359574 0.0110508" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L25.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l25_2">
         <inertial>
@@ -1142,15 +836,6 @@
             <origin xyz="2.633e-18 -4.33681e-19 -6.93889e-18" rpy="0 -0 0" />
             <inertia ixx="3.92699e-14" ixy="-0" ixz="-0" iyy="4.11025e-12" iyz="0" izz="4.11025e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 -0.00359574 0.0110508" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L25.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}m2_rod_l25_3">
         <inertial>
@@ -1158,15 +843,6 @@
             <origin xyz="2.633e-18 -4.33681e-19 -6.93889e-18" rpy="0 -0 0" />
             <inertia ixx="3.92699e-14" ixy="-0" ixz="-0" iyy="4.11025e-12" iyz="0" izz="4.11025e-12" />
         </inertial>
-        <visual>
-            <origin xyz="0 -0.00359574 0.0110508" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/M2_Rod_L25.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.811765_0.858824_0.898039_0.000000_0.000000">
-                <color rgba="0.811765 0.858824 0.898039 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_10">
         <inertial>
@@ -1174,15 +850,6 @@
             <origin xyz="-4.48469e-21 -9.04609e-37 0.005" rpy="0 -0 0" />
             <inertia ixx="2.07865e-09" ixy="-0" ixz="-0" iyy="2.07865e-09" iyz="0" izz="1.21833e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.005" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_10.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_10_1">
         <inertial>
@@ -1190,15 +857,6 @@
             <origin xyz="-4.48469e-21 -9.04609e-37 0.005" rpy="0 -0 0" />
             <inertia ixx="2.07865e-09" ixy="-0" ixz="-0" iyy="2.07865e-09" iyz="0" izz="1.21833e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.005" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_10.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_10_2">
         <inertial>
@@ -1206,15 +864,6 @@
             <origin xyz="-4.48469e-21 -9.04609e-37 0.005" rpy="0 -0 0" />
             <inertia ixx="2.07865e-09" ixy="-0" ixz="-0" iyy="2.07865e-09" iyz="0" izz="1.21833e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.005" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_10.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_10_3">
         <inertial>
@@ -1222,15 +871,6 @@
             <origin xyz="-4.48469e-21 -9.04609e-37 0.005" rpy="0 -0 0" />
             <inertia ixx="2.07865e-09" ixy="-0" ixz="-0" iyy="2.07865e-09" iyz="0" izz="1.21833e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.005" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_10.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_10_4">
         <inertial>
@@ -1238,15 +878,6 @@
             <origin xyz="-4.48469e-21 -9.04609e-37 0.005" rpy="0 -0 0" />
             <inertia ixx="2.07865e-09" ixy="-0" ixz="-0" iyy="2.07865e-09" iyz="0" izz="1.21833e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.005" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_10.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_10_5">
         <inertial>
@@ -1254,15 +885,6 @@
             <origin xyz="-4.48469e-21 -9.04609e-37 0.005" rpy="0 -0 0" />
             <inertia ixx="2.07865e-09" ixy="-0" ixz="-0" iyy="2.07865e-09" iyz="0" izz="1.21833e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.005" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_10.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_10_6">
         <inertial>
@@ -1270,15 +892,6 @@
             <origin xyz="-4.48469e-21 -9.04609e-37 0.005" rpy="0 -0 0" />
             <inertia ixx="2.07865e-09" ixy="-0" ixz="-0" iyy="2.07865e-09" iyz="0" izz="1.21833e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.005" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_10.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_10_7">
         <inertial>
@@ -1286,15 +899,6 @@
             <origin xyz="-4.48469e-21 -9.04609e-37 0.005" rpy="0 -0 0" />
             <inertia ixx="2.07865e-09" ixy="-0" ixz="-0" iyy="2.07865e-09" iyz="0" izz="1.21833e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.005" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_10.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_16">
         <inertial>
@@ -1302,15 +906,6 @@
             <origin xyz="-4.56442e-21 -9.02443e-37 0.008" rpy="0 -0 0" />
             <inertia ixx="8.41825e-09" ixy="-0" ixz="-0" iyy="8.41825e-09" iyz="0" izz="1.95818e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_16.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_16_1">
         <inertial>
@@ -1318,15 +913,6 @@
             <origin xyz="-4.56442e-21 -9.02443e-37 0.008" rpy="0 -0 0" />
             <inertia ixx="8.41825e-09" ixy="-0" ixz="-0" iyy="8.41825e-09" iyz="0" izz="1.95818e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_16.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_16_2">
         <inertial>
@@ -1334,15 +920,6 @@
             <origin xyz="-4.56442e-21 -9.02443e-37 0.008" rpy="0 -0 0" />
             <inertia ixx="8.41825e-09" ixy="-0" ixz="-0" iyy="8.41825e-09" iyz="0" izz="1.95818e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_16.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_16_3">
         <inertial>
@@ -1350,15 +927,6 @@
             <origin xyz="-4.56442e-21 -9.02443e-37 0.008" rpy="0 -0 0" />
             <inertia ixx="8.41825e-09" ixy="-0" ixz="-0" iyy="8.41825e-09" iyz="0" izz="1.95818e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_16.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_16_4">
         <inertial>
@@ -1366,15 +934,6 @@
             <origin xyz="-4.56442e-21 -9.02443e-37 0.008" rpy="0 -0 0" />
             <inertia ixx="8.41825e-09" ixy="-0" ixz="-0" iyy="8.41825e-09" iyz="0" izz="1.95818e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_16.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_16_5">
         <inertial>
@@ -1382,15 +941,6 @@
             <origin xyz="-4.56442e-21 -9.02443e-37 0.008" rpy="0 -0 0" />
             <inertia ixx="8.41825e-09" ixy="-0" ixz="-0" iyy="8.41825e-09" iyz="0" izz="1.95818e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_16.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_16_6">
         <inertial>
@@ -1398,15 +948,6 @@
             <origin xyz="-4.56442e-21 -9.02443e-37 0.008" rpy="0 -0 0" />
             <inertia ixx="8.41825e-09" ixy="-0" ixz="-0" iyy="8.41825e-09" iyz="0" izz="1.95818e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_16.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}parallel_pin_2_x_16_7">
         <inertial>
@@ -1414,15 +955,6 @@
             <origin xyz="-4.56442e-21 -9.02443e-37 0.008" rpy="0 -0 0" />
             <inertia ixx="8.41825e-09" ixy="-0" ixz="-0" iyy="8.41825e-09" iyz="0" izz="1.95818e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.008" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Parallel_Pin_2_x_16.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1">
         <inertial>
@@ -1430,15 +962,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_1">
         <inertial>
@@ -1446,15 +969,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_10">
         <inertial>
@@ -1462,15 +976,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_11">
         <inertial>
@@ -1478,15 +983,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_12">
         <inertial>
@@ -1494,15 +990,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_13">
         <inertial>
@@ -1510,15 +997,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_14">
         <inertial>
@@ -1526,15 +1004,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_15">
         <inertial>
@@ -1542,15 +1011,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_2">
         <inertial>
@@ -1558,15 +1018,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_3">
         <inertial>
@@ -1574,15 +1025,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_4">
         <inertial>
@@ -1590,15 +1032,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_5">
         <inertial>
@@ -1606,15 +1039,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_6">
         <inertial>
@@ -1622,15 +1046,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_7">
         <inertial>
@@ -1638,15 +1053,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_8">
         <inertial>
@@ -1654,15 +1060,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}part_1_9">
         <inertial>
@@ -1670,15 +1067,6 @@
             <origin xyz="1.48691e-19 -2.69719e-20 0.00249741" rpy="0 -0 0" />
             <inertia ixx="2.48588e-09" ixy="-0" ixz="-0" iyy="2.48588e-09" iyz="0" izz="2.56229e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0015" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Part_1.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_4">
         <inertial>
@@ -1686,15 +1074,6 @@
             <origin xyz="-7.57494e-19 -1.03903e-20 -0.000646818" rpy="0 -0 0" />
             <inertia ixx="5.98349e-10" ixy="-0" ixz="-0" iyy="5.98349e-10" iyz="0" izz="2.6111e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 1.67619e-35 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_4_1">
         <inertial>
@@ -1702,15 +1081,6 @@
             <origin xyz="-7.57684e-19 -1.06339e-20 -0.000546818" rpy="0 -0 0" />
             <inertia ixx="5.98349e-10" ixy="-0" ixz="-0" iyy="5.98349e-10" iyz="0" izz="2.6111e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0017" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_4_2">
         <inertial>
@@ -1718,15 +1088,6 @@
             <origin xyz="-7.57684e-19 -1.06339e-20 -0.000546818" rpy="0 -0 0" />
             <inertia ixx="5.98349e-10" ixy="-0" ixz="-0" iyy="5.98349e-10" iyz="0" izz="2.6111e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0017" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_4_3">
         <inertial>
@@ -1734,15 +1095,6 @@
             <origin xyz="-7.57684e-19 -1.06339e-20 -0.000646818" rpy="0 -0 0" />
             <inertia ixx="5.98349e-10" ixy="-0" ixz="-0" iyy="5.98349e-10" iyz="0" izz="2.6111e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 1.67619e-35 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_4_4">
         <inertial>
@@ -1750,15 +1102,6 @@
             <origin xyz="-7.57684e-19 -1.06339e-20 -0.000546818" rpy="0 -0 0" />
             <inertia ixx="5.98349e-10" ixy="-0" ixz="-0" iyy="5.98349e-10" iyz="0" izz="2.6111e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0017" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_4_5">
         <inertial>
@@ -1766,15 +1109,6 @@
             <origin xyz="-7.57684e-19 -1.06339e-20 -0.000646818" rpy="0 -0 0" />
             <inertia ixx="5.98349e-10" ixy="-0" ixz="-0" iyy="5.98349e-10" iyz="0" izz="2.6111e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 1.67619e-35 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_4_6">
         <inertial>
@@ -1782,15 +1116,6 @@
             <origin xyz="-7.57684e-19 -1.06339e-20 -0.000646818" rpy="0 -0 0" />
             <inertia ixx="5.98349e-10" ixy="-0" ixz="-0" iyy="5.98349e-10" iyz="0" izz="2.6111e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 1.67619e-35 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_4_7">
         <inertial>
@@ -1798,15 +1123,6 @@
             <origin xyz="-7.57684e-19 -1.06339e-20 -0.000546818" rpy="0 -0 0" />
             <inertia ixx="5.98349e-10" ixy="-0" ixz="-0" iyy="5.98349e-10" iyz="0" izz="2.6111e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0017" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_4.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_8">
         <inertial>
@@ -1814,15 +1130,6 @@
             <origin xyz="-7.76115e-19 -1.94576e-20 -0.00238103" rpy="0 -0 0" />
             <inertia ixx="2.59931e-09" ixy="-0" ixz="-0" iyy="2.59931e-09" iyz="0" izz="3.09742e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_8_1">
         <inertial>
@@ -1830,15 +1137,6 @@
             <origin xyz="-7.78842e-19 -1.92936e-20 -0.00238103" rpy="0 -0 0" />
             <inertia ixx="2.59931e-09" ixy="-0" ixz="-0" iyy="2.59931e-09" iyz="0" izz="3.09742e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_8_2">
         <inertial>
@@ -1846,15 +1144,6 @@
             <origin xyz="-7.78842e-19 -1.92936e-20 -0.00238103" rpy="0 -0 0" />
             <inertia ixx="2.59931e-09" ixy="-0" ixz="-0" iyy="2.59931e-09" iyz="0" izz="3.09742e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_8_3">
         <inertial>
@@ -1862,15 +1151,6 @@
             <origin xyz="-7.78842e-19 -1.92936e-20 -0.00238103" rpy="0 -0 0" />
             <inertia ixx="2.59931e-09" ixy="-0" ixz="-0" iyy="2.59931e-09" iyz="0" izz="3.09742e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_8_4">
         <inertial>
@@ -1878,15 +1158,6 @@
             <origin xyz="-7.78842e-19 -1.92936e-20 -0.00238103" rpy="0 -0 0" />
             <inertia ixx="2.59931e-09" ixy="-0" ixz="-0" iyy="2.59931e-09" iyz="0" izz="3.09742e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_8_5">
         <inertial>
@@ -1894,15 +1165,6 @@
             <origin xyz="-7.78842e-19 -1.92936e-20 -0.00238103" rpy="0 -0 0" />
             <inertia ixx="2.59931e-09" ixy="-0" ixz="-0" iyy="2.59931e-09" iyz="0" izz="3.09742e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_8_6">
         <inertial>
@@ -1910,15 +1172,6 @@
             <origin xyz="-7.78842e-19 -1.92936e-20 -0.00238103" rpy="0 -0 0" />
             <inertia ixx="2.59931e-09" ixy="-0" ixz="-0" iyy="2.59931e-09" iyz="0" izz="3.09742e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}ph_pan_head_screw_m2x0_40_x_8_7">
         <inertial>
@@ -1926,15 +1179,6 @@
             <origin xyz="-7.78842e-19 -1.92936e-20 -0.00238103" rpy="0 -0 0" />
             <inertia ixx="2.59931e-09" ixy="-0" ixz="-0" iyy="2.59931e-09" iyz="0" izz="3.09742e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/PH_Pan_head_screw_M2x0_40_x_8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}plain_washer_large_grade_a_m2_5">
         <inertial>
@@ -1942,15 +1186,6 @@
             <origin xyz="1.8527e-19 0 0.0003" rpy="0 -0 0" />
             <inertia ixx="9.34338e-10" ixy="-0" ixz="-0" iyy="9.34338e-10" iyz="0" izz="1.85578e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0003" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Plain_washer_large_grade_A_M2_5.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}plain_washer_large_grade_a_m2_5_1">
         <inertial>
@@ -1958,15 +1193,6 @@
             <origin xyz="1.8527e-19 0 0.0003" rpy="0 -0 0" />
             <inertia ixx="9.34338e-10" ixy="-0" ixz="-0" iyy="9.34338e-10" iyz="0" izz="1.85578e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0003" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Plain_washer_large_grade_A_M2_5.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}plain_washer_large_grade_a_m2_5_2">
         <inertial>
@@ -1974,15 +1200,6 @@
             <origin xyz="1.8527e-19 0 0.0003" rpy="0 -0 0" />
             <inertia ixx="9.34338e-10" ixy="-0" ixz="-0" iyy="9.34338e-10" iyz="0" izz="1.85578e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0003" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Plain_washer_large_grade_A_M2_5.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}plain_washer_large_grade_a_m2_5_3">
         <inertial>
@@ -1990,15 +1207,6 @@
             <origin xyz="1.8527e-19 0 0.0003" rpy="0 -0 0" />
             <inertia ixx="9.34338e-10" ixy="-0" ixz="-0" iyy="9.34338e-10" iyz="0" izz="1.85578e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0003" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Plain_washer_large_grade_A_M2_5.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.603922_0.647059_0.686275_0.000000_0.000000">
-                <color rgba="0.603922 0.647059 0.686275 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}proximal">
         <inertial>
@@ -2199,15 +1407,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 -0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_1">
         <inertial>
@@ -2215,15 +1414,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_10">
         <inertial>
@@ -2231,15 +1421,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 -0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_11">
         <inertial>
@@ -2247,15 +1428,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_12">
         <inertial>
@@ -2263,15 +1435,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 -0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_13">
         <inertial>
@@ -2279,15 +1442,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_14">
         <inertial>
@@ -2295,15 +1449,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 -0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_15">
         <inertial>
@@ -2311,15 +1456,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_2">
         <inertial>
@@ -2327,15 +1463,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_3">
         <inertial>
@@ -2343,15 +1470,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 -0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_4">
         <inertial>
@@ -2359,15 +1477,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_5">
         <inertial>
@@ -2375,15 +1484,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 -0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_6">
         <inertial>
@@ -2391,15 +1491,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_7">
         <inertial>
@@ -2407,15 +1498,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 -0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_8">
         <inertial>
@@ -2423,15 +1505,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_ball_9">
         <inertial>
@@ -2439,15 +1512,6 @@
             <origin xyz="-8.62925e-20 1.08122e-36 -0.0029" rpy="0 -0 0" />
             <inertia ixx="1.91545e-10" ixy="-0" ixz="-0" iyy="1.91545e-10" iyz="0" izz="1.91996e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0029" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Ball.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.960784_0.835294_0.470588_0.000000_0.000000">
-                <color rgba="0.960784 0.835294 0.470588 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever">
         <inertial>
@@ -2455,15 +1519,6 @@
             <origin xyz="2.22173e-13 0.00922051 -3.2091e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_1">
         <inertial>
@@ -2471,15 +1526,6 @@
             <origin xyz="2.22172e-13 -0.00602949 -3.909e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -6.50521e-19" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_10">
         <inertial>
@@ -2487,15 +1533,6 @@
             <origin xyz="2.22172e-13 -0.00602949 -3.909e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -6.50521e-19" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_11">
         <inertial>
@@ -2503,15 +1540,6 @@
             <origin xyz="2.22172e-13 0.00922051 -3.25847e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_12">
         <inertial>
@@ -2519,15 +1547,6 @@
             <origin xyz="2.22172e-13 0.00922051 -3.25847e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_13">
         <inertial>
@@ -2535,15 +1554,6 @@
             <origin xyz="2.22172e-13 -0.00602949 -3.909e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -6.50521e-19" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_14">
         <inertial>
@@ -2551,15 +1561,6 @@
             <origin xyz="2.22172e-13 0.00922051 -3.25847e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_15">
         <inertial>
@@ -2567,15 +1568,6 @@
             <origin xyz="2.22172e-13 -0.00602949 -3.909e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -6.50521e-19" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_2">
         <inertial>
@@ -2583,15 +1575,6 @@
             <origin xyz="2.22172e-13 0.00922051 -3.25847e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_3">
         <inertial>
@@ -2599,15 +1582,6 @@
             <origin xyz="2.22172e-13 -0.00602949 -3.909e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -6.50521e-19" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_4">
         <inertial>
@@ -2615,15 +1589,6 @@
             <origin xyz="2.22172e-13 -0.00602949 -3.909e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -6.50521e-19" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_5">
         <inertial>
@@ -2631,15 +1596,6 @@
             <origin xyz="2.22172e-13 -0.00602949 -3.909e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -6.50521e-19" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_6">
         <inertial>
@@ -2647,15 +1603,6 @@
             <origin xyz="2.22172e-13 -0.00602949 -3.909e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -6.50521e-19" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_7">
         <inertial>
@@ -2663,15 +1610,6 @@
             <origin xyz="2.22172e-13 -0.00602949 -3.909e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -6.50521e-19" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_8">
         <inertial>
@@ -2679,15 +1617,6 @@
             <origin xyz="2.22172e-13 -0.00602949 -3.909e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -6.50521e-19" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever_9">
         <inertial>
@@ -2695,15 +1624,6 @@
             <origin xyz="2.22172e-13 0.00922051 -3.25847e-18" rpy="0 -0 0" />
             <inertia ixx="6.41593e-09" ixy="-0" ixz="-0" iyy="7.98446e-10" iyz="0" izz="6.80954e-09" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Rotule_Lever.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.196078_0.196078_0.196078_0.000000_0.000000">
-                <color rgba="0.196078 0.196078 0.196078 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}rotule_lever__2__loop_closure">
         <inertial>
@@ -2909,15 +1829,6 @@
             <origin xyz="-6.37229e-20 -0.001 -2.04108e-20" rpy="0 -0 0" />
             <inertia ixx="2.98451e-14" ixy="-0" ixz="-0" iyy="4.71239e-14" iyz="0" izz="2.98451e-14" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Spacer.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.501961_0.501961_0.501961_0.000000_0.000000">
-                <color rgba="0.501961 0.501961 0.501961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}spacer_1">
         <inertial>
@@ -2925,15 +1836,6 @@
             <origin xyz="-6.37229e-20 -0.001 -2.04108e-20" rpy="0 -0 0" />
             <inertia ixx="2.98451e-14" ixy="-0" ixz="-0" iyy="4.71239e-14" iyz="0" izz="2.98451e-14" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Spacer.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.501961_0.501961_0.501961_0.000000_0.000000">
-                <color rgba="0.501961 0.501961 0.501961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}spacer_2">
         <inertial>
@@ -2941,15 +1843,6 @@
             <origin xyz="-6.37229e-20 -0.001 -2.04108e-20" rpy="0 -0 0" />
             <inertia ixx="2.98451e-14" ixy="-0" ixz="-0" iyy="4.71239e-14" iyz="0" izz="2.98451e-14" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Spacer.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.501961_0.501961_0.501961_0.000000_0.000000">
-                <color rgba="0.501961 0.501961 0.501961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}spacer_3">
         <inertial>
@@ -2957,15 +1850,6 @@
             <origin xyz="-6.37229e-20 -0.001 -2.04108e-20" rpy="0 -0 0" />
             <inertia ixx="2.98451e-14" ixy="-0" ixz="-0" iyy="4.71239e-14" iyz="0" izz="2.98451e-14" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Spacer.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.501961_0.501961_0.501961_0.000000_0.000000">
-                <color rgba="0.501961 0.501961 0.501961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}spacer_4">
         <inertial>
@@ -2973,15 +1857,6 @@
             <origin xyz="-6.37229e-20 -0.001 -2.04108e-20" rpy="0 -0 0" />
             <inertia ixx="2.98451e-14" ixy="-0" ixz="-0" iyy="4.71239e-14" iyz="0" izz="2.98451e-14" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Spacer.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.501961_0.501961_0.501961_0.000000_0.000000">
-                <color rgba="0.501961 0.501961 0.501961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}spacer_5">
         <inertial>
@@ -2989,15 +1864,6 @@
             <origin xyz="-6.37229e-20 -0.001 -2.04108e-20" rpy="0 -0 0" />
             <inertia ixx="2.98451e-14" ixy="-0" ixz="-0" iyy="4.71239e-14" iyz="0" izz="2.98451e-14" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Spacer.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.501961_0.501961_0.501961_0.000000_0.000000">
-                <color rgba="0.501961 0.501961 0.501961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}spacer_6">
         <inertial>
@@ -3005,15 +1871,6 @@
             <origin xyz="-6.37229e-20 -0.001 -2.04108e-20" rpy="0 -0 0" />
             <inertia ixx="2.98451e-14" ixy="-0" ixz="-0" iyy="4.71239e-14" iyz="0" izz="2.98451e-14" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Spacer.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.501961_0.501961_0.501961_0.000000_0.000000">
-                <color rgba="0.501961 0.501961 0.501961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}spacer_7">
         <inertial>
@@ -3021,15 +1878,6 @@
             <origin xyz="-6.37229e-20 -0.001 -2.04108e-20" rpy="0 -0 0" />
             <inertia ixx="2.98451e-14" ixy="-0" ixz="-0" iyy="4.71239e-14" iyz="0" izz="2.98451e-14" />
         </inertial>
-        <visual>
-            <origin xyz="0 0.01525 0" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/Spacer.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.501961_0.501961_0.501961_0.000000_0.000000">
-                <color rgba="0.501961 0.501961 0.501961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8">
         <inertial>
@@ -3037,15 +1885,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_1">
         <inertial>
@@ -3053,15 +1892,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_10">
         <inertial>
@@ -3069,15 +1899,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_11">
         <inertial>
@@ -3085,15 +1906,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_12">
         <inertial>
@@ -3101,15 +1913,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_13">
         <inertial>
@@ -3117,15 +1920,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_14">
         <inertial>
@@ -3133,15 +1927,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_15">
         <inertial>
@@ -3149,15 +1934,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_16">
         <inertial>
@@ -3165,15 +1941,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_17">
         <inertial>
@@ -3181,15 +1948,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_18">
         <inertial>
@@ -3197,15 +1955,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_19">
         <inertial>
@@ -3213,15 +1962,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_2">
         <inertial>
@@ -3229,15 +1969,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_20">
         <inertial>
@@ -3245,15 +1976,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_21">
         <inertial>
@@ -3261,15 +1983,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_22">
         <inertial>
@@ -3277,15 +1990,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_23">
         <inertial>
@@ -3293,15 +1997,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_24">
         <inertial>
@@ -3309,15 +2004,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_25">
         <inertial>
@@ -3325,15 +2011,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_26">
         <inertial>
@@ -3341,15 +2018,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_27">
         <inertial>
@@ -3357,15 +2025,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_28">
         <inertial>
@@ -3373,15 +2032,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_29">
         <inertial>
@@ -3389,15 +2039,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_3">
         <inertial>
@@ -3405,15 +2046,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_4">
         <inertial>
@@ -3421,15 +2053,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_5">
         <inertial>
@@ -3437,15 +2060,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_6">
         <inertial>
@@ -3453,15 +2067,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_7">
         <inertial>
@@ -3469,15 +2074,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_8">
         <inertial>
@@ -3485,15 +2081,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00333_plast_tcb_torx_2_5x8_9">
         <inertial>
@@ -3501,15 +2088,6 @@
             <origin xyz="-5.36274e-20 1.28339e-20 0.00260722" rpy="0 -0 0" />
             <inertia ixx="3.84168e-09" ixy="-0" ixz="-0" iyy="3.84168e-09" iyz="0" izz="5.51923e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00333_plast_tcb_torx_2_5x8.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6">
         <inertial>
@@ -3517,15 +2095,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_1">
         <inertial>
@@ -3533,15 +2102,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_10">
         <inertial>
@@ -3549,15 +2109,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_11">
         <inertial>
@@ -3565,15 +2116,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_12">
         <inertial>
@@ -3581,15 +2123,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_13">
         <inertial>
@@ -3597,15 +2130,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_14">
         <inertial>
@@ -3613,15 +2137,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_15">
         <inertial>
@@ -3629,15 +2144,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_2">
         <inertial>
@@ -3645,15 +2151,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_3">
         <inertial>
@@ -3661,15 +2158,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_4">
         <inertial>
@@ -3677,15 +2165,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_5">
         <inertial>
@@ -3693,15 +2172,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_6">
         <inertial>
@@ -3709,15 +2179,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_7">
         <inertial>
@@ -3725,15 +2186,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_8">
         <inertial>
@@ -3741,15 +2193,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <link name="${prefix}std00447_thermoplastique_m2_5x6_9">
         <inertial>
@@ -3757,15 +2200,6 @@
             <origin xyz="-5.24317e-20 8.92454e-21 0.00166443" rpy="0 -0 0" />
             <inertia ixx="2.03958e-09" ixy="-0" ixz="-0" iyy="2.03958e-09" iyz="0" izz="4.92558e-10" />
         </inertial>
-        <visual>
-            <origin xyz="0 0 -0.0016" rpy="0 -0 0" />
-            <geometry>
-                <mesh filename="package://openarm_description/meshes/ee/amazing_hand/left/STD00447_thermoplastique_m2_5x6.stl" scale="1 1 1" />
-            </geometry>
-            <material name="0.901961_0.901961_0.901961_0.000000_0.000000">
-                <color rgba="0.901961 0.901961 0.901961 1" />
-            </material>
-        </visual>
     </link>
     <joint name="${prefix}ball_1" type="continuous">
         <origin xyz="-1.73472e-17 -1.38778e-17 -0.0029" rpy="3.13903 0.116454 -1.02378" />

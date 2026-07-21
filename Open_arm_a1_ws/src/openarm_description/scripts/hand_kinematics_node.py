@@ -254,9 +254,19 @@ def calibrate(hand, fingers):
         f['rod_lengths'] = [d[0][0], d[1][1]]
         # distal_dup and distal_real are the same physical piece, exported as two
         # links with different frames: their offset is rigid in the dup frame,
-        # not constant in the world, so store it locally and rotate it at solve time
+        # not constant in the world, so store it locally and rotate it at solve time.
+        # Early versions only matched the ORIGIN point (3 equations) and left
+        # orientation unconstrained; the knuckle's single rotation axis (q_knu)
+        # can always hit a position target but has no way to also track the
+        # orientation implied by the rod-driven side, so proximal/distal visibly
+        # twisted apart at rest = ~2, growing to ~50 by 60deg flex. Also
+        # matching the rest-pose ROTATION offset (and freeing the rod's twist
+        # DOF, previously pinned at 0) lets the solver use all available freedom
+        # to minimize that mismatch instead of ignoring it entirely.
         T_dd = hand.fk(f['distal_dup'])
         f['knuckle_offset_local'] = T_dd[:3, :3].T @ (rest_pos[f['distal_real']] - T_dd[:3, 3])
+        T_dr = hand.fk(f['distal_real'])
+        f['knuckle_rot_offset_local'] = T_dd[:3, :3].T @ T_dr[:3, :3]
 
         # Rod visuals: each rod end hangs off its ball via a 3-DOF decomposed
         # spherical joint. Record, per chain, the aim point of the lever/rod mesh
@@ -278,27 +288,45 @@ def calibrate(hand, fingers):
     return fingers
 
 
+def _orientation_residual(R_a, R_b):
+    """Vee-map of the antisymmetric part of R_a^T R_b: ~0 when the two
+    orientations match, grows smoothly with the mismatch angle. Not an exact
+    log-map but well-behaved for least_squares over the range this linkage
+    actually swings through."""
+    R_diff = R_a.T @ R_b
+    return np.array([
+        R_diff[2, 1] - R_diff[1, 2],
+        R_diff[0, 2] - R_diff[2, 0],
+        R_diff[1, 0] - R_diff[0, 1],
+    ]) * 0.5
+
+
 def make_residual_fn(hand, f):
     rb0, rb1 = f['rod_balls']
     hb0, hb1 = f['servo_data'][0]['horn_ball'], f['servo_data'][1]['horn_ball']
     act0, act1 = f['servo_data'][0]['actuator_joint'], f['servo_data'][1]['actuator_joint']
     L0, L1 = f['rod_lengths']
-    q1j, q2j, propj, knuj, prismj = f['q1_joint'], f['q2_joint'], f['prox_joint'], f['knuckle_joint'], f['prism_joint']
+    q1j, q2j, propj, knuj, prismj, twistj = (f['q1_joint'], f['q2_joint'], f['prox_joint'],
+                                              f['knuckle_joint'], f['prism_joint'], f['twist_joint'])
     distal_real, distal_dup = f['distal_real'], f['distal_dup']
     offset_local = f['knuckle_offset_local']
+    rot_offset_local = f['knuckle_rot_offset_local']
 
     def residual(x, theta_A, theta_B):
-        q1, q2, q_prox, q_knu, q_prism = x
+        q1, q2, q_prox, q_knu, q_prism, q_twist = x
         p_rb0 = hand.fk(rb0, {q1j: q1, q2j: q2})[:3, 3]
         p_rb1 = hand.fk(rb1, {q1j: q1, q2j: q2})[:3, 3]
         p_hb0 = hand.fk(hb0, {act0: theta_A})[:3, 3]
         p_hb1 = hand.fk(hb1, {act1: theta_B})[:3, 3]
-        p_dr = hand.fk(distal_real, {q1j: q1, q2j: q2, prismj: q_prism})[:3, 3]
+        T_dr = hand.fk(distal_real, {q1j: q1, q2j: q2, prismj: q_prism, twistj: q_twist})
         T_dd = hand.fk(distal_dup, {q1j: q1, propj: q_prox, knuj: q_knu})
+        p_target = T_dd[:3, :3] @ offset_local + T_dd[:3, 3]
+        R_target = T_dd[:3, :3] @ rot_offset_local
         return np.array([
             np.linalg.norm(p_rb0 - p_hb0) - L0,
             np.linalg.norm(p_rb1 - p_hb1) - L1,
-            *(p_dr - (T_dd[:3, :3] @ offset_local + T_dd[:3, 3])),
+            *(T_dr[:3, 3] - p_target),
+            *_orientation_residual(T_dr[:3, :3], R_target),
         ])
     return residual
 
@@ -310,22 +338,27 @@ def make_ik_residual_fn(hand, f):
     hb0, hb1 = f['servo_data'][0]['horn_ball'], f['servo_data'][1]['horn_ball']
     act0, act1 = f['servo_data'][0]['actuator_joint'], f['servo_data'][1]['actuator_joint']
     L0, L1 = f['rod_lengths']
-    q1j, q2j, propj, knuj, prismj = f['q1_joint'], f['q2_joint'], f['prox_joint'], f['knuckle_joint'], f['prism_joint']
+    q1j, q2j, propj, knuj, prismj, twistj = (f['q1_joint'], f['q2_joint'], f['prox_joint'],
+                                              f['knuckle_joint'], f['prism_joint'], f['twist_joint'])
     distal_real, distal_dup = f['distal_real'], f['distal_dup']
     offset_local = f['knuckle_offset_local']
+    rot_offset_local = f['knuckle_rot_offset_local']
 
     def residual(x, q1, q_prox):
-        theta_A, theta_B, q2, q_knu, q_prism = x
+        theta_A, theta_B, q2, q_knu, q_prism, q_twist = x
         p_rb0 = hand.fk(rb0, {q1j: q1, q2j: q2})[:3, 3]
         p_rb1 = hand.fk(rb1, {q1j: q1, q2j: q2})[:3, 3]
         p_hb0 = hand.fk(hb0, {act0: theta_A})[:3, 3]
         p_hb1 = hand.fk(hb1, {act1: theta_B})[:3, 3]
-        p_dr = hand.fk(distal_real, {q1j: q1, q2j: q2, prismj: q_prism})[:3, 3]
+        T_dr = hand.fk(distal_real, {q1j: q1, q2j: q2, prismj: q_prism, twistj: q_twist})
         T_dd = hand.fk(distal_dup, {q1j: q1, propj: q_prox, knuj: q_knu})
+        p_target = T_dd[:3, :3] @ offset_local + T_dd[:3, 3]
+        R_target = T_dd[:3, :3] @ rot_offset_local
         return np.array([
             np.linalg.norm(p_rb0 - p_hb0) - L0,
             np.linalg.norm(p_rb1 - p_hb1) - L1,
-            *(p_dr - (T_dd[:3, :3] @ offset_local + T_dd[:3, 3])),
+            *(T_dr[:3, 3] - p_target),
+            *_orientation_residual(T_dr[:3, :3], R_target),
         ])
     return residual
 
@@ -363,7 +396,7 @@ class HandKinematicsNode(Node):
             self.residual_fns = [make_residual_fn(self.hand, f) for f in self.fingers]
         else:
             self.residual_fns = [make_ik_residual_fn(self.hand, f) for f in self.fingers]
-        self.warm_start = [np.zeros(5) for _ in self.fingers]
+        self.warm_start = [np.zeros(6) for _ in self.fingers]
         self.rod_warm_start = [[np.zeros(3) for _ in f['rod_chains']] for f in self.fingers]
 
         # ros2_control-facing alias names: j1<i> = yaw, j2<i> = flexion of finger i
@@ -443,34 +476,35 @@ class HandKinematicsNode(Node):
         return sol
 
     def solve_finger_servo(self, f, res_fn, x0, raw):
-        """Forward: servo angles from raw -> passive joints. x = (q1, q2, q_prox, q_knu, q_prism)."""
+        """Forward: servo angles from raw -> passive joints.
+        x = (q1, q2, q_prox, q_knu, q_prism, q_twist)."""
         theta_A = raw.get(f['servo_data'][0]['actuator_joint'], 0.0)
         theta_B = raw.get(f['servo_data'][1]['actuator_joint'], 0.0)
-        lower = [f['q1_lower'], -1.2, f['prox_lower'], -1.2, -0.02]
-        upper = [f['q1_upper'], 1.2, f['prox_upper'], 1.2, 0.02]
+        lower = [f['q1_lower'], -1.2, f['prox_lower'], -1.2, -0.02, -3.2]
+        upper = [f['q1_upper'], 1.2, f['prox_upper'], 1.2, 0.02, 3.2]
         sol = self._solve_multistart(res_fn, x0, (theta_A, theta_B), (lower, upper))
         x0[:] = sol.x
-        q1, q2, q_prox, q_knu, q_prism = sol.x
+        q1, q2, q_prox, q_knu, q_prism, q_twist = sol.x
         return sol, {
             f['q1_joint']: q1, f['q2_joint']: q2, f['prox_joint']: q_prox,
-            f['knuckle_joint']: q_knu, f['prism_joint']: q_prism, f['twist_joint']: 0.0,
+            f['knuckle_joint']: q_knu, f['prism_joint']: q_prism, f['twist_joint']: q_twist,
         }
 
     def solve_finger_knuckle(self, f, res_fn, x0, raw):
         """Inverse: knuckle command from raw -> servo angles + remaining passives.
-        x = (theta_A, theta_B, q2, q_knu, q_prism)."""
+        x = (theta_A, theta_B, q2, q_knu, q_prism, q_twist)."""
         q1 = float(np.clip(raw.get(f['q1_joint'], 0.0), f['q1_lower'], f['q1_upper']))
         q_prox = float(np.clip(raw.get(f['prox_joint'], 0.0), f['prox_lower'], f['prox_upper']))
         sd0, sd1 = f['servo_data']
-        lower = [sd0['lower'], sd1['lower'], -1.2, -1.2, -0.02]
-        upper = [sd0['upper'], sd1['upper'], 1.2, 1.2, 0.02]
+        lower = [sd0['lower'], sd1['lower'], -1.2, -1.2, -0.02, -3.2]
+        upper = [sd0['upper'], sd1['upper'], 1.2, 1.2, 0.02, 3.2]
         sol = self._solve_multistart(res_fn, x0, (q1, q_prox), (lower, upper))
         x0[:] = sol.x
-        theta_A, theta_B, q2, q_knu, q_prism = sol.x
+        theta_A, theta_B, q2, q_knu, q_prism, q_twist = sol.x
         return sol, {
             sd0['actuator_joint']: theta_A, sd1['actuator_joint']: theta_B,
             f['q1_joint']: q1, f['q2_joint']: q2, f['prox_joint']: q_prox,
-            f['knuckle_joint']: q_knu, f['prism_joint']: q_prism, f['twist_joint']: 0.0,
+            f['knuckle_joint']: q_knu, f['prism_joint']: q_prism, f['twist_joint']: q_twist,
         }
 
     def solve_rod_chains(self, f, rod_x0s, raw, solved):

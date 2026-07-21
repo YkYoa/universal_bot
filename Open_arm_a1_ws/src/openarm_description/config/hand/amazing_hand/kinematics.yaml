@@ -1,0 +1,6 @@
+# hand_fingers is a joint-only group (no Cartesian/pose-goal planning), so
+# no IK solver entry is needed here. File kept for parity with move_group's
+# expected parameter set.
+/**:
+  ros__parameters:
+    robot_description_kinematics: {}

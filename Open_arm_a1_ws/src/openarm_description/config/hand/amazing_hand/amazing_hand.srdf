@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SRDF for the standalone amazing_hand (control_amazing_hand.launch.py).
+  root has no parent link in the URDF (ahand_with_control.urdf.xacro), so
+  it's the effective TF root already; the virtual_joint below just gives
+  MoveIt/RViz a named fixed frame to plan against.
+
+  j1<i> = yaw/abduction, j2<i> = proximal flexion of finger i (i=1..3
+  top-down across the palm, 4 = thumb). Distal knuckle is mechanically
+  coupled to flexion through the linkage, not independently controllable,
+  same as the bimanual robot's left_hand_fingers/right_hand_fingers groups
+  in openarm_bimanual.srdf.
+-->
+<robot name="amazing_hand">
+
+  <group name="hand_fingers">
+    <joint name="j11"/>
+    <joint name="j12"/>
+    <joint name="j13"/>
+    <joint name="j14"/>
+    <joint name="j21"/>
+    <joint name="j22"/>
+    <joint name="j23"/>
+    <joint name="j24"/>
+  </group>
+
+  <group_state name="open" group="hand_fingers">
+    <joint name="j11" value="0.0"/>
+    <joint name="j12" value="0.0"/>
+    <joint name="j13" value="0.0"/>
+    <joint name="j14" value="0.0"/>
+    <joint name="j21" value="0.0"/>
+    <joint name="j22" value="0.0"/>
+    <joint name="j23" value="0.0"/>
+    <joint name="j24" value="0.0"/>
+  </group_state>
+
+  <group_state name="close" group="hand_fingers">
+    <joint name="j11" value="0.0"/>
+    <joint name="j12" value="0.0"/>
+    <joint name="j13" value="0.0"/>
+    <joint name="j14" value="0.0"/>
+    <joint name="j21" value="1.0"/>
+    <joint name="j22" value="1.0"/>
+    <joint name="j23" value="1.0"/>
+    <joint name="j24" value="1.0"/>
+  </group_state>
+
+  <virtual_joint name="virtual_joint" type="fixed" parent_frame="world" child_link="root"/>
+
+</robot>
