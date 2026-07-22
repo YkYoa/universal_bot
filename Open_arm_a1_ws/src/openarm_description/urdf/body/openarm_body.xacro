@@ -28,29 +28,112 @@
       </joint>
     </xacro:if>
 
+    <!-- v2's chassis mesh (chasssis_link.STL, base-plate component stripped out) is
+         already centered on its mount point, already in meters, and carries its own
+         correctly-measured inertial; v1/v10's raw mesh is in mm and isn't centered,
+         so they need the baked-in offset + scale instead. -->
+    <xacro:property name="mesh_xyz" value="${'0 0 0' if body_type == 'v2' else '-0.251 0.1302 -0.210104'}" />
+    <xacro:property name="mesh_rpy" value="${'0 0 0' if body_type == 'v2' else '0 0 -1.5708'}" />
+    <xacro:property name="mesh_scale" value="${'1 1 1' if body_type == 'v2' else '0.001 0.001 0.001'}" />
+
     <link name="${prefix}link0">
       <visual>
-        <origin xyz="-0.251 0.1302 -0.210104" rpy="0 0 -1.5708" />
+        <origin xyz="${mesh_xyz}" rpy="${mesh_rpy}" />
         <geometry>
-          <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/body_link0.STL" scale="0.001 0.001 0.001" />
+          <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/body_link0.STL" scale="${mesh_scale}" />
         </geometry>
       </visual>
 
       <collision>
-        <origin xyz="-0.251 0.1302 -0.210104" rpy="0 0 -1.5708" />
+        <origin xyz="${mesh_xyz}" rpy="${mesh_rpy}" />
         <geometry>
-          <mesh filename="package://${description_pkg}/meshes/body/${body_type}/collision/body_link0_symp.STL" scale="0.001 0.001 0.001" />
+          <mesh filename="package://${description_pkg}/meshes/body/${body_type}/collision/body_link0_symp.STL" scale="${mesh_scale}" />
         </geometry>
       </collision>
 
-      <inertial>
-        <origin xyz="-0.026141 4.0416E-06 0.40173" rpy="0 0 0" />
-        <mass value="3.0436" />
-        <inertia ixx="0.14438" ixy="1.054E-06" ixz="1.0507E-06" 
-                 iyy="0.14207" iyz="9.0865E-10" 
-                 izz="0.019727" />
-      </inertial>
+      <xacro:unless value="${body_type == 'v2'}">
+        <inertial>
+          <origin xyz="-0.026141 4.0416E-06 0.40173" rpy="0 0 0" />
+          <mass value="3.0436" />
+          <inertia ixx="0.14438" ixy="1.054E-06" ixz="1.0507E-06"
+                   iyy="0.14207" iyz="9.0865E-10"
+                   izz="0.019727" />
+        </inertial>
+      </xacro:unless>
+      <xacro:if value="${body_type == 'v2'}">
+        <inertial>
+          <origin xyz="-0.050424 -0.0013901 -0.23707" rpy="0 0 0" />
+          <mass value="25" />
+          <inertia ixx="0.053286" ixy="0.00012916" ixz="2.3176E-06"
+                   iyy="0.044721" iyz="0.00046953"
+                   izz="0.047419" />
+        </inertial>
+      </xacro:if>
     </link>
+
+    <!-- v2 adds an articulated neck + head; older body versions are a single rigid
+         chassis with no such thing, so this is entirely gated on body_type. -->
+    <xacro:if value="${body_type == 'v2'}">
+      <link name="${prefix}neck_link">
+        <visual>
+          <origin xyz="0 0 0" rpy="0 0 0" />
+          <geometry>
+            <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/Neck_Link.STL" />
+          </geometry>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="0 0 0" />
+          <geometry>
+            <mesh filename="package://${description_pkg}/meshes/body/${body_type}/collision/Neck_Link_symp.STL" />
+          </geometry>
+        </collision>
+        <inertial>
+          <origin xyz="-0.00729797698843204 -0.000443616169626848 -0.0174999999999999" rpy="0 0 0" />
+          <mass value="0.0279371439221494" />
+          <inertia ixx="6.39092695773795E-06" ixy="-5.69576500715137E-09" ixz="-1.75825511004272E-20"
+                   iyy="6.48428237240793E-06" iyz="2.37840275503138E-21"
+                   izz="7.48673899437131E-06" />
+        </inertial>
+      </link>
+
+      <joint name="${prefix}neck_joint" type="revolute">
+        <origin xyz="-0.031878 0.023312 0.33482" rpy="-1.8793 1.5431 -0.30844" />
+        <parent link="${prefix}link0" />
+        <child link="${prefix}neck_link" />
+        <axis xyz="0 0 -1" />
+        <limit lower="-1.57" upper="1.57" effort="10" velocity="3" />
+      </joint>
+
+      <link name="${prefix}head_link">
+        <visual>
+          <origin xyz="0 0 0" rpy="0 0 0" />
+          <geometry>
+            <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/Head_Link.STL" />
+          </geometry>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="0 0 0" />
+          <geometry>
+            <mesh filename="package://${description_pkg}/meshes/body/${body_type}/collision/Head_Link_symp.STL" />
+          </geometry>
+        </collision>
+        <inertial>
+          <origin xyz="0.0353707921732529 -0.00624420290577887 0.140058128714488" rpy="0 0 0" />
+          <mass value="2.4504028411393" />
+          <inertia ixx="0.0238556395901539" ixy="-0.000356410646591372" ixz="0.00130415554911385"
+                   iyy="0.0179669744913406" iyz="8.15599537572202E-05"
+                   izz="0.0155300891818827" />
+        </inertial>
+      </link>
+
+      <joint name="${prefix}head_joint" type="revolute">
+        <origin xyz="-0.023265 0.00306 -0.01733" rpy="1.5364 0 -1.5444" />
+        <parent link="${prefix}neck_link" />
+        <child link="${prefix}head_link" />
+        <axis xyz="0.034355 -0.034358 0.99882" />
+        <limit lower="-1.57" upper="1.57" effort="10" velocity="3" />
+      </joint>
+    </xacro:if>
 
   </xacro:macro>
 

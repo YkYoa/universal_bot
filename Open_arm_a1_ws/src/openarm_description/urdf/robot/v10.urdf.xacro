@@ -5,7 +5,7 @@
 
   <xacro:arg name="arm_type" default="v10" />
 
-  <xacro:arg name="body_type" default="v1" />
+  <xacro:arg name="body_type" default="v2" />
 
   <xacro:arg name="ee_type" default="openarm_hand" />
 
@@ -61,7 +61,7 @@
 
   <xacro:openarm_robot
   arm_type="v10"
-  body_type="v1"
+  body_type="$(arg body_type)"
   joint_limits="${xacro.load_yaml('$(find openarm_description)/config/arm/v10/joint_limits.yaml')}"
   control_gains="${xacro.load_yaml('$(find openarm_description)/config/arm/v10/control_gains.yaml')}"
   inertials="${xacro.load_yaml('$(find openarm_description)/config/arm/v10/inertials.yaml')}"

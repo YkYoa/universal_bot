@@ -23,6 +23,7 @@ def launch_setup(context, *args, **kwargs):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_robot_skills = LaunchConfiguration("use_robot_skills")
     ee_type = LaunchConfiguration("ee_type")
+    body_type = LaunchConfiguration("body_type")
     is_amazing_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'amazing_hand'"]))
     is_openarm_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'openarm_hand'"]))
 
@@ -39,6 +40,9 @@ def launch_setup(context, *args, **kwargs):
             " ",
             "ee_type:=",
             ee_type,
+            " ",
+            "body_type:=",
+            body_type,
             " ",
             "use_fake_hardware:=",
             use_fake_hardware,
@@ -89,6 +93,20 @@ def launch_setup(context, *args, **kwargs):
         robot_description_semantic_content = '\n'.join(
             line for line in robot_description_semantic_content.split('\n')
             if not re.search(r'openarm_(?:left|right)_(?:hand"|left_finger|right_finger)', line)
+        )
+
+    # body_type:=v2 adds an articulated neck_joint/head_joint (see openarm_body.xacro);
+    # v1/v10 don't have them. Neither is in any static SRDF group, so inject one here
+    # only when it actually exists in the URDF -- a static group would make v1 log
+    # "Joint 'openarm_body_neck_joint' ... not known to the URDF" on every startup.
+    if LaunchConfiguration("body_type").perform(context) == "v2":
+        robot_description_semantic_content = robot_description_semantic_content.replace(
+            "  <!-- Virtual joints -->",
+            '  <group name="head">\n'
+            '    <joint name="openarm_body_neck_joint"/>\n'
+            '    <joint name="openarm_body_head_joint"/>\n'
+            '  </group>\n\n'
+            "  <!-- Virtual joints -->"
         )
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_content}
 
@@ -330,6 +348,12 @@ def generate_launch_description():
                      "'amazing_hand' (8-DOF finger hand, adds left_hand_fingers/right_hand_fingers "
                      "MoveIt groups and per-finger hand_kinematics_node + controllers).",
     )
+    body_type_arg = DeclareLaunchArgument(
+        "body_type",
+        default_value="v1",
+        description="Chassis/body version: 'v1' (default, single rigid base) or "
+                     "'v2' (new chassis mesh with an articulated neck + head).",
+    )
     use_robot_skills_arg = DeclareLaunchArgument(
         "use_robot_skills",
         default_value="true",
@@ -346,6 +370,7 @@ def generate_launch_description():
             use_rviz_arg,
             use_sim_time_arg,
             ee_type_arg,
+            body_type_arg,
             use_robot_skills_arg,
             OpaqueFunction(function=launch_setup),
         ]

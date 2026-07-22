@@ -78,6 +78,11 @@ def generate_launch_description():
         default_value="amazing_hand",
         description="End-effector type: openarm_hand (2-finger gripper) or amazing_hand.",
     )
+    body_type_arg = DeclareLaunchArgument(
+        "body_type",
+        default_value="v1",
+        description="Chassis/body version: 'v1' (single rigid base) or 'v2' (new chassis mesh with articulated neck + head).",
+    )
 
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     gazebo = LaunchConfiguration("gazebo")
@@ -85,6 +90,7 @@ def generate_launch_description():
     right_can_interface = LaunchConfiguration("right_can_interface")
     hand = LaunchConfiguration("hand")
     ee_type = LaunchConfiguration("ee_type")
+    body_type = LaunchConfiguration("body_type")
     
     # Tính toán động giá trị use_sim_time: 'true' nếu không chạy fake hardware VÀ chạy gazebo, ngược lại là 'false'
     # Để đơn giản, ta kiểm tra xem có chạy Gazebo không: nếu gazebo == 'true' và use_fake_hardware == 'false'
@@ -111,6 +117,8 @@ def generate_launch_description():
             "hand:=", hand,
             " ",
             "ee_type:=", ee_type,
+            " ",
+            "body_type:=", body_type,
             " ",
             "left_can_interface:=", left_can_interface,
             " ",
@@ -396,6 +404,7 @@ def generate_launch_description():
             right_can_interface_arg,
             hand_arg,
             ee_type_arg,
+            body_type_arg,
             robot_state_publisher_node,
             # Gazebo
             gazebo_sim,

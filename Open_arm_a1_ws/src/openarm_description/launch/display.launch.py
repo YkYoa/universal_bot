@@ -13,6 +13,7 @@ def generate_launch_description():
     
     declared_arguments.append(DeclareLaunchArgument("arm_type", default_value="v10", description="Type of arm."))
     declared_arguments.append(DeclareLaunchArgument("ee_type", default_value="openarm_hand", description="Type of end-effector."))
+    declared_arguments.append(DeclareLaunchArgument("body_type", default_value="v1", description="Chassis/body version: 'v1' (single rigid base) or 'v2' (new chassis mesh with articulated neck + head)."))
     declared_arguments.append(DeclareLaunchArgument("bimanual", default_value="false", description="Is this a bimanual setup?"))
     declared_arguments.append(DeclareLaunchArgument("hand", default_value="true", description="Include hand?"))
     declared_arguments.append(DeclareLaunchArgument("mobile_base", default_value="false", description="Include mobile base?"))
@@ -70,6 +71,7 @@ def generate_launch_description():
 
     arm_type = LaunchConfiguration("arm_type")
     ee_type = LaunchConfiguration("ee_type")
+    body_type = LaunchConfiguration("body_type")
     bimanual = LaunchConfiguration("bimanual")
     hand = LaunchConfiguration("hand")
     mobile_base = LaunchConfiguration("mobile_base")
@@ -98,6 +100,8 @@ def generate_launch_description():
             "arm_type:=", arm_type,
             " ",
             "ee_type:=", ee_type,
+            " ",
+            "body_type:=", body_type,
             " ",
             "bimanual:=", bimanual,
             " ",

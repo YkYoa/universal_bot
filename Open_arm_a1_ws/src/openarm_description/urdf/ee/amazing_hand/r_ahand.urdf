@@ -242,7 +242,7 @@
             <material name="1.000000_1.000000_1.000000_0.000000_0.000000">
                 <color rgba="1 1 1 1" />
             </material>
-        </visual></link>
+        </visual><collision><origin xyz="-0.002312731075 0.02409336828 -0.004443080446" rpy="-8.568360999e-16 -1.394266647 1.598929971" /><geometry><cylinder radius="0.0112436" length="0.0416705" /></geometry></collision></link>
     <link name="distal_1">
         <inertial>
             <mass value="0.00445812" />
@@ -265,7 +265,7 @@
             <material name="1.000000_1.000000_1.000000_0.000000_0.000000">
                 <color rgba="1 1 1 1" />
             </material>
-        </visual></link>
+        </visual><collision><origin xyz="-0.002312731075 0.02409336828 -0.004443080446" rpy="1.785965219e-16 -1.394266647 1.598929971" /><geometry><cylinder radius="0.0112436" length="0.0416705" /></geometry></collision></link>
     <link name="distal_2">
         <inertial>
             <mass value="0.00445812" />
@@ -288,7 +288,7 @@
             <material name="1.000000_1.000000_1.000000_0.000000_0.000000">
                 <color rgba="1 1 1 1" />
             </material>
-        </visual></link>
+        </visual><collision><origin xyz="-0.002312731075 0.02409336828 -0.004443080446" rpy="-6.823621227e-16 -1.394266647 1.598929971" /><geometry><cylinder radius="0.0112436" length="0.0416705" /></geometry></collision></link>
     <link name="distal_3">
         <inertial>
             <mass value="0.00445812" />
@@ -311,7 +311,7 @@
             <material name="1.000000_1.000000_1.000000_0.000000_0.000000">
                 <color rgba="1 1 1 1" />
             </material>
-        </visual></link>
+        </visual><collision><origin xyz="-0.002312731075 0.02409336828 -0.004443080446" rpy="1.376955542e-14 -1.394266647 1.598929971" /><geometry><cylinder radius="0.0112436" length="0.0416705" /></geometry></collision></link>
     <link name="distal__1__loop_closure">
         <inertial>
             <mass value="1e-09" />
@@ -586,7 +586,7 @@
             <material name="1.000000_1.000000_1.000000_0.000000_0.000000">
                 <color rgba="1 1 1 1" />
             </material>
-        </visual></link>
+        </visual><collision><origin xyz="-0.002743851558 0.02981085513 0.003165636256" rpy="-3.129189707 0.03815284175 1.885192228" /><geometry><cylinder radius="0.0224971" length="0.0236886" /></geometry></collision></link>
     <link name="proximal_1">
         <inertial>
             <mass value="0.00869852" />
@@ -609,7 +609,7 @@
             <material name="1.000000_1.000000_1.000000_0.000000_0.000000">
                 <color rgba="1 1 1 1" />
             </material>
-        </visual></link>
+        </visual><collision><origin xyz="-0.002743851558 0.02981085513 0.003165636256" rpy="-3.129189707 0.03815284175 1.885192228" /><geometry><cylinder radius="0.0224971" length="0.0236886" /></geometry></collision></link>
     <link name="proximal_2">
         <inertial>
             <mass value="0.00869852" />
@@ -632,7 +632,7 @@
             <material name="1.000000_1.000000_1.000000_0.000000_0.000000">
                 <color rgba="1 1 1 1" />
             </material>
-        </visual></link>
+        </visual><collision><origin xyz="-0.002743851558 0.02981085513 0.003165636256" rpy="-3.129189707 0.03815284175 1.885192228" /><geometry><cylinder radius="0.0224971" length="0.0236886" /></geometry></collision></link>
     <link name="proximal_3">
         <inertial>
             <mass value="0.00869852" />
@@ -655,7 +655,7 @@
             <material name="1.000000_1.000000_1.000000_0.000000_0.000000">
                 <color rgba="1 1 1 1" />
             </material>
-        </visual></link>
+        </visual><collision><origin xyz="-0.002743851558 0.02981085513 0.003165636256" rpy="-3.129189707 0.03815284175 1.885192228" /><geometry><cylinder radius="0.0224971" length="0.0236886" /></geometry></collision></link>
     <link name="r_hand_plate">
         <inertial>
             <mass value="2.90624e-05" />
@@ -1383,7 +1383,7 @@
         <axis xyz="-1 -0 -0" />
         <parent link="cylindrical_1" />
         <child link="distal_2" />
-    </joint>
+    <mimic joint="j21" multiplier="0.893781" offset="0.027842" /></joint>
     <joint name="cylindrical_1_2" type="prismatic">
         <origin xyz="0.00035 0.0496106 0.00943613" rpy="-0.0804909 -5.31725e-17 1.07388e-15" />
         <axis xyz="-1 -0 -0" />
@@ -1396,7 +1396,7 @@
         <axis xyz="-1 -0 -0" />
         <parent link="cylindrical_1_1" />
         <child link="distal_1" />
-    </joint>
+    <mimic joint="j22" multiplier="0.893781" offset="0.027842" /></joint>
     <joint name="cylindrical_1_4" type="prismatic">
         <origin xyz="0.00035 0.0496106 0.00943613" rpy="-0.0804909 -1.6886e-15 1.81943e-15" />
         <axis xyz="-1 -0 -0" />
@@ -1409,7 +1409,7 @@
         <axis xyz="-1 -0 -0" />
         <parent link="cylindrical_1_2" />
         <child link="distal_3" />
-    </joint>
+    <mimic joint="j23" multiplier="0.893781" offset="0.027842" /></joint>
     <joint name="cylindrical_1_6" type="prismatic">
         <origin xyz="0.00035 0.0496106 0.00943613" rpy="-0.0804909 5.59989e-17 5.25791e-16" />
         <axis xyz="-1 -0 -0" />
@@ -1422,7 +1422,7 @@
         <axis xyz="-1 -0 -0" />
         <parent link="cylindrical_1_3" />
         <child link="distal" />
-    </joint>
+    <mimic joint="j24" multiplier="0.893781" offset="0.027842" /></joint>
     <joint name="fastened_1" type="fixed">
         <origin xyz="-0.00605 -0.01245 -0.008" rpy="1.5708 1.12906e-14 -3.14159" />
         <axis xyz="0 1 0" />
@@ -1657,21 +1657,21 @@
         <parent link="bushing_0608_04_5" />
         <child link="gimbal_2" />
         <limit effort="1" velocity="1" lower="-0.349066" upper="0.349066" />
-    </joint>
+    <mimic joint="j11" multiplier="1" offset="0" /></joint>
     <joint name="revolute_1_1" type="revolute">
         <origin xyz="6.93889e-18 -6.93889e-18 0.001" rpy="-3.14159 -2.05193e-27 -4.1595e-14" />
         <axis xyz="0 0 1" />
         <parent link="bushing_0608_04_2" />
         <child link="gimbal_1" />
         <limit effort="1" velocity="1" lower="-0.349066" upper="0.349066" />
-    </joint>
+    <mimic joint="j12" multiplier="1" offset="0" /></joint>
     <joint name="revolute_1_2" type="revolute">
         <origin xyz="9.02056e-17 -4.85723e-17 0.001" rpy="3.14159 2.01489e-16 6.93889e-16" />
         <axis xyz="0 0 1" />
         <parent link="bushing_0608_04_6" />
         <child link="gimbal_3" />
         <limit effort="1" velocity="1" lower="-0.349066" upper="0.349066" />
-    </joint>
+    <mimic joint="j13" multiplier="1" offset="0" /></joint>
     <joint name="revolute_1_3" type="continuous">
         <origin xyz="0.00526725 0.0291633 -0.003" rpy="1.6093e-16 1.30023e-16 -0.10472" />
         <axis xyz="-0 -1.0842e-16 1" />
@@ -1684,35 +1684,35 @@
         <parent link="bushing_0608_04" />
         <child link="gimbal" />
         <limit effort="1" velocity="1" lower="-0.349066" upper="0.349066" />
-    </joint>
+    <mimic joint="j14" multiplier="1" offset="0" /></joint>
     <joint name="revolute_2" type="revolute">
         <origin xyz="0.00525 -1.73472e-17 -0.0035" rpy="-1.80303e-13 9.84526e-17 -1.69309e-15" />
         <axis xyz="-1 0 0" />
         <parent link="gimbal_2" />
         <child link="proximal_2" />
         <limit effort="1" velocity="1" lower="-0.0924772" upper="1.35615" />
-    </joint>
+    <mimic joint="j21" multiplier="1.0" offset="0" /></joint>
     <joint name="revolute_2_1" type="revolute">
         <origin xyz="0.00525 6.93889e-18 -0.0035" rpy="-1.60745e-14 4.74371e-17 -5.18347e-15" />
         <axis xyz="-1 0 0" />
         <parent link="gimbal_1" />
         <child link="proximal_1" />
         <limit effort="1" velocity="1" lower="-0.0924772" upper="1.35615" />
-    </joint>
+    <mimic joint="j22" multiplier="1.0" offset="0" /></joint>
     <joint name="revolute_2_2" type="revolute">
         <origin xyz="0.00525 -9.02056e-17 -0.0035" rpy="-1.69048e-13 -2.00624e-17 -3.60822e-16" />
         <axis xyz="-1 0 0" />
         <parent link="gimbal_3" />
         <child link="proximal_3" />
         <limit effort="1" velocity="1" lower="-0.0924772" upper="1.35615" />
-    </joint>
+    <mimic joint="j23" multiplier="1.0" offset="0" /></joint>
     <joint name="revolute_2_3" type="revolute">
         <origin xyz="0.00525 -2.08167e-17 -0.0035" rpy="-4.9683e-16 -7.86453e-17 -1.45717e-16" />
         <axis xyz="-1 0 0" />
         <parent link="gimbal" />
         <child link="proximal" />
         <limit effort="1" velocity="1" lower="-0.0924772" upper="1.35615" />
-    </joint>
+    <mimic joint="j24" multiplier="1.0" offset="0" /></joint>
     <joint name="revolute_2_4" type="continuous">
         <origin xyz="0.00061573 -0.0150929 -0.003" rpy="-4.54497e-16 6.24238e-16 -1.5708" />
         <axis xyz="0 -3.87648e-16 1" />
@@ -1730,25 +1730,25 @@
         <axis xyz="1 0 0" />
         <parent link="gimbal_2" />
         <child link="link_2" />
-    </joint>
+    <mimic joint="j21" multiplier="-1.071506" offset="0.018398" /></joint>
     <joint name="revolute_3_2" type="continuous">
         <origin xyz="0.0019 0 -0.0095" rpy="-9.90587e-15 6.09448e-17 -3.97123e-16" />
         <axis xyz="1 0 0" />
         <parent link="gimbal_1" />
         <child link="link_1" />
-    </joint>
+    <mimic joint="j22" multiplier="-1.071506" offset="0.018398" /></joint>
     <joint name="revolute_3_3" type="continuous">
         <origin xyz="0.0019 -5.55112e-17 -0.0095" rpy="-1.60716e-13 -1.15478e-16 3.33067e-16" />
         <axis xyz="1 0 0" />
         <parent link="gimbal_3" />
         <child link="link_3" />
-    </joint>
+    <mimic joint="j23" multiplier="-1.071506" offset="0.018398" /></joint>
     <joint name="revolute_3_4" type="continuous">
         <origin xyz="0.0019 -9.36751e-17 -0.0095" rpy="6.07431e-16 9.9073e-16 -2.56045e-15" />
         <axis xyz="1 0 0" />
         <parent link="gimbal" />
         <child link="link" />
-    </joint>
+    <mimic joint="j24" multiplier="-1.071506" offset="0.018398" /></joint>
     <joint name="revolute_4" type="continuous">
         <origin xyz="0.0270789 -0.0251197 -0.003" rpy="1.44071e-15 -1.72452e-16 3.3285e-16" />
         <axis xyz="0 -3.87648e-16 1" />
@@ -1785,54 +1785,54 @@
         <parent link="scs0009_5" />
         <child link="custom_servo_horn_5" />
         <limit effort="1" velocity="1" lower="-2.18166" upper="0.959931" />
-    </joint>
+    <mimic joint="j21" multiplier="-1.390791" offset="0.071818" /></joint>
     <joint name="revolute_5_1" type="revolute">
         <origin xyz="6.93889e-18 -0.0087 -0.01995" rpy="1.5708 1.55931e-13 2.47818e-16" />
         <axis xyz="0 0 -1" />
         <parent link="scs0009_2" />
         <child link="custom_servo_horn_2" />
         <limit effort="1" velocity="1" lower="-2.18166" upper="0.959931" />
-    </joint>
+    <mimic joint="j22" multiplier="-1.390791" offset="0.071818" /></joint>
     <joint name="revolute_5_2" type="revolute">
         <origin xyz="8.67362e-18 -0.0087 -0.01995" rpy="1.5708 -8.76862e-15 1.40489e-14" />
         <axis xyz="0 0 -1" />
         <parent link="scs0009_7" />
         <child link="custom_servo_horn_6" />
         <limit effort="1" velocity="1" lower="-2.18166" upper="0.959931" />
-    </joint>
+    <mimic joint="j23" multiplier="-1.390791" offset="0.071818" /></joint>
     <joint name="revolute_5_3" type="revolute">
         <origin xyz="1.04083e-17 -0.0087 -0.01995" rpy="1.5708 1.96996e-15 1.36945e-14" />
         <axis xyz="0 0 -1" />
         <parent link="scs0009" />
         <child link="custom_servo_horn" />
         <limit effort="1" velocity="1" lower="-2.18166" upper="0.959931" />
-    </joint>
+    <mimic joint="j24" multiplier="-1.390791" offset="0.071818" /></joint>
     <joint name="revolute_6" type="revolute">
         <origin xyz="2.08167e-17 -0.0087 -0.01995" rpy="-1.5708 -1.54195e-15 -3.14159" />
         <axis xyz="0 0 -1" />
         <parent link="scs0009_4" />
         <child link="custom_servo_horn_4" />
         <limit effort="1" velocity="1" lower="-0.959931" upper="2.18166" />
-    </joint>
+    <mimic joint="j21" multiplier="1.390793" offset="-0.071819" /></joint>
     <joint name="revolute_6_1" type="revolute">
         <origin xyz="2.77556e-17 -0.0087 -0.01995" rpy="-1.5708 -2.88658e-15 -3.14159" />
         <axis xyz="0 0 -1" />
         <parent link="scs0009_3" />
         <child link="custom_servo_horn_3" />
         <limit effort="1" velocity="1" lower="-0.959931" upper="2.18166" />
-    </joint>
+    <mimic joint="j22" multiplier="1.390793" offset="-0.071819" /></joint>
     <joint name="revolute_6_2" type="revolute">
         <origin xyz="1.34441e-17 -0.0087 -0.01995" rpy="-1.5708 2.06903e-17 -3.14159" />
         <axis xyz="0 0 -1" />
         <parent link="scs0009_6" />
         <child link="custom_servo_horn_7" />
         <limit effort="1" velocity="1" lower="-0.959931" upper="2.18166" />
-    </joint>
+    <mimic joint="j23" multiplier="1.390793" offset="-0.071819" /></joint>
     <joint name="revolute_6_3" type="revolute">
         <origin xyz="1.30104e-18 -0.0087 -0.01995" rpy="-1.5708 -4.36477e-15 3.14159" />
         <axis xyz="0 0 -1" />
         <parent link="scs0009_1" />
         <child link="custom_servo_horn_1" />
         <limit effort="1" velocity="1" lower="-0.959931" upper="2.18166" />
-    </joint>
+    <mimic joint="j24" multiplier="1.390793" offset="-0.071819" /></joint>
 </robot>
