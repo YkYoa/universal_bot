@@ -28,13 +28,22 @@
       </joint>
     </xacro:if>
 
-    <!-- v2's chassis mesh (chasssis_link.STL, base-plate component stripped out) is
-         already centered on its mount point, already in meters, and carries its own
-         correctly-measured inertial; v1/v10's raw mesh is in mm and isn't centered,
-         so they need the baked-in offset + scale instead. -->
     <xacro:property name="mesh_xyz" value="${'0 0 0' if body_type == 'v2' else '-0.251 0.1302 -0.210104'}" />
     <xacro:property name="mesh_rpy" value="${'0 0 0' if body_type == 'v2' else '0 0 -1.5708'}" />
     <xacro:property name="mesh_scale" value="${'1 1 1' if body_type == 'v2' else '0.001 0.001 0.001'}" />
+
+    <xacro:property name="neck_mesh_xyz" value="0 0 0" />
+    <xacro:property name="neck_mesh_rpy" value="0 0 0" />
+    <xacro:property name="head_mesh_xyz" value="0 0 0" />
+    <xacro:property name="head_mesh_rpy" value="0 0 0" />
+
+    <!-- Outer cosmetic shell cover (RobotShell.STL). Came as a loose file with no
+         URDF of its own, so there's no reference joint origin to copy like the
+         chassis/neck/head had - start at identity and nudge from here. Note it's
+         in millimeters unlike the other v2 meshes, hence the scale. -->
+    <xacro:property name="shell_mesh_xyz" value="0.12 0 -0.27" />
+    <xacro:property name="shell_mesh_rpy" value="0 0 -1.5707" />
+    <xacro:property name="shell_mesh_scale" value="0.001 0.001 0.001" />
 
     <link name="${prefix}link0">
       <visual>
@@ -76,13 +85,13 @@
     <xacro:if value="${body_type == 'v2'}">
       <link name="${prefix}neck_link">
         <visual>
-          <origin xyz="0 0 0" rpy="0 0 0" />
+          <origin xyz="${neck_mesh_xyz}" rpy="${neck_mesh_rpy}" />
           <geometry>
             <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/Neck_Link.STL" />
           </geometry>
         </visual>
         <collision>
-          <origin xyz="0 0 0" rpy="0 0 0" />
+          <origin xyz="${neck_mesh_xyz}" rpy="${neck_mesh_rpy}" />
           <geometry>
             <mesh filename="package://${description_pkg}/meshes/body/${body_type}/collision/Neck_Link_symp.STL" />
           </geometry>
@@ -106,13 +115,13 @@
 
       <link name="${prefix}head_link">
         <visual>
-          <origin xyz="0 0 0" rpy="0 0 0" />
+          <origin xyz="${head_mesh_xyz}" rpy="${head_mesh_rpy}" />
           <geometry>
             <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/Head_Link.STL" />
           </geometry>
         </visual>
         <collision>
-          <origin xyz="0 0 0" rpy="0 0 0" />
+          <origin xyz="${head_mesh_xyz}" rpy="${head_mesh_rpy}" />
           <geometry>
             <mesh filename="package://${description_pkg}/meshes/body/${body_type}/collision/Head_Link_symp.STL" />
           </geometry>
@@ -132,6 +141,22 @@
         <child link="${prefix}head_link" />
         <axis xyz="0.034355 -0.034358 0.99882" />
         <limit lower="-1.57" upper="1.57" effort="10" velocity="3" />
+      </joint>
+
+      <!-- Cosmetic outer shell, visual-only (no collision geometry, doesn't
+           block planning) -->
+      <link name="${prefix}shell_link">
+        <visual>
+          <origin xyz="${shell_mesh_xyz}" rpy="${shell_mesh_rpy}" />
+          <geometry>
+            <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/RobotShell.STL" scale="${shell_mesh_scale}" />
+          </geometry>
+        </visual>
+      </link>
+
+      <joint name="${prefix}shell_joint" type="fixed">
+        <parent link="${prefix}link0" />
+        <child link="${prefix}shell_link" />
       </joint>
     </xacro:if>
 

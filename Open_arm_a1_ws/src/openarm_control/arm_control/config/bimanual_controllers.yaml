@@ -30,6 +30,10 @@ controller_manager:
     right_hand_j2_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
+    # body v2 articulated neck + head (body_type:=v2 only)
+    head_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
     # --- KHAI BÁO BASE CONTROLLER VÀO MANAGER ---
     base_controller:
       type: diff_drive_controller/DiffDriveController  
@@ -133,6 +137,13 @@ right_hand_j2_controller:
     joints: [openarm_right_j21, openarm_right_j22, openarm_right_j23, openarm_right_j24]
     command_interfaces: [position]
     state_interfaces: [position]
+    allow_partial_joints_goal: true
+
+head_controller:
+  ros__parameters:
+    joints: [openarm_body_neck_joint, openarm_body_head_joint]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
     allow_partial_joints_goal: true
 
 # --- CẤU HÌNH CHI TIẾT BASE CONTROLLER ---

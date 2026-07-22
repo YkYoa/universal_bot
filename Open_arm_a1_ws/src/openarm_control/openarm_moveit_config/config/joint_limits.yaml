@@ -244,6 +244,21 @@
           max_acceleration: 16.0
           has_jerk_limits: true
           max_jerk: 2000.0
+        # body v2 articulated neck + head (no-op for v1, joints don't exist)
+        openarm_body_neck_joint:
+          has_velocity_limits: true
+          max_velocity: 3.0
+          has_acceleration_limits: true
+          max_acceleration: 8.0
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_body_head_joint:
+          has_velocity_limits: true
+          max_velocity: 3.0
+          has_acceleration_limits: true
+          max_acceleration: 8.0
+          has_jerk_limits: true
+          max_jerk: 1000.0
       cartesian_limits:
         max_trans_vel: 1.0
         max_trans_acc: 2.25

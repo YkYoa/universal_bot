@@ -2,7 +2,7 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:macro name="base_caster"
-               params="prefix description_pkg corner caster_xyz wheel_z">
+               params="prefix description_pkg corner caster_xyz wheel_z parent_link:='${prefix}link'">
     <link name="${prefix}${corner}_caster_link">
       <inertial>
         <origin xyz="-0.0210296737391897 2.66276711600594E-05 -0.0404565446191801" rpy="0 0 0" />
@@ -26,7 +26,7 @@
     </link>
     <joint name="${prefix}${corner}_caster_joint" type="continuous">
       <origin xyz="${caster_xyz}" rpy="0 0 0" />
-      <parent link="${prefix}link" />
+      <parent link="${parent_link}" />
       <child link="${prefix}${corner}_caster_link" />
       <axis xyz="0 0 1" />
       <dynamics damping="0.01" friction="0.0"/>

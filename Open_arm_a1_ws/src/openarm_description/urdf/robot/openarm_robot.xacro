@@ -67,6 +67,14 @@
     <xacro:property name="arm_prefix_modified" value="${'' if arm_prefix == '' else arm_prefix + '_'}" />
     <xacro:property name="body_prefix_modified" value="${'' if body_prefix == '' else body_prefix + '_'}" />
     <xacro:property name="base_link_name" value="openarm_base_link" />
+    <!-- Body mounts onto the base's mesh-bearing link, not the outer anchor:
+         openarm_base_link is an empty anchor sitting 0.31m below
+         openarm_base_link_body (see openarm_base.xacro's floor_offset_joint,
+         which lifts the mesh/wheels off the anchor so the base renders on
+         the floor instead of sunk into it). The body/torso needs to sit on
+         top of the actual base mesh, so it has to hang off that same lifted
+         link, not the un-lifted anchor underneath it. -->
+    <xacro:property name="base_mount_link_name" value="openarm_base_link_body" />
 
     <xacro:if value="${mobile_base}">
         <xacro:openarm_base
@@ -78,14 +86,19 @@
 
     <xacro:if value="${bimanual}">
 
+        <!-- body_link0's own mesh origin sits mid-mesh (bottom extends 0.662m below
+             it, verified via STL bounding box), while the base mount link's origin
+             sits at its own mesh's top surface. Mounting at zero offset buries most
+             of the chassis inside/below the base, so v2 needs this extra lift on
+             top of whatever mobile_base_body_xyz the caller supplied. -->
         <xacro:openarm_body
         body_type="${body_type}"
         body_prefix="${body_prefix_modified}"
         no_prefix="${no_prefix}"
         description_pkg="openarm_description"
-        connected_to="${base_link_name if mobile_base else body_connected_to}"
-        xyz="${mobile_base_body_xyz if mobile_base else xyz}"
-        rpy="${mobile_base_body_rpy if mobile_base else rpy}"
+        connected_to="${base_mount_link_name if mobile_base else body_connected_to}"
+        xyz="${('0.061 0.006 0.662' if body_type == 'v2' else mobile_base_body_xyz) if mobile_base else xyz}"
+        rpy="${('0 0 0' if body_type == 'v2' else mobile_base_body_rpy) if mobile_base else rpy}"
         inertials="${body_inertials}"
         kinematics="${body_kinematics}"
         kinematics_link="${body_kinematics_link}"
@@ -135,7 +148,9 @@
             right_arm_prefix="${right_arm_prefix}"
             gazebo="${gazebo}"
             hand="${hand}"
-            ee_type="${ee_type}"/>
+            ee_type="${ee_type}"
+            body_type="${body_type}"
+            no_prefix="${no_prefix}"/>
         </xacro:if>
 
         <xacro:if value="$(eval hand and ee_type == 'openarm_hand')">
@@ -206,11 +221,6 @@
                 xyz="$(arg xyz_ee)"
                 rpy="$(arg rpy_ee)"
             />
-            <!-- The old ad-hoc 180-flip link that used to sit between
-                 openarm_right_link7 and the right connector is gone: it's
-                 now folded into connector_rpy_right's own mirror default
-                 (see amazing_hand_arguments.xacro), so right's connector
-                 attaches directly to link7 just like left's does. -->
             <xacro:amazing_hand_connector side="right" parent="openarm_right_link7"
                 xyz="$(arg connector_xyz_right)" rpy="$(arg connector_rpy_right)" />
             <xacro:amazing_hand_right

@@ -27,7 +27,23 @@
       </joint>
     </xacro:if>
 
-    <link name="${prefix}link">
+    <!-- "${prefix}link" (the externally-visible root name; SRDF's virtual_joint and
+         everything else that names "openarm_base_link" targets this) is kept as an
+         empty anchor, not the mesh/wheels holder. The mesh's own origin sits at
+         wheel-axle height (the drive/caster wheel joints are ~0.22-0.27m below it),
+         not at the ground; with no localization publishing a real world transform,
+         that made the whole base render sunk into the floor. This fixed joint
+         re-grounds it: floor at this link's origin, mesh+wheels (unchanged,
+         untouched below) hang appropriately below/around it, matching where the
+         wheels actually reach the ground. -->
+    <link name="${prefix}link" />
+    <joint name="${prefix}floor_offset_joint" type="fixed">
+      <parent link="${prefix}link" />
+      <child link="${prefix}link_body" />
+      <origin xyz="0 0 0.31" rpy="0 0 0" />
+    </joint>
+
+    <link name="${prefix}link_body">
       <inertial>
         <origin xyz="0.0139877464492624 -5.68244441146032E-05 -0.124578208571542" rpy="0 0 0" />
         <mass value="3.52850301341702" />
@@ -72,7 +88,7 @@
     </link>
     <joint name="${prefix}right_drive_wheel_joint" type="continuous">
       <origin xyz="-0.00217824370780602 -0.218924944717817 -0.224330452201286" rpy="-1.5707963267949 0 0" />
-      <parent link="${prefix}link" />
+      <parent link="${prefix}link_body" />
       <child link="${prefix}right_drive_wheel_link" />
       <axis xyz="0 0.000125537276711018 0.999999992120196" />
     </joint>
@@ -100,23 +116,23 @@
     </link>
     <joint name="${prefix}left_drive_wheel_joint" type="continuous">
       <origin xyz="-0.00217793050105813 0.218879130112312 -0.224330452201204" rpy="-1.5707963267949 0 0" />
-      <parent link="${prefix}link" />
+      <parent link="${prefix}link_body" />
       <child link="${prefix}left_drive_wheel_link" />
       <axis xyz="0 0.000125537276710988 0.999999992120196" />
     </joint>
 
     <xacro:base_caster prefix="${prefix}" description_pkg="${description_pkg}" corner="fr"
                        caster_xyz="0.149800623917563 -0.0925229073028034 -0.2186"
-                       wheel_z="-0.00149999999415462" />
+                       wheel_z="-0.00149999999415462" parent_link="${prefix}link_body" />
     <xacro:base_caster prefix="${prefix}" description_pkg="${description_pkg}" corner="fl"
                        caster_xyz="0.149800623917537 0.0924770926972476 -0.2186"
-                       wheel_z="0.00150000000579448" />
+                       wheel_z="0.00150000000579448" parent_link="${prefix}link_body" />
     <xacro:base_caster prefix="${prefix}" description_pkg="${description_pkg}" corner="br"
                        caster_xyz="-0.152199376082463 -0.0940229073027524 -0.2186"
-                       wheel_z="5.79430947666992E-12" />
+                       wheel_z="5.79430947666992E-12" parent_link="${prefix}link_body" />
     <xacro:base_caster prefix="${prefix}" description_pkg="${description_pkg}" corner="bl"
                        caster_xyz="-0.152199376082463 0.0939770926972477 -0.2186"
-                       wheel_z="5.79435111003335E-12" />
+                       wheel_z="5.79435111003335E-12" parent_link="${prefix}link_body" />
 
     <!-- Gazebo: drive wheels có ma sát cao để bám đường -->
     <gazebo reference="${prefix}right_drive_wheel_link">

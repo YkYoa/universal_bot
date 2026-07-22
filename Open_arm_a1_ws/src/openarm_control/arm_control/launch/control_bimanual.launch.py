@@ -142,6 +142,7 @@ def generate_launch_description():
     # Điều kiện chọn end-effector: openarm_hand (gripper 2 ngón) hoặc amazing_hand (5 ngón)
     run_openarm_hand = PythonExpression(["'", ee_type, "' == 'openarm_hand'"])
     run_amazing_hand = PythonExpression(["'", ee_type, "' == 'amazing_hand'"])
+    run_body_v2 = PythonExpression(["'", body_type, "' == 'v2'"])
 
     # Node Robot State Publisher để phát khung xương TF lên topic /robot_description
     robot_state_publisher_node = Node(
@@ -323,6 +324,15 @@ def generate_launch_description():
         condition=IfCondition(run_amazing_hand)
     )
 
+    # body v2 articulated neck + head
+    head_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["head_controller"],
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(run_body_v2)
+    )
+
     base_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -371,6 +381,7 @@ def generate_launch_description():
                 left_hand_j2_controller_spawner,
                 right_hand_j1_controller_spawner,
                 right_hand_j2_controller_spawner,
+                head_controller_spawner,
                 base_controller_spawner,
             ],
         ),
@@ -390,6 +401,7 @@ def generate_launch_description():
                 left_hand_j2_controller_spawner,
                 right_hand_j1_controller_spawner,
                 right_hand_j2_controller_spawner,
+                head_controller_spawner,
                 base_controller_spawner,
             ],
         ),

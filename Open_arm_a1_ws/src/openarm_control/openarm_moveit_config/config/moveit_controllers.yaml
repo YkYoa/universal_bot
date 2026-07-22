@@ -12,6 +12,7 @@
         - left_hand_j2_controller
         - right_hand_j1_controller
         - right_hand_j2_controller
+        - head_controller
 
       left_arm_controller:
         type: FollowJointTrajectory
@@ -98,3 +99,12 @@
           - openarm_right_j22
           - openarm_right_j23
           - openarm_right_j24
+
+      # body v2 articulated neck + head (body_type:=v2 only)
+      head_controller:
+        type: FollowJointTrajectory
+        action_ns: follow_joint_trajectory
+        default: true
+        joints:
+          - openarm_body_neck_joint
+          - openarm_body_head_joint
