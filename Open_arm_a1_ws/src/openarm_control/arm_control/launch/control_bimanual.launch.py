@@ -71,14 +71,20 @@ def generate_launch_description():
     hand_arg = DeclareLaunchArgument(
         "hand",
         default_value="true",
-        description="Enable gripper joints in ros2_control.",
+        description="Enable end-effector joints in ros2_control.",
     )
-    
+    ee_type_arg = DeclareLaunchArgument(
+        "ee_type",
+        default_value="amazing_hand",
+        description="End-effector type: openarm_hand (2-finger gripper) or amazing_hand.",
+    )
+
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     gazebo = LaunchConfiguration("gazebo")
     left_can_interface = LaunchConfiguration("left_can_interface")
     right_can_interface = LaunchConfiguration("right_can_interface")
     hand = LaunchConfiguration("hand")
+    ee_type = LaunchConfiguration("ee_type")
     
     # Tính toán động giá trị use_sim_time: 'true' nếu không chạy fake hardware VÀ chạy gazebo, ngược lại là 'false'
     # Để đơn giản, ta kiểm tra xem có chạy Gazebo không: nếu gazebo == 'true' và use_fake_hardware == 'false'
@@ -104,6 +110,8 @@ def generate_launch_description():
             " ",
             "hand:=", hand,
             " ",
+            "ee_type:=", ee_type,
+            " ",
             "left_can_interface:=", left_can_interface,
             " ",
             "right_can_interface:=", right_can_interface,
@@ -122,6 +130,10 @@ def generate_launch_description():
     
     # Điều kiện để chạy node điều khiển độc lập (Fake hardware OR Real hardware)
     run_standalone_control = PythonExpression(["'", use_fake_hardware, "' == 'true' or '", gazebo, "' == 'false'"])
+
+    # Điều kiện chọn end-effector: openarm_hand (gripper 2 ngón) hoặc amazing_hand (5 ngón)
+    run_openarm_hand = PythonExpression(["'", ee_type, "' == 'openarm_hand'"])
+    run_amazing_hand = PythonExpression(["'", ee_type, "' == 'amazing_hand'"])
 
     # Node Robot State Publisher để phát khung xương TF lên topic /robot_description
     robot_state_publisher_node = Node(
@@ -216,14 +228,91 @@ def generate_launch_description():
         package="controller_manager",
         executable="spawner",
         arguments=["left_gripper_controller"],
-        parameters=[{"use_sim_time": use_sim_time}]
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(run_openarm_hand)
     )
 
     right_gripper_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
         arguments=["right_gripper_controller"],
-        parameters=[{"use_sim_time": use_sim_time}]
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(run_openarm_hand)
+    )
+
+    # ── amazing_hand (ee_type:=amazing_hand): j1/j2 group controllers per side ──
+    left_hand_j1_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["left_hand_j1_controller"],
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(run_amazing_hand)
+    )
+
+    left_hand_j2_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["left_hand_j2_controller"],
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(run_amazing_hand)
+    )
+
+    right_hand_j1_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["right_hand_j1_controller"],
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(run_amazing_hand)
+    )
+
+    right_hand_j2_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["right_hand_j2_controller"],
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(run_amazing_hand)
+    )
+
+    # hand_kinematics_node solves each amazing_hand's closed-loop linkage;
+    # one instance per side, scoped via link_prefix/alias_prefix like
+    # control_amazing_hand.launch.py, wired to that side's ros2_control
+    # topics (openarm_robot.xacro: /left_ahand, /right_ahand).
+    left_hand_kinematics_node = Node(
+        package="openarm_description",
+        executable="hand_kinematics_node.py",
+        name="left_hand_kinematics_node",
+        parameters=[
+            robot_description,
+            {
+                "command_space": "knuckle",
+                "link_prefix": "openarm_left_ahand_",
+                "alias_prefix": "openarm_left_",
+                "joint_commands_topic": "/left_ahand/joint_commands",
+                "joint_states_topic": "/left_ahand/joint_states",
+                "use_sim_time": use_sim_time,
+            },
+        ],
+        output="both",
+        condition=IfCondition(run_amazing_hand)
+    )
+
+    right_hand_kinematics_node = Node(
+        package="openarm_description",
+        executable="hand_kinematics_node.py",
+        name="right_hand_kinematics_node",
+        parameters=[
+            robot_description,
+            {
+                "command_space": "knuckle",
+                "link_prefix": "openarm_right_ahand_",
+                "alias_prefix": "openarm_right_",
+                "joint_commands_topic": "/right_ahand/joint_commands",
+                "joint_states_topic": "/right_ahand/joint_states",
+                "use_sim_time": use_sim_time,
+            },
+        ],
+        output="both",
+        condition=IfCondition(run_amazing_hand)
     )
 
     base_controller_spawner = Node(
@@ -249,7 +338,12 @@ def generate_launch_description():
         name="rviz2",
         output="log",
         arguments=["-d", rviz_config_file],
-        parameters=[{"use_sim_time": use_sim_time}]
+        parameters=[{"use_sim_time": use_sim_time}],
+        # bimanual.rviz's RobotModel display expects /robot_description_full
+        # (matches display.launch.py's remap); this launch's robot_state_publisher
+        # publishes plain /robot_description (controller_manager needs that name),
+        # so remap RViz's subscription instead of the publisher.
+        remappings=[("/robot_description_full", "/robot_description")]
     )
 
     # Quy trình kích hoạt các Spawner:
@@ -265,6 +359,10 @@ def generate_launch_description():
                 right_arm_controller_spawner,
                 left_gripper_controller_spawner,
                 right_gripper_controller_spawner,
+                left_hand_j1_controller_spawner,
+                left_hand_j2_controller_spawner,
+                right_hand_j1_controller_spawner,
+                right_hand_j2_controller_spawner,
                 base_controller_spawner,
             ],
         ),
@@ -280,6 +378,10 @@ def generate_launch_description():
                 right_arm_controller_spawner,
                 left_gripper_controller_spawner,
                 right_gripper_controller_spawner,
+                left_hand_j1_controller_spawner,
+                left_hand_j2_controller_spawner,
+                right_hand_j1_controller_spawner,
+                right_hand_j2_controller_spawner,
                 base_controller_spawner,
             ],
         ),
@@ -293,6 +395,7 @@ def generate_launch_description():
             left_can_interface_arg,
             right_can_interface_arg,
             hand_arg,
+            ee_type_arg,
             robot_state_publisher_node,
             # Gazebo
             gazebo_sim,
@@ -302,6 +405,9 @@ def generate_launch_description():
             # Standalone (Fake & Real)
             ros2_control_node,
             load_controllers_event_standalone,
+            # amazing_hand kinematics (no-op unless ee_type:=amazing_hand)
+            left_hand_kinematics_node,
+            right_hand_kinematics_node,
             # Static TF world -> odom
             static_tf_pub_node,
             # RViz

@@ -1,6 +1,7 @@
 import os
+import re
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import Command, FindExecutable, PathJoinSubstitution, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
@@ -14,36 +15,13 @@ if "CYCLONEDDS_URI" not in os.environ:
 
 
 
-def generate_launch_description():
+def launch_setup(context, *args, **kwargs):
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
-
-    # Declare launch arguments
-    use_fake_hardware_arg = DeclareLaunchArgument(
-        "use_fake_hardware",
-        default_value="true",
-        description="Whether to run with fake/mock hardware (true) or real hardware (false).",
-    )
-    use_rviz_arg = DeclareLaunchArgument(
-        "use_rviz",
-        default_value="true",
-        description="Whether to launch RViz (true) or not (false).",
-    )
-    use_sim_time_arg = DeclareLaunchArgument(
-        "use_sim_time",
-        default_value="false",
-        description="Whether to use simulation clock (true) or not (false).",
-    )
-    ee_type_arg = DeclareLaunchArgument(
-        "ee_type",
-        default_value="openarm_hand",
-        description="End-effector type: 'openarm_hand' (default 2-finger gripper) or "
-                     "'amazing_hand' (8-DOF finger hand, adds left_hand_fingers/right_hand_fingers "
-                     "MoveIt groups and per-finger hand_kinematics_node + controllers).",
-    )
 
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     use_rviz = LaunchConfiguration("use_rviz")
     use_sim_time = LaunchConfiguration("use_sim_time")
+    use_robot_skills = LaunchConfiguration("use_robot_skills")
     ee_type = LaunchConfiguration("ee_type")
     is_amazing_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'amazing_hand'"]))
     is_openarm_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'openarm_hand'"]))
@@ -78,6 +56,40 @@ def generate_launch_description():
     srdf_path = os.path.join(moveit_config_pkg, "srdf", "openarm_bimanual.srdf")
     with open(srdf_path, "r") as f:
         robot_description_semantic_content = f.read()
+
+    # The SRDF's <end_effector> tags hardcode group="left_gripper"/"right_gripper"
+    # (the openarm_hand 2-finger groups). Under ee_type:=amazing_hand those groups'
+    # joints don't exist in the URDF at all, so MoveIt logs "Group 'left_gripper'
+    # not found in model" and RobotState::getRobotMarkers() segfaults trying to
+    # render markers for the dangling end-effector. Point it at the finger groups
+    # that actually exist for this ee_type instead.
+    if LaunchConfiguration("ee_type").perform(context) == "amazing_hand":
+        robot_description_semantic_content = (
+            robot_description_semantic_content
+            .replace('group="left_gripper" parent_group="left_arm"',
+                      'group="left_hand_fingers" parent_group="left_arm"')
+            .replace('group="right_gripper" parent_group="right_arm"',
+                      'group="right_hand_fingers" parent_group="right_arm"')
+        )
+        # The rest of the SRDF (left_gripper/right_gripper groups, their open/close
+        # group_states, and disable_collisions entries for openarm_*_hand/*_finger)
+        # is written for ee_type:=openarm_hand's 2-finger gripper links, which don't
+        # exist under amazing_hand. Harmless but noisy: "Group 'left_gripper' is
+        # empty", "Joint '...finger_joint1' ... not known to the URDF", "Link
+        # '...hand' is not known to URDF. Cannot disable/enable collisons." on every
+        # move_group/robot_skills_node startup. Strip those blocks/lines here rather
+        # than forking the SRDF file, since it's the same dead-under-this-ee_type
+        # content each time.
+        robot_description_semantic_content = re.sub(
+            r'  <group name="(?:left|right)_gripper">.*?</group>\n\n',
+            '', robot_description_semantic_content, flags=re.DOTALL)
+        robot_description_semantic_content = re.sub(
+            r'  <group_state name="(?:open|close)" group="(?:left|right)_gripper">.*?</group_state>\n\n',
+            '', robot_description_semantic_content, flags=re.DOTALL)
+        robot_description_semantic_content = '\n'.join(
+            line for line in robot_description_semantic_content.split('\n')
+            if not re.search(r'openarm_(?:left|right)_(?:hand"|left_finger|right_finger)', line)
+        )
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_content}
 
     # ── Kinematics ──
@@ -254,6 +266,7 @@ def generate_launch_description():
             bounds_tolerances,
             {"use_sim_time": use_sim_time},
         ],
+        condition=IfCondition(use_robot_skills),
     )
 
     # ── RViz with MoveIt plugin ──
@@ -278,23 +291,62 @@ def generate_launch_description():
         condition=IfCondition(use_rviz),
     )
 
+    return [
+        robot_state_publisher_node,
+        ros2_control_node,
+        joint_state_broadcaster_spawner,
+        left_arm_controller_spawner,
+        right_arm_controller_spawner,
+        left_gripper_controller_spawner,
+        right_gripper_controller_spawner,
+        *hand_controller_spawners,
+        *hand_kinematics_nodes,
+        move_group_node,
+        robot_skills_node,
+        rviz_node,
+    ]
+
+
+def generate_launch_description():
+    use_fake_hardware_arg = DeclareLaunchArgument(
+        "use_fake_hardware",
+        default_value="true",
+        description="Whether to run with fake/mock hardware (true) or real hardware (false).",
+    )
+    use_rviz_arg = DeclareLaunchArgument(
+        "use_rviz",
+        default_value="true",
+        description="Whether to launch RViz (true) or not (false).",
+    )
+    use_sim_time_arg = DeclareLaunchArgument(
+        "use_sim_time",
+        default_value="false",
+        description="Whether to use simulation clock (true) or not (false).",
+    )
+    ee_type_arg = DeclareLaunchArgument(
+        "ee_type",
+        default_value="openarm_hand",
+        description="End-effector type: 'openarm_hand' (default 2-finger gripper) or "
+                     "'amazing_hand' (8-DOF finger hand, adds left_hand_fingers/right_hand_fingers "
+                     "MoveIt groups and per-finger hand_kinematics_node + controllers).",
+    )
+    use_robot_skills_arg = DeclareLaunchArgument(
+        "use_robot_skills",
+        default_value="true",
+        description="Whether to launch robot_skills_node (true) or not (false). It runs its own "
+                     "independent MoveItCpp instance -- full robot model load, planning scene "
+                     "monitor, and FK/collision computation, duplicating move_group's. RViz's "
+                     "Plan & Execute only talks to move_group, so set false for interactive "
+                     "RViz-only sessions to roughly halve planning-side CPU load.",
+    )
+
     return LaunchDescription(
         [
             use_fake_hardware_arg,
             use_rviz_arg,
             use_sim_time_arg,
             ee_type_arg,
-            robot_state_publisher_node,
-            ros2_control_node,
-            joint_state_broadcaster_spawner,
-            left_arm_controller_spawner,
-            right_arm_controller_spawner,
-            left_gripper_controller_spawner,
-            right_gripper_controller_spawner,
-            *hand_controller_spawners,
-            *hand_kinematics_nodes,
-            move_group_node,
-            robot_skills_node,
-            rviz_node,
+            use_robot_skills_arg,
+            OpaqueFunction(function=launch_setup),
         ]
     )

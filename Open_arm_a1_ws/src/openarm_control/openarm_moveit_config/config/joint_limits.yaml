@@ -130,6 +130,120 @@
           max_acceleration: 20.0
           has_jerk_limits: true
           max_jerk: 2000.0
+        # Left hand finger joints (amazing_hand)
+        openarm_left_j11:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j12:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j13:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j14:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j21:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j22:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j23:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j24:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        # Right hand finger joints (amazing_hand)
+        openarm_right_j11:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j12:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j13:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j14:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j21:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j22:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j23:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j24:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
       cartesian_limits:
         max_trans_vel: 1.0
         max_trans_acc: 2.25

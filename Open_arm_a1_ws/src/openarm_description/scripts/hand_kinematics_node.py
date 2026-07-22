@@ -404,11 +404,22 @@ class HandKinematicsNode(Node):
         # combined robot_description, e.g. 'openarm_left_' -> 'openarm_left_j11')
         self.alias_of = {}   # alias -> real joint name
         self.alias_state = {}  # alias -> last solved/clamped value
+        self.alias_sign = {}  # alias -> +1/-1 applied both ways at the alias<->real boundary
         for i, f in enumerate(self.fingers, start=1):
             self.alias_of[f'{alias_prefix}j1{i}'] = f['q1_joint']
             self.alias_of[f'{alias_prefix}j2{i}'] = f['prox_joint']
             self.alias_state[f'{alias_prefix}j1{i}'] = 0.0
             self.alias_state[f'{alias_prefix}j2{i}'] = 0.0
+            self.alias_sign[f'{alias_prefix}j1{i}'] = 1.0
+            # l_ahand/r_ahand mirror the prox_joint rotation axis between hands
+            # (+X vs -X) but keep the same (lower, upper) range and the same
+            # sign convention for "positive = close" is expected from the
+            # ros2_control-facing alias regardless of side. Canonicalize here
+            # instead of in the URDF: flip the alias<->real sign on whichever
+            # side has the +X axis so alias_prefix+30deg closes on both hands.
+            self.alias_sign[f'{alias_prefix}j2{i}'] = (
+                -1.0 if self.hand.joints[f['prox_joint']]['axis'][0] > 0 else 1.0
+            )
 
         self.get_logger().info(
             f"command_space={self.command_space}, link_prefix='{link_prefix}'; discovered {len(self.fingers)} "
@@ -543,7 +554,7 @@ class HandKinematicsNode(Node):
         raw = dict(zip(msg.name, msg.position))
         for alias, real in self.alias_of.items():
             if alias in raw:
-                raw[real] = raw[alias]
+                raw[real] = self.alias_sign[alias] * raw[alias]
         out_names = [n for n in msg.name if n not in self.alias_of]
         out_pos = [p for n, p in zip(msg.name, msg.position) if n not in self.alias_of]
         by_name = {n: i for i, n in enumerate(out_names)}
@@ -554,7 +565,7 @@ class HandKinematicsNode(Node):
             self.solve_rod_chains(f, rod_x0s, raw, solved)
             for alias, real in self.alias_of.items():
                 if real in solved:
-                    self.alias_state[alias] = solved[real]
+                    self.alias_state[alias] = self.alias_sign[alias] * solved[real]
             if sol.cost > 1e-6:
                 self.get_logger().warn(
                     f"finger {f['gimbal']}: command out of mechanism reach (residual {sol.cost:.2e}), "
