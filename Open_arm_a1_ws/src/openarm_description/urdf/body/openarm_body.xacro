@@ -16,6 +16,18 @@
 
     <xacro:property name="prefix" value="${'' if no_prefix else 'openarm_body_'}" />
 
+    <!-- No material tag = RViz's red fallback for untextured meshes. Colors match
+         the reference chassis_robot_description.urdf. -->
+    <material name="${prefix}chassis_light">
+      <color rgba="0.79216 0.81961 0.92941 1" />
+    </material>
+    <material name="${prefix}head_white">
+      <color rgba="1 1 1 1" />
+    </material>
+    <material name="${prefix}shell_white">
+      <color rgba="0.95 0.95 0.95 1" />
+    </material>
+
     <!-- Connect the body to the world -->
     <xacro:if value="${connected_to != ''}">
       <xacro:if value="${create_connected_link}">
@@ -37,12 +49,8 @@
     <xacro:property name="head_mesh_xyz" value="0 0 0" />
     <xacro:property name="head_mesh_rpy" value="0 0 0" />
 
-    <!-- Outer cosmetic shell cover (RobotShell.STL). Came as a loose file with no
-         URDF of its own, so there's no reference joint origin to copy like the
-         chassis/neck/head had - start at identity and nudge from here. Note it's
-         in millimeters unlike the other v2 meshes, hence the scale. -->
-    <xacro:property name="shell_mesh_xyz" value="0.12 0 -0.27" />
-    <xacro:property name="shell_mesh_rpy" value="0 0 -1.5707" />
+    <xacro:property name="shell_mesh_xyz" value="0.1943 -14.5 -1.04" />
+    <xacro:property name="shell_mesh_rpy" value="0 0 1.5707" />
     <xacro:property name="shell_mesh_scale" value="0.001 0.001 0.001" />
 
     <link name="${prefix}link0">
@@ -51,6 +59,7 @@
         <geometry>
           <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/body_link0.STL" scale="${mesh_scale}" />
         </geometry>
+        <material name="${prefix}chassis_light" />
       </visual>
 
       <collision>
@@ -89,6 +98,7 @@
           <geometry>
             <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/Neck_Link.STL" />
           </geometry>
+          <material name="${prefix}chassis_light" />
         </visual>
         <collision>
           <origin xyz="${neck_mesh_xyz}" rpy="${neck_mesh_rpy}" />
@@ -119,6 +129,7 @@
           <geometry>
             <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/Head_Link.STL" />
           </geometry>
+          <material name="${prefix}head_white" />
         </visual>
         <collision>
           <origin xyz="${head_mesh_xyz}" rpy="${head_mesh_rpy}" />
@@ -151,6 +162,7 @@
           <geometry>
             <mesh filename="package://${description_pkg}/meshes/body/${body_type}/visual/RobotShell.STL" scale="${shell_mesh_scale}" />
           </geometry>
+          <material name="${prefix}shell_white" />
         </visual>
       </link>
 

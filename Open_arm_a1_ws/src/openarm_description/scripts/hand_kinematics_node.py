@@ -386,12 +386,17 @@ class HandKinematicsNode(Node):
         self.fingers = calibrate(self.hand, fingers)
         # Deterministic finger numbering, identical for both hands: sort by rest
         # height of the gimbal in the hand's OWN frame (not the combined robot's
-        # root) -- fingers 1..3 across the palm top-down, 4 = thumb (its gimbal
-        # sits much lower, palm-front). Using the hand's local frame keeps this
-        # correct regardless of how the hand is mounted/rotated onto an arm.
+        # root). Using the hand's local frame keeps this correct regardless of
+        # how the hand is mounted/rotated onto an arm.
         root_link = f'{link_prefix}root'
         T_root_inv = np.linalg.inv(self.hand.fk(root_link))
         self.fingers.sort(key=lambda f: -(T_root_inv @ self.hand.fk(f['gimbal']))[2, 3])
+        # Height order alone doesn't match anatomy: for this hand the thumb's
+        # gimbal sits third-highest, not first or last. Reorder so alias index
+        # 4 = thumb (empirically confirmed), keeping the other three fingers'
+        # relative height order unchanged: [old[0], old[1], old[3], old[2]].
+        if len(self.fingers) == 4:
+            self.fingers = [self.fingers[0], self.fingers[1], self.fingers[3], self.fingers[2]]
         if self.command_space == 'servo':
             self.residual_fns = [make_residual_fn(self.hand, f) for f in self.fingers]
         else:
@@ -474,6 +479,17 @@ class HandKinematicsNode(Node):
             self.pub.publish(full)
 
     @staticmethod
+    def _args_unchanged(prev, cur, tol=1e-6):
+        """Compare commanded args with a tolerance instead of exact equality -
+        ros2_control's own reported command isn't bit-identical cycle to
+        cycle (tiny float noise from its internal state), so exact '==' would
+        almost never cache-hit and the solver would keep re-running on
+        effectively-static input."""
+        if prev is None or len(prev) != len(cur):
+            return False
+        return all(abs(a - b) < tol for a, b in zip(prev, cur))
+
+    @staticmethod
     def _solve_multistart(res_fn, x0, args, bounds):
         """Least-squares from the warm start; if that lands in a poor local
         minimum (the knuckle linkage has a mirror branch), retry from rest."""
@@ -491,36 +507,62 @@ class HandKinematicsNode(Node):
         x = (q1, q2, q_prox, q_knu, q_prism, q_twist)."""
         theta_A = raw.get(f['servo_data'][0]['actuator_joint'], 0.0)
         theta_B = raw.get(f['servo_data'][1]['actuator_joint'], 0.0)
+        args = (theta_A, theta_B)
+        if self._args_unchanged(f.get('_last_servo_args'), args):
+            return f['_last_servo_sol'], f['_last_servo_solved']
         lower = [f['q1_lower'], -1.2, f['prox_lower'], -1.2, -0.02, -3.2]
         upper = [f['q1_upper'], 1.2, f['prox_upper'], 1.2, 0.02, 3.2]
-        sol = self._solve_multistart(res_fn, x0, (theta_A, theta_B), (lower, upper))
+        sol = self._solve_multistart(res_fn, x0, args, (lower, upper))
         x0[:] = sol.x
         q1, q2, q_prox, q_knu, q_prism, q_twist = sol.x
-        return sol, {
+        solved = {
             f['q1_joint']: q1, f['q2_joint']: q2, f['prox_joint']: q_prox,
             f['knuckle_joint']: q_knu, f['prism_joint']: q_prism, f['twist_joint']: q_twist,
         }
+        f['_last_servo_args'] = args
+        f['_last_servo_sol'] = sol
+        f['_last_servo_solved'] = solved
+        return sol, solved
 
     def solve_finger_knuckle(self, f, res_fn, x0, raw):
         """Inverse: knuckle command from raw -> servo angles + remaining passives.
         x = (theta_A, theta_B, q2, q_knu, q_prism, q_twist)."""
         q1 = float(np.clip(raw.get(f['q1_joint'], 0.0), f['q1_lower'], f['q1_upper']))
         q_prox = float(np.clip(raw.get(f['prox_joint'], 0.0), f['prox_lower'], f['prox_upper']))
+        args = (q1, q_prox)
+        # see solve_finger_servo above for why unchanged input must skip re-solving
+        if self._args_unchanged(f.get('_last_knuckle_args'), args):
+            return f['_last_knuckle_sol'], f['_last_knuckle_solved']
         sd0, sd1 = f['servo_data']
         lower = [sd0['lower'], sd1['lower'], -1.2, -1.2, -0.02, -3.2]
         upper = [sd0['upper'], sd1['upper'], 1.2, 1.2, 0.02, 3.2]
-        sol = self._solve_multistart(res_fn, x0, (q1, q_prox), (lower, upper))
+        sol = self._solve_multistart(res_fn, x0, args, (lower, upper))
         x0[:] = sol.x
         theta_A, theta_B, q2, q_knu, q_prism, q_twist = sol.x
-        return sol, {
+        solved = {
             sd0['actuator_joint']: theta_A, sd1['actuator_joint']: theta_B,
             f['q1_joint']: q1, f['q2_joint']: q2, f['prox_joint']: q_prox,
             f['knuckle_joint']: q_knu, f['prism_joint']: q_prism, f['twist_joint']: q_twist,
         }
+        f['_last_knuckle_args'] = args
+        f['_last_knuckle_sol'] = sol
+        f['_last_knuckle_solved'] = solved
+        return sol, solved
 
     def solve_rod_chains(self, f, rod_x0s, raw, solved):
         """Aim each rod's ball-joint chain at the opposite ball so the lever/rod
         meshes stay visually connected (they carry no constraint of their own)."""
+        # `solved` is the exact same dict object (by identity) every call when
+        # solve_finger_servo/knuckle cache-hit on unchanged input - meaning
+        # its rod-chain values from the last real solve are already merged in
+        # here, so there's nothing new to compute. Skipping matters because
+        # this solve has a genuinely underdetermined DOF (the roll about the
+        # rod axis, only softly regularized) - repeatedly re-solving that on
+        # identical input is exactly the kind of near-degenerate problem that
+        # can drift/wobble between calls even though nothing actually moved.
+        if f.get('_last_rod_solved_ref') is solved:
+            return
+        f['_last_rod_solved_ref'] = solved
         vals = dict(raw)
         vals.update(solved)
         ball_pos = {}

@@ -26,13 +26,15 @@
     </joint>
   </xacro:macro>
 
-  <xacro:macro name="amazing_hand_command_joint" params="prefix name lower upper">
+  <xacro:macro name="amazing_hand_command_joint" params="prefix name lower upper initial:=0.0">
     <joint name="${prefix}${name}">
       <command_interface name="position">
         <param name="min">${lower}</param>
         <param name="max">${upper}</param>
       </command_interface>
-      <state_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">${initial}</param>
+      </state_interface>
     </joint>
   </xacro:macro>
 

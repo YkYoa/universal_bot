@@ -26,6 +26,7 @@ def launch_setup(context, *args, **kwargs):
     body_type = LaunchConfiguration("body_type")
     is_amazing_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'amazing_hand'"]))
     is_openarm_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'openarm_hand'"]))
+    is_body_v2 = IfCondition(PythonExpression(["'", body_type, "' == 'v2'"]))
 
     # ── Robot Description (URDF) ──
     robot_description_content = Command(
@@ -242,6 +243,14 @@ def launch_setup(context, *args, **kwargs):
         for side in ("left", "right")
     ]
 
+    # body v2 articulated neck + head
+    head_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["head_controller", "-c", "/controller_manager"],
+        condition=is_body_v2,
+    )
+
     # ── MoveIt Move Group Node ──
     move_group_node = Node(
         package="moveit_ros_move_group",
@@ -319,6 +328,7 @@ def launch_setup(context, *args, **kwargs):
         right_gripper_controller_spawner,
         *hand_controller_spawners,
         *hand_kinematics_nodes,
+        head_controller_spawner,
         move_group_node,
         robot_skills_node,
         rviz_node,
@@ -343,16 +353,16 @@ def generate_launch_description():
     )
     ee_type_arg = DeclareLaunchArgument(
         "ee_type",
-        default_value="openarm_hand",
-        description="End-effector type: 'openarm_hand' (default 2-finger gripper) or "
-                     "'amazing_hand' (8-DOF finger hand, adds left_hand_fingers/right_hand_fingers "
+        default_value="amazing_hand",
+        description="End-effector type: 'openarm_hand' (2-finger gripper) or "
+                     "'amazing_hand' (default, 8-DOF finger hand, adds left_hand_fingers/right_hand_fingers "
                      "MoveIt groups and per-finger hand_kinematics_node + controllers).",
     )
     body_type_arg = DeclareLaunchArgument(
         "body_type",
-        default_value="v1",
-        description="Chassis/body version: 'v1' (default, single rigid base) or "
-                     "'v2' (new chassis mesh with an articulated neck + head).",
+        default_value="v2",
+        description="Chassis/body version: 'v1' (single rigid base) or "
+                     "'v2' (default, new chassis mesh with an articulated neck + head).",
     )
     use_robot_skills_arg = DeclareLaunchArgument(
         "use_robot_skills",

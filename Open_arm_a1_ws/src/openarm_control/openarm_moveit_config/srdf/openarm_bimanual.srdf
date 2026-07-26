@@ -209,6 +209,31 @@
     <joint name="openarm_right_j24" value="1.0"/>
   </group_state>
 
+  <!-- Thumb (j24) pre-flexed to 75deg = 1.308997 rad so the hand's resting
+       pose doesn't rest flat against the torso; matches the ros2_control
+       initial_value set in ahand.ros2_control.xacro. -->
+  <group_state name="home" group="left_hand_fingers">
+    <joint name="openarm_left_j11" value="0.0"/>
+    <joint name="openarm_left_j12" value="0.0"/>
+    <joint name="openarm_left_j13" value="0.0"/>
+    <joint name="openarm_left_j14" value="0.0"/>
+    <joint name="openarm_left_j21" value="0.0"/>
+    <joint name="openarm_left_j22" value="0.0"/>
+    <joint name="openarm_left_j23" value="0.0"/>
+    <joint name="openarm_left_j24" value="1.308997"/>
+  </group_state>
+
+  <group_state name="home" group="right_hand_fingers">
+    <joint name="openarm_right_j11" value="0.0"/>
+    <joint name="openarm_right_j12" value="0.0"/>
+    <joint name="openarm_right_j13" value="0.0"/>
+    <joint name="openarm_right_j14" value="0.0"/>
+    <joint name="openarm_right_j21" value="0.0"/>
+    <joint name="openarm_right_j22" value="0.0"/>
+    <joint name="openarm_right_j23" value="0.0"/>
+    <joint name="openarm_right_j24" value="1.308997"/>
+  </group_state>
+
   <group_state name="home" group="both_arms">
     <joint name="openarm_left_joint1" value="0.0"/>
     <joint name="openarm_left_joint2" value="0.0"/>
@@ -293,14 +318,34 @@
   <disable_collisions link1="openarm_left_link2" link2="openarm_right_link0" reason="Never"/>
   <disable_collisions link1="openarm_left_link0" link2="openarm_right_link2" reason="Never"/>
 
-  <!-- Base to body -->
-  <disable_collisions link1="openarm_base_link" link2="openarm_body_link0" reason="Adjacent"/>
+  <!-- Base to body. openarm_base_link is an empty anchor (see openarm_base.xacro's
+       floor_offset_joint) - the real mesh-bearing link body/wheels/casters actually
+       touch is openarm_base_link_body. -->
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_body_link0" reason="Adjacent"/>
+
+  <!-- Body to its own neck/head chain (body_type:=v2 only; harmless no-op link
+       names otherwise since they just won't exist in the URDF) -->
+  <disable_collisions link1="openarm_body_link0" link2="openarm_body_neck_link" reason="Adjacent"/>
+  <disable_collisions link1="openarm_body_neck_link" link2="openarm_body_head_link" reason="Adjacent"/>
 
   <!-- Body to nearby arm links (arms mount on body, overlapping geometry) -->
   <disable_collisions link1="openarm_body_link0" link2="openarm_left_link1" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_left_link2" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_right_link1" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_right_link2" reason="Never"/>
+
+  <!-- Body to amazing_hand at rest (arm's default all-zero pose folds the hand
+       in close enough for proximal_3 to overlap the torso; found via
+       GetStateValidity on the default start state, which was blocking ALL
+       arm-group planning, not just head/neck) -->
+  <disable_collisions link1="openarm_body_link0" link2="openarm_left_ahand_proximal_3" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_right_ahand_proximal_3" reason="Never"/>
+
+  <!-- amazing_hand internal: proximal_1/proximal_2 overlap the (thumb?) proximal
+       segment at rest - same GetStateValidity finding as above, right hand only
+       (left hand's mirrored geometry didn't show the same contact) -->
+  <disable_collisions link1="openarm_right_ahand_proximal_1" link2="openarm_right_ahand_proximal" reason="Never"/>
+  <disable_collisions link1="openarm_right_ahand_proximal_2" link2="openarm_right_ahand_proximal" reason="Never"/>
 
   <!-- Body to base wheels/casters (body cage extends into base area) -->
   <disable_collisions link1="openarm_body_link0" link2="openarm_base_right_drive_wheel_link" reason="Never"/>
@@ -314,17 +359,18 @@
   <disable_collisions link1="openarm_body_link0" link2="openarm_base_br_wheel_link" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_base_bl_wheel_link" reason="Never"/>
 
-  <!-- Base wheels -->
-  <disable_collisions link1="openarm_base_link" link2="openarm_base_right_drive_wheel_link" reason="Adjacent"/>
-  <disable_collisions link1="openarm_base_link" link2="openarm_base_left_drive_wheel_link" reason="Adjacent"/>
-  <disable_collisions link1="openarm_base_link" link2="openarm_base_fr_caster_link" reason="Adjacent"/>
-  <disable_collisions link1="openarm_base_link" link2="openarm_base_fl_caster_link" reason="Adjacent"/>
-  <disable_collisions link1="openarm_base_link" link2="openarm_base_br_caster_link" reason="Adjacent"/>
-  <disable_collisions link1="openarm_base_link" link2="openarm_base_bl_caster_link" reason="Adjacent"/>
-  <disable_collisions link1="openarm_base_link" link2="openarm_base_fr_wheel_link" reason="Never"/>
-  <disable_collisions link1="openarm_base_link" link2="openarm_base_fl_wheel_link" reason="Never"/>
-  <disable_collisions link1="openarm_base_link" link2="openarm_base_br_wheel_link" reason="Never"/>
-  <disable_collisions link1="openarm_base_link" link2="openarm_base_bl_wheel_link" reason="Never"/>
+  <!-- Base wheels (real adjacency is to openarm_base_link_body, the mesh/wheels
+       link - see comment above) -->
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_base_right_drive_wheel_link" reason="Adjacent"/>
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_base_left_drive_wheel_link" reason="Adjacent"/>
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_base_fr_caster_link" reason="Adjacent"/>
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_base_fl_caster_link" reason="Adjacent"/>
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_base_br_caster_link" reason="Adjacent"/>
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_base_bl_caster_link" reason="Adjacent"/>
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_base_fr_wheel_link" reason="Never"/>
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_base_fl_wheel_link" reason="Never"/>
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_base_br_wheel_link" reason="Never"/>
+  <disable_collisions link1="openarm_base_link_body" link2="openarm_base_bl_wheel_link" reason="Never"/>
   <disable_collisions link1="openarm_base_fr_caster_link" link2="openarm_base_fr_wheel_link" reason="Adjacent"/>
   <disable_collisions link1="openarm_base_fl_caster_link" link2="openarm_base_fl_wheel_link" reason="Adjacent"/>
   <disable_collisions link1="openarm_base_br_caster_link" link2="openarm_base_br_wheel_link" reason="Adjacent"/>
