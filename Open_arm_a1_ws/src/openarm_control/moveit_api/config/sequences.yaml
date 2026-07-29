@@ -31,6 +31,12 @@ speed:
   present: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
   present_both: [1.0, 1.0, 1.0]
   wave_both: [1.0, 1.0, 1.0]
+  # ── TODO(team): fill in real steps below, then this entry auto-loads as
+  # a runnable sequence - no code change needed (see robot_api_server.py's
+  # load_sequences()). One speed value per step in actionPoses, in order.
+  action: [0.5, 0.5]
+  talking: [0.5, 0.5]
+  gentle: [0.3, 0.3]
 
 wavePoses:
   # laReady: "ready"
@@ -75,3 +81,21 @@ open_grippersPoses:
 close_grippersPoses:
   gripLeft: "close"
   gripRight: "close"
+
+# ── New sequence categories (scaffold) ──────────────────────────────
+# Same rules as above: la*/ra*/ba*/grip* prefix picks the group, values
+# are [J1..J7] degrees or [x,y,z,qx,qy,qz,qw] pose or "home"/"ready"/
+# "open"/"close". Step count here must match the speed list length above.
+# Replace the placeholder values with real recorded poses.
+
+actionPoses:
+  laAction_1: [0, 0, 0, 0, 0, 0, 0]
+  laAction_2: [0, 0, 0, 0, 0, 0, 0]
+
+talkingPoses:
+  laTalking_1: [0, 0, 0, 0, 0, 0, 0]
+  laTalking_2: [0, 0, 0, 0, 0, 0, 0]
+
+gentlePoses:
+  laGentle_1: [0, 0, 0, 0, 0, 0, 0]
+  laGentle_2: [0, 0, 0, 0, 0, 0, 0]

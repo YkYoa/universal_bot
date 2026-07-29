@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>OpenArm 3D Dashboard</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #14161a; overflow: hidden; }
+  #viewport { position: fixed; inset: 0; }
+  #viewport canvas { display: block; touch-action: none; }
+
+  #panel {
+    position: fixed; top: 12px; left: 12px; z-index: 10;
+    width: 280px; max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px); overflow-y: auto;
+    background: rgba(20, 22, 26, 0.85); color: #e8e8e8;
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
+    padding: 12px 14px; font: 13px/1.4 -apple-system, Segoe UI, Roboto, sans-serif;
+    backdrop-filter: blur(6px);
+  }
+  #panel h1 { font-size: 14px; margin: 0 0 8px; font-weight: 600; }
+  #status { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+  #status .dot { width: 9px; height: 9px; border-radius: 50%; background: #d33; flex: none; }
+  #status .dot.ok { background: #2ecc71; }
+  #status .dot.loading { background: #e2b93b; }
+
+  #panel select, #panel button {
+    width: 100%; box-sizing: border-box; margin-top: 6px;
+    background: #23262c; color: #e8e8e8; border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px; padding: 7px 8px; font-size: 13px;
+  }
+  #panel button { cursor: pointer; }
+  #panel button:hover { background: #2c3038; }
+  #runBtn { border-color: #3a7bd5 !important; }
+  #stopBtn { margin-top: 10px; background: #4a1f1f !important; border-color: #a33 !important; }
+  #stopBtn:hover { background: #5c2626 !important; }
+
+  #jointsToggle { margin-top: 10px; opacity: 0.75; cursor: pointer; user-select: none; }
+  #joints { margin-top: 6px; display: none; }
+  #joints.open { display: block; }
+
+  .jointGroupLabel { margin-top: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.55; }
+  .jointRow { margin-top: 6px; }
+  .jointRow .jointRowHead { display: flex; justify-content: space-between; font-family: ui-monospace, monospace; font-size: 11px; opacity: 0.85; margin-bottom: 2px; }
+  .jointRow input[type="range"] { width: 100%; margin: 0; accent-color: #3a7bd5; }
+
+  .groupControlBar { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
+  .groupControlBar button { margin-top: 0; flex: 1; padding: 5px 6px; font-size: 12px; }
+  .groupControlBar .executeBtn { border-color: #2ecc71 !important; }
+  .groupControlBar .resetBtn { flex: 0 0 auto; width: 30px; opacity: 0.7; }
+  .groupControlBar button:disabled { opacity: 0.4; cursor: default; }
+  .groupStatus { margin-top: 4px; font-size: 11px; min-height: 14px; opacity: 0.85; }
+  .groupStatus.ok { color: #2ecc71; }
+  .groupStatus.warn { color: #e2665c; }
+  .groupStatus.pending { color: #e2b93b; }
+
+  #hint { position: fixed; bottom: 10px; left: 12px; z-index: 10; color: rgba(255,255,255,0.35); font: 11px sans-serif; }
+  #envInfo { position: fixed; bottom: 10px; right: 12px; z-index: 10; max-width: 60vw; color: rgba(255,255,255,0.35); font: 10px monospace; text-align: right; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<div id="viewport"></div>
+
+<div id="panel">
+  <h1>OpenArm Dashboard</h1>
+  <div id="status"><span class="dot" id="statusDot"></span><span id="statusText">connecting...</span></div>
+
+  <select id="sequenceSelect"><option>loading sequences...</option></select>
+  <button id="runBtn">Run sequence</button>
+  <button id="stopBtn">STOP</button>
+
+  <div id="jointsToggle">▸ joint control</div>
+  <div id="joints"></div>
+</div>
+
+<div id="hint">drag to orbit · scroll/pinch to zoom</div>
+<div id="envInfo"></div>
+
+<script>
+  // Always-visible environment fingerprint - cheap to show, saves a round
+  // trip of "what browser is this even" when something fails on an unknown
+  // device (e.g. an embedded/kiosk WebView with no devtools access).
+  (function () {
+    var gl = null;
+    try {
+      var c = document.createElement('canvas');
+      gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl');
+    } catch (e) { /* ignore */ }
+    var hasModule = 'noModule' in document.createElement('script');
+    var hasImportMap = !!(window.HTMLScriptElement && HTMLScriptElement.supports && HTMLScriptElement.supports('importmap'));
+    var parts = [
+      navigator.userAgent,
+      'type=module:' + hasModule,
+      'importmap:' + hasImportMap,
+      'webgl:' + (gl ? (gl.getParameter(gl.VERSION) || 'yes') : 'NONE'),
+    ];
+    var el = document.getElementById('envInfo');
+    if (el) el.textContent = parts.join(' | ');
+  })();
+</script>
+
+<script>
+  // Diagnostics that run regardless of module support, so a browser that
+  // can't run app.js shows a clear reason on screen instead of silently
+  // sitting on the static "connecting.../loading sequences..." placeholder
+  // text forever. All imports are relative paths (see app.js/vendor/*),
+  // not bare specifiers, so no import map is needed - this only needs
+  // actual `type="module"` support (Chrome 61+ / Safari 11+ / Firefox 60+).
+  function showFatal(msg) {
+    var t = document.getElementById('statusText');
+    var d = document.getElementById('statusDot');
+    if (t) t.textContent = msg;
+    if (d) d.className = 'dot';
+    console.error('[OpenArm Dashboard]', msg);
+  }
+
+  if (!('noModule' in document.createElement('script'))) {
+    showFatal('browser too old: no ES module support (need Chrome 61+ / Safari 11+ / Firefox 60+)');
+  }
+
+  window.addEventListener('error', function (e) {
+    showFatal('JS error: ' + (e.message || (e.error && e.error.message) || 'unknown'));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var reason = e.reason;
+    showFatal('JS promise error: ' + (reason && reason.message ? reason.message : reason));
+  });
+
+  // app.js sets window.__appJsStarted as its very first statement - if that
+  // never happens, the module failed before running a single line (import
+  // resolution failure, network error on a vendor file, etc).
+  setTimeout(function () {
+    if (!window.__appJsStarted) {
+      showFatal('app.js did not start - check browser console (F12) for the real error');
+    }
+  }, 4000);
+</script>
+
+<script src="./vendor/socket.io/socket.io.min.js"></script>
+<script type="module" src="./app.js"></script>
+
+</body>
+</html>

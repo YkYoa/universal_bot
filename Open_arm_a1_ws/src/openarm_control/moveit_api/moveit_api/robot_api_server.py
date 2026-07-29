@@ -13,6 +13,7 @@ Endpoints:
   GET  /api/pose/<group>              - Current EE pose (left_arm / right_arm)
   POST /api/move/pose                 - Move EE to target pose (x,y,z,qx,qy,qz,qw)
   POST /api/move/joints               - Move joints to target positions
+  POST /api/plan/joints               - Dry-run /api/move/joints (no motion) - reachability/collision check
   POST /api/move/named                - Move to named pose (home, ready)
   POST /api/gripper                   - Open/close gripper
   POST /api/stop                      - Emergency stop (cancel current motion)
@@ -27,7 +28,7 @@ import math
 import yaml
 import os
 import signal
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 
 def euler_to_quaternion(roll, pitch, yaw):
     cr = math.cos(roll * 0.5)
@@ -47,8 +48,9 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.signals import SignalHandlerOptions
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO
+from flask_compress import Compress
 
 # Import our ROS 2 node
 from moveit_api.moveit_ee_controller import MoveItEEController
@@ -60,6 +62,13 @@ from moveit_api.moveit_ee_controller import MoveItEEController
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'openarm-robot-api-2026'
+
+# Gzips the dashboard's JS/HTML (three.js alone is ~650KB minified) - real
+# win over a slow/lossy link to a phone/tablet. Covers text/javascript,
+# application/json, text/html, etc by default; binary mesh files (STL/DAE)
+# aren't in the default mimetype list and are skipped (already dense binary
+# data, gzip wouldn't help there anyway).
+Compress(app)
 
 # Enable CORS for UI team access from any origin
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
@@ -89,8 +98,65 @@ def index():
     """Root endpoint - redirect to documentation."""
     return jsonify({
         'message': 'Welcome to the OpenArm Robot API',
-        'documentation': '/api/docs'
+        'documentation': '/api/docs',
+        'dashboard': '/dashboard/',
     })
+
+
+# ─────────────────────────────────────────────
+# 3D Web Dashboard (web_visualizer/) + URDF/mesh serving
+#
+# Lets a teammate open http://<robot-ip>:5050/dashboard/ from a phone or PC
+# browser and see a live 3D model of the robot, driven by the same
+# joint_states WebSocket stream used by the app - no monitor/RViz needed on
+# the robot's own machine (see web_visualizer/README.md).
+# ─────────────────────────────────────────────
+
+def _web_visualizer_dir():
+    try:
+        share_dir = get_package_share_directory('moveit_api')
+        candidate = os.path.join(share_dir, 'web_visualizer')
+        if os.path.isdir(candidate):
+            return candidate
+    except PackageNotFoundError:
+        pass
+    # Fallback for running straight out of the source tree (not installed).
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'web_visualizer')
+
+
+@app.route('/dashboard/', methods=['GET'])
+@app.route('/dashboard/<path:filename>', methods=['GET'])
+def dashboard(filename='index.html'):
+    return send_from_directory(_web_visualizer_dir(), filename)
+
+
+@app.route('/api/urdf', methods=['GET'])
+def get_urdf():
+    """
+    Current robot_description (URDF XML), as published by
+    robot_state_publisher. Used by the 3D web dashboard to build the model;
+    mesh files it references are served from /packages/<pkg>/<path>.
+    """
+    urdf = controller.get_urdf()
+    if not urdf:
+        return jsonify({'success': False,
+                         'message': 'URDF not received yet - robot_state_publisher may still be starting.'}), 503
+    return jsonify({'success': True, 'urdf': urdf})
+
+
+@app.route('/packages/<pkg_name>/<path:filepath>', methods=['GET'])
+def serve_package_file(pkg_name, filepath):
+    """
+    Serves files (meshes, etc) out of an installed ROS package's share
+    directory - resolves the URDF's package://<pkg>/<path> mesh URIs for
+    the browser-side URDF loader. Read-only, and only for packages actually
+    installed in this ROS environment (no arbitrary filesystem access).
+    """
+    try:
+        share_dir = get_package_share_directory(pkg_name)
+    except PackageNotFoundError:
+        return jsonify({'success': False, 'message': f'Unknown package: {pkg_name}'}), 404
+    return send_from_directory(share_dir, filepath)
 
 
 # ─────────────────────────────────────────────
@@ -342,6 +408,61 @@ def move_to_joints():
             group_name=group,
             positions=positions,
             duration=duration,
+            velocity_scaling=velocity,
+            unit=unit,
+        )
+        status_code = 200 if result['success'] else 422
+        return jsonify(result), status_code
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ─────────────────────────────────────────────
+# Plan-only Joint Check (RViz2 MotionPlanning "Plan" button equivalent)
+# ─────────────────────────────────────────────
+
+@app.route('/api/plan/joints', methods=['POST'])
+def plan_to_joints():
+    """
+    Ask MoveIt whether a joint-space target is reachable/collision-free,
+    WITHOUT moving the robot. Same request/response shape as
+    POST /api/move/joints - `success` tells you whether /api/move/joints
+    with the same body would be expected to succeed.
+
+    Request body (JSON): identical to POST /api/move/joints
+    {
+        "group": "left_arm",
+        "positions": [0.0, -0.5, 0.0, 0.0, 0.0, 1.0, 0.0],
+        "unit": "rad"
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'message': 'JSON body required'}), 400
+
+    group = data.get('group')
+    if group not in controller.GROUP_JOINTS:
+        return jsonify({
+            'success': False,
+            'message': f'Unknown group: {group}. Valid groups: {list(controller.GROUP_JOINTS)}'
+        }), 400
+
+    positions = data.get('positions')
+    expected_joints = len(controller.GROUP_JOINTS[group])
+    if not positions or len(positions) != expected_joints:
+        return jsonify({
+            'success': False,
+            'message': f'positions must be a list of {expected_joints} joint values '
+                       f'for group "{group}" (order: {controller.GROUP_JOINTS[group]})'
+        }), 400
+
+    unit = data.get('unit', 'rad')
+    velocity = float(data.get('velocity_scaling', 0.3))
+
+    try:
+        result = controller.plan_to_joint_positions(
+            group_name=group,
+            positions=positions,
             velocity_scaling=velocity,
             unit=unit,
         )
@@ -1024,6 +1145,8 @@ def api_docs():
             'GET /api/pose/<group>': 'Current EE pose (left_arm / right_arm)',
             'POST /api/move/pose': 'Move EE to target pose {group, position:{x,y,z}, orientation:{x,y,z,w}}',
             'POST /api/move/joints': 'Move every joint of a group {group, positions:[N values], unit:"rad"/"deg"}',
+            'POST /api/plan/joints': 'Dry-run of /api/move/joints - checks reachability/collision without moving '
+                                      '{group, positions:[N values], unit:"rad"/"deg"}',
             'POST /api/move/joint': 'Move exactly one joint, others stay put {group, joint:name-or-index, value, unit:"rad"/"deg"}',
             'POST /api/move/named': 'Named pose {group, pose:"home"/"ready"/"open"/"close"}',
             'POST /api/move/both': 'Move both arms {left_positions, right_positions}',

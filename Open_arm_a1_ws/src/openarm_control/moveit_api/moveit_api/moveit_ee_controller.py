@@ -13,6 +13,7 @@ from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.action import ActionClient
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import (
@@ -28,7 +29,7 @@ from moveit_msgs.srv import GetPositionFK, GetPositionIK
 from shape_msgs.msg import SolidPrimitive
 from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, Vector3
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Header
+from std_msgs.msg import Header, String
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
 
@@ -153,7 +154,25 @@ class MoveItEEController(Node):
             self._joint_state_cb, 10,
             callback_group=self._cb_group,
         )
-        
+
+        # ── Robot description (URDF) subscriber ──
+        # robot_state_publisher latches /robot_description with TRANSIENT_LOCAL
+        # durability so late subscribers still get it - cache it here for the
+        # web visualizer's GET /api/urdf instead of re-reading/re-xacro'ing files.
+        self._urdf_string = None
+        self._urdf_lock = threading.Lock()
+        urdf_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+        )
+        self.create_subscription(
+            String, '/robot_description',
+            self._urdf_cb, urdf_qos,
+            callback_group=self._cb_group,
+        )
+
         # ── State tracking ──
         self._is_moving = {'left_arm': False, 'right_arm': False}
         self._last_result = {'left_arm': None, 'right_arm': None}
@@ -176,10 +195,18 @@ class MoveItEEController(Node):
     def _joint_state_cb(self, msg: JointState):
         with self._joint_state_lock:
             self._current_joint_state = msg
-    
+
     def get_current_joint_state(self) -> JointState:
         with self._joint_state_lock:
             return self._current_joint_state
+
+    def _urdf_cb(self, msg: String):
+        with self._urdf_lock:
+            self._urdf_string = msg.data
+
+    def get_urdf(self) -> str:
+        with self._urdf_lock:
+            return self._urdf_string
 
     # ──────────────────────────────────────────────
     # End-Effector Pose Control via MoveGroup Action
@@ -412,6 +439,26 @@ class MoveItEEController(Node):
     # Direct Joint Position Control (via trajectory)
     # ──────────────────────────────────────────────
 
+    def _resolve_joint_positions(self, group_name: str, positions: list, unit: str):
+        """Shared validation for move/plan-to-joint-positions. Returns
+        (joint_names, positions_in_radians, None) on success, or
+        (None, None, error_dict) on failure."""
+        joint_names = self.GROUP_JOINTS.get(group_name)
+        if joint_names is None:
+            return None, None, {'success': False, 'message': f'Unknown group: {group_name}. '
+                                 f'Valid groups: {list(self.GROUP_JOINTS)}'}
+
+        if len(positions) != len(joint_names):
+            return None, None, {'success': False, 'message': f'Expected {len(joint_names)} joint '
+                                 f'positions for {group_name}, got {len(positions)}'}
+
+        if unit == 'deg':
+            positions = [math.radians(p) for p in positions]
+        elif unit != 'rad':
+            return None, None, {'success': False, 'message': f'Unknown unit: {unit}. Use "rad" or "deg"'}
+
+        return joint_names, positions, None
+
     def move_to_joint_positions(self, group_name: str, positions: list,
                                 duration: float = 3.0,
                                 velocity_scaling: float = 0.3,
@@ -425,22 +472,37 @@ class MoveItEEController(Node):
 
         `unit`: 'rad' (default) or 'deg' - unit of every value in `positions`.
         """
-        joint_names = self.GROUP_JOINTS.get(group_name)
-        if joint_names is None:
-            return {'success': False, 'message': f'Unknown group: {group_name}. '
-                    f'Valid groups: {list(self.GROUP_JOINTS)}'}
-
-        if len(positions) != len(joint_names):
-            return {'success': False, 'message': f'Expected {len(joint_names)} joint '
-                    f'positions for {group_name}, got {len(positions)}'}
-
-        if unit == 'deg':
-            positions = [math.radians(p) for p in positions]
-        elif unit != 'rad':
-            return {'success': False, 'message': f'Unknown unit: {unit}. Use "rad" or "deg"'}
+        joint_names, positions, err = self._resolve_joint_positions(group_name, positions, unit)
+        if err:
+            return err
 
         return self._move_to_joints_moveit(group_name, joint_names, positions,
                                             velocity_scaling, acceleration_scaling)
+
+    def plan_to_joint_positions(self, group_name: str, positions: list,
+                                velocity_scaling: float = 0.3,
+                                acceleration_scaling: float = 0.3,
+                                unit: str = 'rad') -> dict:
+        """Dry-run version of move_to_joint_positions: asks MoveGroup to plan
+        the same joint-space goal WITHOUT executing it (planning_options.plan_only),
+        so the robot never actually moves. Same success/failure/error_code
+        shape as move_to_joint_positions - `success: false` means MoveIt
+        couldn't find a valid (collision-free, reachable) plan.
+
+        This is the RViz2 MotionPlanning-panel "Plan" button: call this
+        first to validate a target before committing to move_to_joint_positions
+        ("Execute"). Since it re-plans rather than replaying a stored
+        trajectory, a Plan success is not an absolute guarantee Execute will
+        also succeed if the scene changes in between - but for a human
+        clicking Plan then Execute a moment later, that's not a real risk.
+        """
+        joint_names, positions, err = self._resolve_joint_positions(group_name, positions, unit)
+        if err:
+            return err
+
+        return self._move_to_joints_moveit(group_name, joint_names, positions,
+                                            velocity_scaling, acceleration_scaling,
+                                            plan_only=True)
 
     def move_single_joint(self, group_name: str, joint, value: float,
                           unit: str = 'rad',
@@ -485,9 +547,11 @@ class MoveItEEController(Node):
                                             velocity_scaling, acceleration_scaling)
 
     def _move_to_joints_moveit(self, group_name: str, joint_names: list, positions: list,
-                               velocity: float, acceleration: float) -> dict:
-        """Plan and execute a joint-space goal via MoveGroup (collision-checked,
-        reports MoveIt error codes the same way move_to_pose does)."""
+                               velocity: float, acceleration: float,
+                               plan_only: bool = False) -> dict:
+        """Plan (and, unless plan_only, execute) a joint-space goal via
+        MoveGroup (collision-checked, reports MoveIt error codes the same
+        way move_to_pose does)."""
         if not rclpy.ok():
             return {'success': False, 'message': 'ROS 2 context is invalid or shut down'}
 
@@ -495,8 +559,8 @@ class MoveItEEController(Node):
             return {'success': False, 'message': 'MoveGroup action server not available'}
 
         goal = MoveGroup.Goal()
-        goal.planning_options.plan_only = False
-        goal.planning_options.replan = True
+        goal.planning_options.plan_only = plan_only
+        goal.planning_options.replan = not plan_only
         goal.planning_options.replan_attempts = 3
 
         req = goal.request
@@ -534,13 +598,14 @@ class MoveItEEController(Node):
         if error_code == 1:
             return {
                 'success': True,
-                'message': f'{group_name} reached target',
+                'message': f'{group_name} plan succeeded' if plan_only else f'{group_name} reached target',
                 'planning_time': result.result.planning_time,
             }
         error_name = MOVEIT_ERROR_CODES.get(error_code, f'UNKNOWN({error_code})')
+        action = 'Planning' if plan_only else 'Planning/execution'
         return {
             'success': False,
-            'message': f'{error_name}: Planning failed for {group_name}.',
+            'message': f'{error_name}: {action} failed for {group_name}.',
             'error_code': error_code,
         }
     

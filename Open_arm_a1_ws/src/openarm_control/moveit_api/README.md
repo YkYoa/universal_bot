@@ -109,6 +109,14 @@ GET /api/pose/<group>   # current EE pose via FK, arms only
 ```
 WebSocket `subscribe_joint_states` streams `/joint_states` at 10Hz if you want live feedback instead of polling.
 
+## 🖥️ 3D Web Dashboard
+
+`http://<robot-ip>:5050/dashboard/` — live 3D view of the robot (three.js
++ urdf-loader) driven by the same joint_states WebSocket stream above,
+plus a sequence Run/Stop panel. Opens in any phone or PC browser on the
+network — no monitor/RViz needed on the robot's own machine. Served by
+this same process, nothing extra to launch. See `web_visualizer/README.md`.
+
 ## 🔧 Configuration
 
 * **Port**: `ROBOT_API_PORT` env var (default 5050)
@@ -121,3 +129,52 @@ ros2 launch moveit_api robot_api.launch.py \
     use_api:=true use_moveit:=true use_controllers:=true use_rviz:=false
 ```
 `use_rviz:=true` opens RViz too (needs `DISPLAY`/`XAUTHORITY` set if running headless over SSH into a desktop session). `Ctrl+C` once and wait for the shutdown logs — don't kill -9 it, that leaves orphaned `move_group`/`ros2_control_node` processes that block the next launch.
+
+## 🚀 Launch Manager API — start/stop the robot stack over HTTP
+
+`robot_api_server` (above) runs *inside* the ROS 2 stack, so it can't be
+the thing that brings that stack up — something has to run `ros2 launch`
+first. `launch_manager_server.py` is a second, ROS-independent Flask
+process for exactly that: a teammate calls it over HTTP to start/stop/
+monitor `ros2 launch openarm_moveit_config moveit_bimanual.launch.py`
+(or `moveit_api robot_api.launch.py`) as a supervised subprocess.
+
+Start it (must be run in a sourced ROS 2 environment, since it shells
+out to `ros2 launch`):
+```bash
+ros2 run moveit_api launch_manager_server
+# or: python3 launch_manager_server.py
+```
+* **Port**: `LAUNCH_MANAGER_PORT` env var (default `5060`)
+* **Logs**: captured to `LAUNCH_MANAGER_LOG_DIR` (default `/tmp`)
+
+Only whitelisted presets can be launched (see `PRESETS` in
+`launch_manager_server.py`) — the endpoint never accepts an arbitrary
+package/launch-file/command from the network.
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/launch/presets` | List available presets + their default args |
+| `GET /api/launch/status` | `running` / `stopped` / `crashed`, pid, uptime |
+| `POST /api/launch/start` | `{"preset": "bimanual", "args": {"use_rviz": "false"}}` |
+| `POST /api/launch/stop` | Graceful SIGINT → SIGTERM → SIGKILL escalation |
+| `GET /api/launch/logs?lines=200` | Tail of the launch's captured stdout/stderr |
+
+```json
+POST /api/launch/start
+{"preset": "robot_api", "args": {"ee_type": "amazing_hand", "body_type": "v2", "use_rviz": "false"}}
+```
+Add a new preset by adding an entry to the `PRESETS` dict — each entry
+whitelists its own package, launch file, and allowed arg names.
+
+## 🎭 Adding new pose sequences (actionPoses, talkingPoses, gentlePoses, ...)
+
+`config/sequences.yaml`'s loader (`load_sequences()` in
+`robot_api_server.py`) is generic: any `speed:` entry named `<x>`
+automatically pulls its steps from a `<x>Poses` (or `<x>Joints`) block
+in the same file — **no Python code change needed** to add a new
+sequence category. Placeholder `action`/`talking`/`gentle` sections are
+already scaffolded in `sequences.yaml`; fill in real joint/pose values
+and they show up immediately in `GET /api/sequences` and are runnable
+via `POST /api/sequence {"name": "action"}`. See the comments at the
+top of `sequences.yaml` for the step-name prefix / value-format rules.
