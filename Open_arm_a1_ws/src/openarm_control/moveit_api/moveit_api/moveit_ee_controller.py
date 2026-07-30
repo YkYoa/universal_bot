@@ -543,12 +543,28 @@ class MoveItEEController(Node):
         positions = [current.get(name, 0.0) for name in joint_names]
         positions[idx] = math.radians(value) if unit == 'deg' else float(value)
 
+        # Every other joint's "target" here is just its current *measured*
+        # position, re-sent as an explicit goal constraint (MoveGroup needs a
+        # full goal for the whole group, there's no way to say "don't care").
+        # With the default tight tolerance, ordinary sensor noise on that
+        # reading (it will essentially never match the last commanded value
+        # to within 0.001 rad) makes MoveIt think that joint needs correcting
+        # too - so it generates a small but real, physically executed move on
+        # a motor you never asked to touch. Give every joint EXCEPT the one
+        # actually being commanded a much looser tolerance so noise on its
+        # reading can't trigger real motion.
+        hold_tolerance = 0.05  # ~2.9 deg - absorbs sensor noise, not a real move
+        tolerances = [hold_tolerance] * len(joint_names)
+        tolerances[idx] = 0.001
+
         return self._move_to_joints_moveit(group_name, joint_names, positions,
-                                            velocity_scaling, acceleration_scaling)
+                                            velocity_scaling, acceleration_scaling,
+                                            tolerances=tolerances)
 
     def _move_to_joints_moveit(self, group_name: str, joint_names: list, positions: list,
                                velocity: float, acceleration: float,
-                               plan_only: bool = False) -> dict:
+                               plan_only: bool = False,
+                               tolerances: list = None) -> dict:
         """Plan (and, unless plan_only, execute) a joint-space goal via
         MoveGroup (collision-checked, reports MoveIt error codes the same
         way move_to_pose does)."""
@@ -570,14 +586,17 @@ class MoveItEEController(Node):
         req.num_planning_attempts = 10
         req.allowed_planning_time = 5.0
 
+        if tolerances is None:
+            tolerances = [0.001] * len(joint_names)
+
         constraints = Constraints()
         from moveit_msgs.msg import JointConstraint
-        for name, pos in zip(joint_names, positions):
+        for name, pos, tol in zip(joint_names, positions, tolerances):
             jc = JointConstraint()
             jc.joint_name = name
             jc.position = float(pos)
-            jc.tolerance_above = 0.001
-            jc.tolerance_below = 0.001
+            jc.tolerance_above = tol
+            jc.tolerance_below = tol
             jc.weight = 1.0
             constraints.joint_constraints.append(jc)
         req.goal_constraints.append(constraints)

@@ -246,6 +246,32 @@ def launch_setup(context, *args, **kwargs):
         arguments=["head_controller", "-c", "/controller_manager"],
         condition=is_body_v2,
     )
+
+    # amazing_hand's closed-loop finger linkage (ball/cylindrical/revolute
+    # loop-closure joints) has no other state source - without this,
+    # planning_scene_monitor never learns their state and re-warns "complete
+    # state of the robot is not yet known" on every scene update, which is
+    # both log spam and a real per-cycle cost (this is what caused the lag).
+    hand_kinematics_nodes = [
+        Node(
+            package="openarm_description",
+            executable="hand_kinematics_node.py",
+            name=f"hand_kinematics_node_{side}",
+            parameters=[
+                robot_description,
+                {
+                    "command_space": "knuckle",
+                    "link_prefix": f"openarm_{side}_ahand_",
+                    "alias_prefix": f"openarm_{side}_",
+                    "joint_commands_topic": f"/{side}_ahand/joint_commands",
+                    "joint_states_topic": f"/{side}_ahand/joint_states",
+                    "use_sim_time": False,
+                },
+            ],
+            condition=is_amazing_hand,
+        )
+        for side in ("left", "right")
+    ]
     base_controller_spawner = Node(
         package="controller_manager", executable="spawner",
         arguments=["base_controller", "-c", "/controller_manager"],
@@ -304,6 +330,7 @@ def launch_setup(context, *args, **kwargs):
         left_gripper_controller_spawner,
         right_gripper_controller_spawner,
         *hand_controller_spawners,
+        *hand_kinematics_nodes,
         head_controller_spawner,
         base_controller_spawner,
         move_group_node,

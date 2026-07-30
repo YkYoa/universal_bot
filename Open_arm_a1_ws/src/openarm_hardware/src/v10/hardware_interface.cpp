@@ -376,6 +376,9 @@ bool HeadHW::parse_config()
   if (auto it = params.find("retry_timeout_s"); it != params.end()) {
     retry_timeout_s_ = std::stod(it->second);
   }
+  if (auto it = params.find("position_filter_alpha"); it != params.end()) {
+    position_filter_alpha_ = std::stod(it->second);
+  }
 
   joint_names_.clear();
   for (const auto& joint : info_.joints) {
@@ -407,6 +410,8 @@ hardware_interface::CallbackReturn HeadHW::on_init(
   pos_states_.assign(n, 0.0);
   vel_states_.assign(n, 0.0);
   eff_states_.assign(n, 0.0);
+  pos_filtered_.assign(n, 0.0);
+  pos_filter_initialized_.assign(n, false);
 
   return CallbackReturn::SUCCESS;
 }
@@ -566,13 +571,32 @@ hardware_interface::return_type HeadHW::read(
     return hardware_interface::return_type::OK;
   }
 
-  // joint order matches xacro: [0]=neck_joint (pan), [1]=head_joint (tilt)
+  // Smooths raw position feedback with an EMA so joint_states/RViz don't
+  // show jitter that isn't real head motion (see position_filter_alpha_).
+  // First sample per joint is taken as-is so the filter doesn't ramp up
+  // from a 0.0 default on startup.
+  auto filter_position = [this](std::size_t i, double raw) {
+    if (!pos_filter_initialized_[i]) {
+      pos_filtered_[i] = raw;
+      pos_filter_initialized_[i] = true;
+    } else {
+      pos_filtered_[i] = position_filter_alpha_ * raw +
+                          (1.0 - position_filter_alpha_) * pos_filtered_[i];
+    }
+    return pos_filtered_[i];
+  };
+
+  // joint order matches xacro: [0]=neck_joint, [1]=head_joint. Swapped which
+  // driver key feeds which index - physical wiring has neck_joint (index 0)
+  // driven by the board's "tilt" motor and head_joint (index 1) driven by
+  // its "pan" motor, confirmed by commanding each joint from RViz one at a
+  // time and observing which motor actually moved.
   if (joint_names_.size() >= 1) {
-    if (auto v = extract_number(line, "pan_pos")) pos_states_[0] = *v;
+    if (auto v = extract_number(line, "pan_pos")) pos_states_[0] = filter_position(0, *v);
     if (auto v = extract_number(line, "pan_vel")) vel_states_[0] = *v;
   }
   if (joint_names_.size() >= 2) {
-    if (auto v = extract_number(line, "tilt_pos")) pos_states_[1] = *v;
+    if (auto v = extract_number(line, "tilt_pos")) pos_states_[1] = filter_position(1, *v);
     if (auto v = extract_number(line, "tilt_vel")) vel_states_[1] = *v;
   }
   if (auto v = extract_bool(line, "is_healthy")) {
@@ -594,8 +618,10 @@ hardware_interface::return_type HeadHW::write(
     return hardware_interface::return_type::OK;
   }
 
-  double pan_cmd = pos_commands_.size() >= 1 ? pos_commands_[0] : 0.0;
-  double tilt_cmd = pos_commands_.size() >= 2 ? pos_commands_[1] : 0.0;
+  // index 0 (neck_joint) -> board's "tilt" motor, index 1 (head_joint) ->
+  // board's "pan" motor - see matching swap note in read().
+  double tilt_cmd = pos_commands_.size() >= 1 ? pos_commands_[0] : 0.0;
+  double pan_cmd = pos_commands_.size() >= 2 ? pos_commands_[1] : 0.0;
 
   std::ostringstream oss;
   oss << "{\"type\":\"cmd\",\"seq\":" << cmd_seq_++

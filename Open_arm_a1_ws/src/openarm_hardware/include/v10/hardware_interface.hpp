@@ -155,6 +155,17 @@ private:
   double retry_interval_s_{0.5};
   double retry_timeout_s_{10.0};
 
+  /// Exponential moving average applied to raw pan/tilt position feedback
+  /// before it's exposed on the state interface. The raw socket feedback has
+  /// no filtering at all, so the reported position visibly jitters even when
+  /// the head sits physically still. 1.0 = no filtering (raw passthrough);
+  /// lower values smooth harder but add more lag between an actual move and
+  /// it showing up in joint_states/RViz - kept close to 1.0 by default since
+  /// this is a reporting fix, not meant to mask a real motion problem.
+  double position_filter_alpha_{0.4};
+  std::vector<double> pos_filtered_;
+  std::vector<bool> pos_filter_initialized_;
+
   std::vector<std::string> joint_names_;
 
   std::vector<double> pos_commands_;

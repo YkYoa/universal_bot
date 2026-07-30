@@ -267,6 +267,10 @@
             <xacro:unless value="${gazebo}">
               <plugin>openarm_hardware/HeadHW</plugin>
               <param name="socket_path">/tmp/openarm_head_motor.sock</param>
+              <!-- EMA smoothing on raw position feedback (1.0=off, lower=more
+                   smoothing/lag). Fixes joint_states/RViz showing jitter that
+                   isn't real head motion; tune here without a C++ rebuild. -->
+              <param name="position_filter_alpha">0.4</param>
             </xacro:unless>
           </xacro:unless>
         </hardware>
