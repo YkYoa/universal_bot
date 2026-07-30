@@ -1,0 +1,90 @@
+#pragma once
+
+#include <string>
+#include <vector>
+
+#include <hardware_interface/system_interface.hpp>
+#include <rclcpp_lifecycle/state.hpp>
+
+#include "v10/visibility.hpp"
+
+namespace openarm_hardware {
+
+/**
+ * @brief ros2_control hardware interface for the OpenArm v2 body's
+ *        articulated neck (pan/tilt), driven by an STM32 board over a
+ *        raw TCP text protocol (see NETWORK_PROTOCOL.md in the
+ *        robot-healthmate repo). Talks to a separate low-level driver
+ *        process (head_motor_driver_node, package communication_devices)
+ *        over a Unix Domain Socket, NDJSON framing, per
+ *        HEAD_DRIVER_SPEC.md - this class never touches the TCP socket
+ *        directly.
+ *
+ * The xacro's configure_arm_joint macro declares position/velocity/effort
+ * command AND state interfaces for both joints (shared with the arm's own
+ * joints). Only position is physically meaningful here (no velocity/effort
+ * sensing or control on this hardware) - velocity/effort are exported as
+ * inert 0.0 placeholders solely so this plugin satisfies what the URDF
+ * declares, matching this codebase's existing habit of over-exporting
+ * rather than trimming the shared macro.
+ */
+class HeadHW : public hardware_interface::SystemInterface
+{
+public:
+  OPENARM_HARDWARE_PUBLIC
+  hardware_interface::CallbackReturn on_init(
+    const hardware_interface::HardwareComponentInterfaceParams& params) override;
+
+  OPENARM_HARDWARE_PUBLIC
+  std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
+
+  OPENARM_HARDWARE_PUBLIC
+  std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
+
+  OPENARM_HARDWARE_PUBLIC
+  hardware_interface::CallbackReturn on_activate(
+    const rclcpp_lifecycle::State& previous_state) override;
+
+  OPENARM_HARDWARE_PUBLIC
+  hardware_interface::CallbackReturn on_deactivate(
+    const rclcpp_lifecycle::State& previous_state) override;
+
+  OPENARM_HARDWARE_PUBLIC
+  hardware_interface::return_type read(
+    const rclcpp::Time& time, const rclcpp::Duration& period) override;
+
+  OPENARM_HARDWARE_PUBLIC
+  hardware_interface::return_type write(
+    const rclcpp::Time& time, const rclcpp::Duration& period) override;
+
+private:
+  bool parse_config();
+  bool connect_socket();
+  void close_socket();
+  bool send_line(const std::string& line);
+  /// Non-blocking: pulls whatever bytes are available into rx_buffer_ and
+  /// returns the LAST complete NDJSON line found (older ones are dropped -
+  /// only the freshest state matters for a control loop), or empty if none.
+  std::string poll_latest_line();
+
+  std::string socket_path_{"/tmp/openarm_head_motor.sock"};
+  double retry_interval_s_{0.5};
+  double retry_timeout_s_{10.0};
+
+  std::vector<std::string> joint_names_;
+
+  std::vector<double> pos_commands_;
+  std::vector<double> vel_commands_;
+  std::vector<double> eff_commands_;
+  std::vector<double> pos_states_;
+  std::vector<double> vel_states_;
+  std::vector<double> eff_states_;
+
+  int sockfd_{-1};
+  bool connected_{false};
+  std::string rx_buffer_;
+  uint32_t cmd_seq_{0};
+  bool is_healthy_{false};
+};
+
+}  // namespace openarm_hardware

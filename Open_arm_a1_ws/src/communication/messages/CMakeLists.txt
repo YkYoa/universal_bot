@@ -9,6 +9,9 @@ find_package(moveit_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecuteSkill.action"
   "action/QueryVLA.action"
+  "srv/SetColor.srv"
+  "srv/SetMode.srv"
+  "srv/SetBrightness.srv"
   DEPENDENCIES geometry_msgs moveit_msgs
 )
 

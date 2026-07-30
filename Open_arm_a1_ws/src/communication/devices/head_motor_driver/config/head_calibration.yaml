@@ -1,30 +1,59 @@
-# Per-unit calibration for MG996R + custom analog tap.
-# MG996R potentiometers vary between units - measure adc_min/adc_max by hand
-# (sweep to physical limit, read raw ADC) before integration testing.
-# Angle limits must match HEAD_DRIVER_SPEC.md section 5.
+# Real measured calibration, ported from robot-healthmate's
+# hardware/hand-arm-head/firmware/head_neck/python/calibration_servo0.json
+# (pan) and calibration_servo1.json (tilt). See NETWORK_PROTOCOL.md in that
+# repo for how these fits were derived (PWM sweep + hand-measured ground
+# truth ADC readings).
+#
+# center_deg is the absolute servo angle (in the calibration's own 0-270ish
+# degree frame) that this driver treats as "0 rad" on the ROS/UDS side.
+# Currently set to the midpoint of each joint's safe reachable PWM range -
+# NOT yet verified against the real physical "camera pointing straight
+# forward and level" reference per HEAD_DRIVER_SPEC.md section 5. Adjust
+# this value once that's been checked against the actual head assembly.
+#
+# min_angle_rad/max_angle_rad match the URDF's actual joint limits
+# (openarm_description/urdf/body/openarm_body.xacro: both neck_joint and
+# head_joint are +-1.57 rad), not HEAD_DRIVER_SPEC.md's placeholder values.
+#
+# pwm_min_us/pwm_max_us are this channel's empirically-found safe range -
+# outside it the servo's own signal decoder ignores the PWM entirely (see
+# NETWORK_PROTOCOL.md's "known hardware notes"), it is not a soft/arbitrary
+# limit.
 
-pan:
-  adc_min: 180          # raw ADC count at min_angle_rad
-  adc_max: 3900          # raw ADC count at max_angle_rad
-  min_angle_rad: -1.57   # -90 deg
-  max_angle_rad: 1.57    # +90 deg
+pan:  # channel 0 - assumed neck_joint (pan). Swap with tilt below if wrong.
+  adc_min: 669           # raw ADC at min_angle_rad (informational only, not used in conversion math)
+  adc_max: 3483          # raw ADC at max_angle_rad (informational only, not used in conversion math)
+  min_angle_rad: -1.57
+  max_angle_rad: 1.57
   pwm_min_us: 500
-  pwm_max_us: 2500
-  invert: false          # set true if wiper wiring gives inverted reading vs angle
-
-tilt:
-  adc_min: 300
-  adc_max: 3700
-  min_angle_rad: -0.52   # -30 deg
-  max_angle_rad: 0.52    # +30 deg
-  pwm_min_us: 900
-  pwm_max_us: 2100
+  pwm_max_us: 2520
   invert: false
+  center_deg: 130.7
+  pwm_to_deg_slope: 0.11035055741866533
+  pwm_to_deg_intercept: -35.92227331598851
+  adc_to_deg_slope: 0.06395635853117716
+  adc_to_deg_intercept: -2.1064436012111107
+
+tilt:  # channel 1 - assumed head_joint (tilt).
+  adc_min: 607
+  adc_max: 3623
+  min_angle_rad: -1.57
+  max_angle_rad: 1.57
+  pwm_min_us: 500
+  pwm_max_us: 2550
+  invert: false
+  center_deg: 121.0
+  pwm_to_deg_slope: 0.10228302960125836
+  pwm_to_deg_intercept: -34.98882706787857
+  adc_to_deg_slope: 0.05969198055329762
+  adc_to_deg_intercept: -5.220790539976655
 
 # stall detection: if |commanded_rad - filtered_measured_rad| stays above
 # stall_error_threshold_rad for longer than stall_timeout_ms, is_healthy=false
-stall_error_threshold_rad: 0.15
-stall_timeout_ms: 400
+stall_error_threshold_rad: 0.3
+stall_timeout_ms: 800
 
-# EMA low-pass filter applied to raw angle before use (analog tap is noisy)
+# EMA low-pass filter applied to raw angle before use (analog tap is noisy -
+# we measured real jitter on this hardware, see robot-healthmate commit
+# history around the neck feedback debugging).
 position_filter_alpha: 0.3

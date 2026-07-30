@@ -259,8 +259,8 @@
               <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </xacro:if>
             <xacro:unless value="${gazebo}">
-              <!-- Real robot driver if applicable -->
-              <plugin>mock_components/GenericSystem</plugin>
+              <plugin>openarm_hardware/HeadHW</plugin>
+              <param name="socket_path">/tmp/openarm_head_motor.sock</param>
             </xacro:unless>
           </xacro:unless>
         </hardware>

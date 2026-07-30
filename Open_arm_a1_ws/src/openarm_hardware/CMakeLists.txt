@@ -17,6 +17,7 @@ find_package(OpenArmCAN QUIET)
 
 add_library(${PROJECT_NAME} SHARED
   src/v10/hardware_interface.cpp
+  src/head/hardware_interface.cpp
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE OPENARM_HARDWARE_BUILDING_DLL)
