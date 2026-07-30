@@ -1,0 +1,268 @@
+# Joint limits for MoveIt 2 planning
+# These override/supplement the URDF limits with planning-specific constraints
+/**:
+  ros__parameters:
+    robot_description_planning:
+      joint_limits:
+        openarm_left_joint1:
+          has_velocity_limits: true
+          max_velocity: 2.175
+          has_acceleration_limits: true
+          max_acceleration: 3.75
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_left_joint2:
+          has_velocity_limits: true
+          max_velocity: 2.175
+          has_acceleration_limits: true
+          max_acceleration: 3.75
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_left_joint3:
+          has_velocity_limits: true
+          max_velocity: 2.175
+          has_acceleration_limits: true
+          max_acceleration: 3.75
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_left_joint4:
+          has_velocity_limits: true
+          max_velocity: 2.175
+          has_acceleration_limits: true
+          max_acceleration: 3.75
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_left_joint5:
+          has_velocity_limits: true
+          max_velocity: 2.61
+          has_acceleration_limits: true
+          max_acceleration: 5.0
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_left_joint6:
+          has_velocity_limits: true
+          max_velocity: 2.61
+          has_acceleration_limits: true
+          max_acceleration: 5.0
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_left_joint7:
+          has_velocity_limits: true
+          max_velocity: 2.61
+          has_acceleration_limits: true
+          max_acceleration: 5.0
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_right_joint1:
+          has_velocity_limits: true
+          max_velocity: 2.175
+          has_acceleration_limits: true
+          max_acceleration: 3.75
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_right_joint2:
+          has_velocity_limits: true
+          max_velocity: 2.175
+          has_acceleration_limits: true
+          max_acceleration: 3.75
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_right_joint3:
+          has_velocity_limits: true
+          max_velocity: 2.175
+          has_acceleration_limits: true
+          max_acceleration: 3.75
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_right_joint4:
+          has_velocity_limits: true
+          max_velocity: 2.175
+          has_acceleration_limits: true
+          max_acceleration: 3.75
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_right_joint5:
+          has_velocity_limits: true
+          max_velocity: 2.61
+          has_acceleration_limits: true
+          max_acceleration: 5.0
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_right_joint6:
+          has_velocity_limits: true
+          max_velocity: 2.61
+          has_acceleration_limits: true
+          max_acceleration: 5.0
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_right_joint7:
+          has_velocity_limits: true
+          max_velocity: 2.61
+          has_acceleration_limits: true
+          max_acceleration: 5.0
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_left_finger_joint1:
+          has_velocity_limits: true
+          max_velocity: 10.0
+          has_acceleration_limits: true
+          max_acceleration: 20.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_finger_joint2:
+          has_velocity_limits: true
+          max_velocity: 10.0
+          has_acceleration_limits: true
+          max_acceleration: 20.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_finger_joint1:
+          has_velocity_limits: true
+          max_velocity: 10.0
+          has_acceleration_limits: true
+          max_acceleration: 20.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_finger_joint2:
+          has_velocity_limits: true
+          max_velocity: 10.0
+          has_acceleration_limits: true
+          max_acceleration: 20.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        # Left hand finger joints (amazing_hand)
+        openarm_left_j11:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j12:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j13:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j14:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j21:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j22:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j23:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_left_j24:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        # Right hand finger joints (amazing_hand)
+        openarm_right_j11:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j12:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j13:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j14:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j21:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j22:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j23:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        openarm_right_j24:
+          has_velocity_limits: true
+          max_velocity: 6.0
+          has_acceleration_limits: true
+          max_acceleration: 16.0
+          has_jerk_limits: true
+          max_jerk: 2000.0
+        # body v2 articulated neck + head (no-op for v1, joints don't exist)
+        openarm_body_neck_joint:
+          has_velocity_limits: true
+          max_velocity: 3.0
+          has_acceleration_limits: true
+          max_acceleration: 8.0
+          has_jerk_limits: true
+          max_jerk: 1000.0
+        openarm_body_head_joint:
+          has_velocity_limits: true
+          max_velocity: 3.0
+          has_acceleration_limits: true
+          max_acceleration: 8.0
+          has_jerk_limits: true
+          max_jerk: 1000.0
+      cartesian_limits:
+        max_trans_vel: 1.0
+        max_trans_acc: 2.25
+        max_trans_dec: 2.25
+        max_rot_vel: 1.57
+        max_rot_acc: 3.14
+        max_rot_dec: 3.14

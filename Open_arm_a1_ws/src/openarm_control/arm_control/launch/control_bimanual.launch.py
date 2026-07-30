@@ -112,6 +112,8 @@ def generate_launch_description():
             " ",
             "use_fake_hardware:=", use_fake_hardware,
             " ",
+            "head_use_fake_hardware:=", use_fake_hardware,
+            " ",
             "gazebo:=", gazebo,
             " ",
             "hand:=", hand,

@@ -1,0 +1,23 @@
+/**:
+  ros__parameters:
+    pilz_industrial_motion_planner:
+      planning_plugins:
+        - pilz_industrial_motion_planner/CommandPlanner
+      request_adapters:
+        - default_planning_request_adapters/ResolveConstraintFrames
+        - default_planning_request_adapters/ValidateWorkspaceBounds
+        - default_planning_request_adapters/CheckStartStateBounds
+        - default_planning_request_adapters/CheckStartStateCollision
+      response_adapters:
+        - default_planning_response_adapters/AddTimeOptimalParameterization
+        - default_planning_response_adapters/ValidateSolution
+        - default_planning_response_adapters/DisplayMotionPath
+      default_planner_config: PTP
+      start_state_max_bounds_error: 2.0
+      planner_configs:
+        PTP:
+          type: PTP
+        LIN:
+          type: LIN
+        CIRC:
+          type: CIRC

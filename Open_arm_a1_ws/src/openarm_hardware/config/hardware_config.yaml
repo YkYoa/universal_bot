@@ -1,0 +1,21 @@
+# Real-hardware detection & port config for the head board, used by
+# openarm_hardware/launch/bringup.launch.py. Arms/hands already have their
+# own hardware setup via arm_control/openarm_moveit_config's launch files -
+# this file is only about the head/neck + LED board, the new hardware.
+#
+# hardware_enable: 1 = real hardware, -1 = force fake (board not present).
+# 1 is still auto-downgraded to fake if `interface` isn't actually up (cable
+# unplugged, board unpowered) - a stale hardware_enable=1 left over from a
+# previous setup should never make ros2_control try to activate hardware
+# that isn't really there.
+
+hardware_enable:
+  head: 1
+
+interfaces:
+  head_ethernet: enp2s0   # host NIC wired to the STM32 board's W5500 module
+
+head_board:
+  ip: 192.168.10.101
+  port: 9877       # SERVO/STATUS/RELEASE/STEPPER (head_motor_driver_node)
+  led_port: 9878   # RGB/MODE/BRIGHTNESS (head_led_node)

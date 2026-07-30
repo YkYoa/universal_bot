@@ -17,7 +17,6 @@ find_package(OpenArmCAN QUIET)
 
 add_library(${PROJECT_NAME} SHARED
   src/v10/hardware_interface.cpp
-  src/head/hardware_interface.cpp
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE OPENARM_HARDWARE_BUILDING_DLL)
@@ -52,6 +51,14 @@ install(TARGETS ${PROJECT_NAME}
 
 install(DIRECTORY include/
   DESTINATION include
+)
+
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+
+install(DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
 )
 
 ament_export_include_directories(include)

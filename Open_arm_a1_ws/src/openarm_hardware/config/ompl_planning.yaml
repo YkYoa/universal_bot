@@ -1,0 +1,61 @@
+/**:
+  ros__parameters:
+    planning_pipelines:
+      pipeline_names:
+        - ompl
+        - pilz_industrial_motion_planner
+    default_planning_pipeline: ompl
+    ompl:
+      planning_plugins:
+        - ompl_interface/OMPLPlanner
+      request_adapters:
+        - default_planning_request_adapters/ResolveConstraintFrames
+        - default_planning_request_adapters/ValidateWorkspaceBounds
+        - default_planning_request_adapters/CheckStartStateBounds
+        - default_planning_request_adapters/CheckStartStateCollision
+      response_adapters:
+        - default_planning_response_adapters/AddTimeOptimalParameterization
+        - default_planning_response_adapters/AddRuckigTrajectorySmoothing
+        - default_planning_response_adapters/ValidateSolution
+        - default_planning_response_adapters/DisplayMotionPath
+      start_state_max_bounds_error: 2.0
+      planning_time: 5.0
+      max_planning_threads: 8
+      
+      left_arm:
+        planner_configs:
+          - RRTConnectkConfigDefault
+          - LBKPIECEkConfigDefault
+          - RRTstarkConfigDefault
+          - TRRTkConfigDefault
+      right_arm:
+        planner_configs:
+          - RRTConnectkConfigDefault
+          - LBKPIECEkConfigDefault
+          - RRTstarkConfigDefault
+          - TRRTkConfigDefault
+      both_arms:
+        planner_configs:
+          - RRTConnectkConfigDefault
+          - LBKPIECEkConfigDefault
+          - RRTstarkConfigDefault
+          - TRRTkConfigDefault
+          
+      planner_configs:
+        RRTConnectkConfigDefault:
+          type: geometric::RRTConnect
+          range: 0.5
+          longest_valid_segment_fraction: 0.01
+        LBKPIECEkConfigDefault:
+          type: geometric::LBKPIECE
+          range: 0.5
+          longest_valid_segment_fraction: 0.01
+        RRTstarkConfigDefault:
+          type: geometric::RRTstar
+          range: 0.5
+          goal_bias: 0.05
+          delay_collision_checking: 1
+        TRRTkConfigDefault:
+          type: geometric::TRRT
+          range: 0.5
+          goal_bias: 0.05
