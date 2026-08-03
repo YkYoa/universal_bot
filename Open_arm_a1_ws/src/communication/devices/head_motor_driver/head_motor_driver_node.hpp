@@ -7,6 +7,9 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
+
+#include "motion_profile.hpp"
 
 // ============================================================================
 //  head_motor_driver_node
@@ -19,6 +22,11 @@
 //  anything but PWM microseconds and replies with raw ADC counts.
 // ============================================================================
 
+struct CalibrationPoint {
+    double adc = 0.0;
+    double deg = 0.0;
+};
+
 struct JointCalibration {
     double min_angle_rad = 0.0;
     double max_angle_rad = 0.0;
@@ -30,6 +38,20 @@ struct JointCalibration {
     double pwm_to_deg_intercept = 0.0;
     double adc_to_deg_slope = 0.0;
     double adc_to_deg_intercept = 0.0;
+
+    // Multi-point ADC->degree lookup table (see auto_calibrate.py), sorted
+    // by adc ascending. When non-empty, adc_to_rad() interpolates through
+    // this instead of the single linear adc_to_deg_slope/intercept fit -
+    // corrects potentiometer nonlinearity a 2-point fit can't capture.
+    // Empty means "not calibrated yet with the new tool", falls back to
+    // the linear fit.
+    std::vector<CalibrationPoint> points;
+
+    // Motion profile limits (rad/s, rad/s^2) for the trapezoidal rate
+    // limiter in HeadMotorDriver::controlLoop(). Defaults are conservative
+    // for a hobby servo; override per-joint in head_calibration.yaml.
+    double max_velocity_rad_s = 3.0;
+    double max_accel_rad_s2 = 8.0;
 
     uint16_t rad_to_pwm(double rad) const;
     double adc_to_rad(int adc) const;
@@ -94,6 +116,14 @@ private:
     double stall_timeout_s_ = 0.8;
     EmaFilter pan_filter_;
     EmaFilter tilt_filter_;
+
+    // Rate-limits the raw ROS-commanded angle before it's converted to PWM,
+    // so a step change (e.g. a single-point RViz goal) becomes a smooth
+    // accel/cruise/decel motion instead of an instant PWM jump.
+    TrapezoidalProfile pan_profile_;
+    TrapezoidalProfile tilt_profile_;
+    double last_profile_tick_s_ = 0.0;
+    bool profile_initialized_ = false;
 
     Stm32Link link_;
     std::string uds_path_;

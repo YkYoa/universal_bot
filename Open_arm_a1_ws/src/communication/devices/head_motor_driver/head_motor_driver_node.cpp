@@ -65,7 +65,37 @@ JointCalibration loadJointCalibration(const YAML::Node& node)
   cal.pwm_to_deg_intercept = node["pwm_to_deg_intercept"].as<double>();
   cal.adc_to_deg_slope = node["adc_to_deg_slope"].as<double>();
   cal.adc_to_deg_intercept = node["adc_to_deg_intercept"].as<double>();
+  cal.max_velocity_rad_s = node["max_velocity_rad_s"].as<double>(cal.max_velocity_rad_s);
+  cal.max_accel_rad_s2 = node["max_accel_rad_s2"].as<double>(cal.max_accel_rad_s2);
+
+  if (const YAML::Node& pts = node["points"]) {
+    for (const auto& pt : pts) {
+      cal.points.push_back({pt["adc"].as<double>(), pt["deg"].as<double>()});
+    }
+    std::sort(cal.points.begin(), cal.points.end(),
+              [](const CalibrationPoint& a, const CalibrationPoint& b) { return a.adc < b.adc; });
+  }
+
   return cal;
+}
+
+// Linear interpolation through a sorted (ascending by adc) lookup table,
+// clamped at the ends. Mirrors auto_calibrate.py's lut_lookup() exactly -
+// keep both in sync if this changes.
+double lutLookupDeg(const std::vector<CalibrationPoint>& points, double adc)
+{
+  if (adc <= points.front().adc) return points.front().deg;
+  if (adc >= points.back().adc) return points.back().deg;
+  for (std::size_t i = 0; i + 1 < points.size(); ++i) {
+    const auto& p0 = points[i];
+    const auto& p1 = points[i + 1];
+    if (adc >= p0.adc && adc <= p1.adc) {
+      if (p1.adc == p0.adc) return p0.deg;
+      double t = (adc - p0.adc) / (p1.adc - p0.adc);
+      return p0.deg + t * (p1.deg - p0.deg);
+    }
+  }
+  return points.back().deg;
 }
 
 }  // namespace
@@ -82,7 +112,12 @@ uint16_t JointCalibration::rad_to_pwm(double rad) const
 
 double JointCalibration::adc_to_rad(int adc) const
 {
-  double deg = adc_to_deg_slope * adc + adc_to_deg_intercept;
+  // Multi-point lookup table (from auto_calibrate.py) corrects
+  // potentiometer nonlinearity the 2-point linear fit can't - falls back
+  // to the linear fit for a joint not yet calibrated with the new tool.
+  double deg = points.empty()
+    ? adc_to_deg_slope * adc + adc_to_deg_intercept
+    : lutLookupDeg(points, static_cast<double>(adc));
   double rad = (deg - center_deg) * M_PI / 180.0;
   return invert ? -rad : rad;
 }
@@ -211,6 +246,9 @@ HeadMotorDriver::HeadMotorDriver(std::string calibration_path, std::string stm32
   double alpha = cfg["position_filter_alpha"].as<double>();
   pan_filter_ = EmaFilter(alpha);
   tilt_filter_ = EmaFilter(alpha);
+
+  pan_profile_ = TrapezoidalProfile(pan_cal_.max_velocity_rad_s, pan_cal_.max_accel_rad_s2);
+  tilt_profile_ = TrapezoidalProfile(tilt_cal_.max_velocity_rad_s, tilt_cal_.max_accel_rad_s2);
 }
 
 void HeadMotorDriver::udsServerLoop()
@@ -331,11 +369,25 @@ void HeadMotorDriver::controlLoop()
     }
     bool watchdog_tripped = since_cmd.has_value() && *since_cmd > kWatchdogS;
 
-    uint16_t pan_pwm = pan_cal_.rad_to_pwm(pan_cmd);
-    uint16_t tilt_pwm = tilt_cal_.rad_to_pwm(tilt_cmd);
+    // Rate-limit the raw commanded angle before converting to PWM, so a
+    // step change (single-point RViz goal, coarse trajectory) becomes
+    // smooth accel/cruise/decel motion instead of an instant PWM jump.
+    if (!profile_initialized_) {
+      pan_profile_.reset(pan_cmd);
+      tilt_profile_.reset(tilt_cmd);
+      last_profile_tick_s_ = loop_start;
+      profile_initialized_ = true;
+    }
+    double profile_dt = loop_start - last_profile_tick_s_;
+    last_profile_tick_s_ = loop_start;
+    double pan_profiled = pan_profile_.step(pan_cmd, profile_dt);
+    double tilt_profiled = tilt_profile_.step(tilt_cmd, profile_dt);
 
-    auto reply0 = link_.command("SERVO 0 " + std::to_string(pan_pwm));
-    auto reply1 = link_.command("SERVO 1 " + std::to_string(tilt_pwm));
+    uint16_t pan_pwm = pan_cal_.rad_to_pwm(pan_profiled);
+    uint16_t tilt_pwm = tilt_cal_.rad_to_pwm(tilt_profiled);
+
+    auto reply1 = link_.command("SERVO 0 " + std::to_string(pan_pwm));
+    auto reply0 = link_.command("SERVO 1 " + std::to_string(tilt_pwm));
 
     bool connected = reply0.has_value() && reply1.has_value();
     auto pan_adc = parseAdc(reply0);
@@ -345,8 +397,8 @@ void HeadMotorDriver::controlLoop()
       double pan_rad = pan_filter_.update(pan_cal_.adc_to_rad(*pan_adc));
       double tilt_rad = tilt_filter_.update(tilt_cal_.adc_to_rad(*tilt_adc));
 
-      bool stalled = std::abs(pan_cmd - pan_rad) > stall_error_threshold_rad_ ||
-                     std::abs(tilt_cmd - tilt_rad) > stall_error_threshold_rad_;
+      bool stalled = std::abs(pan_profiled - pan_rad) > stall_error_threshold_rad_ ||
+                     std::abs(tilt_profiled - tilt_rad) > stall_error_threshold_rad_;
       if (stalled) {
         if (!stall_since_s_.has_value()) stall_since_s_ = nowSeconds();
       } else if (!watchdog_tripped) {

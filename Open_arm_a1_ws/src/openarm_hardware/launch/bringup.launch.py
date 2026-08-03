@@ -193,6 +193,15 @@ def launch_setup(context, *args, **kwargs):
         output="screen",
     )
 
+    # head/go_home service (std_srvs/Trigger) - sends a FollowJointTrajectory
+    # goal to head_controller centering pan/tilt. Needs head_controller up,
+    # but the node itself is harmless to start unconditionally.
+    head_home_node = Node(
+        package="communication_devices",
+        executable="head_home_node",
+        output="screen",
+    )
+
     # ── ros2_control + MoveIt ──
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
@@ -322,6 +331,7 @@ def launch_setup(context, *args, **kwargs):
     return [
         *([head_motor_driver_node] if head_real else []),
         head_led_node,
+        head_home_node,
         robot_state_publisher_node,
         ros2_control_node,
         joint_state_broadcaster_spawner,
