@@ -5,8 +5,9 @@ import subprocess
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, RegisterEventHandler
 from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -135,6 +136,11 @@ def launch_setup(context, *args, **kwargs):
     print(f"[bringup] arms hardware: {'REAL' if arms_real else 'FAKE'} "
           f"(mode={arms_mode}, left={left_can_interface}, right={right_can_interface}, "
           f"control_mode={control_mode})")
+    if control_mode == "torque" and arms_real:
+        print("[bringup] WARNING: control_mode=torque - gravity_comp_controller will be "
+              "auto-loaded, activated, AND auto-enabled on both arms. Real torque will be "
+              "applied with NO manual confirmation step. Support both arms by hand NOW if "
+              "you have not already - the ramp starts as soon as controller_manager comes up.")
 
     shutdown_disable_retries = str(hw_cfg["shutdown"]["disable_retries"])
     shutdown_retry_delay_ms = str(hw_cfg["shutdown"]["retry_delay_ms"])
@@ -363,6 +369,37 @@ def launch_setup(context, *args, **kwargs):
         arguments=["base_controller", "-c", "/controller_manager"],
     )
 
+    # control_mode: torque only - auto load+configure+activate the gravity-
+    # comp controllers AND auto-call their ~/enable service, so the arms
+    # start applying real gravity-compensation torque as soon as bringup
+    # finishes, no manual `ros2 control`/`ros2 service call` steps.
+    #
+    # DANGER: this means there is NO human-in-the-loop step between power-on
+    # and the arm attempting to hold its own weight under torque control.
+    # The physical-support-before-enabling precaution from the staged
+    # validation procedure becomes YOUR responsibility to do BEFORE running
+    # this launch command, every time - not something this launch enforces.
+    # If you are not physically ready to support both arms the instant this
+    # launch starts, do not use control_mode: torque, or edit
+    # hardware_config.yaml back to "mit"/"position" first.
+    gravity_comp_spawners = []
+    gravity_comp_enable_handlers = []
+    if control_mode == "torque":
+        for side in ("left", "right"):
+            spawner = Node(
+                package="controller_manager", executable="spawner",
+                arguments=[f"{side}_gravity_comp_controller", "-c", "/controller_manager"],
+            )
+            enable_call = ExecuteProcess(
+                cmd=["ros2", "service", "call", f"/{side}_gravity_comp_controller/enable",
+                     "std_srvs/srv/SetBool", "{data: true}"],
+                output="screen",
+            )
+            gravity_comp_spawners.append(spawner)
+            gravity_comp_enable_handlers.append(
+                RegisterEventHandler(OnProcessExit(target_action=spawner, on_exit=[enable_call]))
+            )
+
     move_group_node = Node(
         package="moveit_ros_move_group",
         executable="move_group",
@@ -420,6 +457,8 @@ def launch_setup(context, *args, **kwargs):
         *hand_kinematics_nodes,
         head_controller_spawner,
         base_controller_spawner,
+        *gravity_comp_spawners,
+        *gravity_comp_enable_handlers,
         move_group_node,
         rviz_node,
     ]
