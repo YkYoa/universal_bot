@@ -22,6 +22,7 @@ add_library(robot_skills SHARED
   src/skills/move_to_pose_skill.cpp
   src/skills/move_to_named_pose_skill.cpp
   src/skills/move_to_joint_skill.cpp
+  src/skills/move_to_joint_sequence_skill.cpp
   src/skills/cartesian_move_skill.cpp
   src/skills/gripper_skill.cpp
   src/skill_server.cpp

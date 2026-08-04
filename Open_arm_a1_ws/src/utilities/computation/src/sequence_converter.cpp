@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -85,6 +86,27 @@ bool isJointAngle(const std::string& key) {
     std::string k = key;
     std::transform(k.begin(), k.end(), k.begin(), ::tolower);
     return k.find("angle") != std::string::npos;
+}
+
+// Parses waypoint_recorder's "<prefix><N>Angle" auto-numbering convention
+// (e.g. "laWavePoses1Angle" -> prefix="laWavePoses", number=1). Requires the
+// literal "Angle" suffix (case-sensitive, matching what the recorder always
+// emits) - keys that don't match this exact shape (e.g. "laHomeAngle", no
+// trailing digits) simply aren't run-merge candidates and fall back to a
+// normal single PlanToJointTarget.
+bool parseNumberedAngleKey(const std::string& key, std::string& prefix, long& number) {
+    static const std::regex re("^(.+?)([0-9]+)Angle$");
+    std::smatch m;
+    if (!std::regex_match(key, m, re)) {
+        return false;
+    }
+    prefix = m[1].str();
+    try {
+        number = std::stol(m[2].str());
+    } catch (...) {
+        return false;
+    }
+    return true;
 }
 
 std::vector<std::string> parseValue(const std::string& raw) {
@@ -231,32 +253,42 @@ void convertSequenceToBt(const std::string& yaml_path,
         
         SectionSpeed section_speed = speedForSection(speed_dict, section_name);
         std::string last_profile = "";
-        
+
+        // Materialize entries up front (instead of a straight-through
+        // iterator loop) so run-merge detection below can look ahead.
+        std::vector<std::pair<std::string, YAML::Node>> section_entries;
         for (auto it = section_data.begin(); it != section_data.end(); ++it) {
-            std::string key = it->first.as<std::string>();
-            std::string raw_val = getYamlValueAsString(it->second);
+            section_entries.emplace_back(it->first.as<std::string>(), it->second);
+        }
+
+        size_t idx = 0;
+        while (idx < section_entries.size()) {
+            const std::string& key = section_entries[idx].first;
+            std::string raw_val = getYamlValueAsString(section_entries[idx].second);
             std::vector<std::string> tokens = parseValue(raw_val);
             if (tokens.empty()) {
+                ++idx;
                 continue;
             }
-            
+
             std::string arm = (!arm_override.empty()) ? arm_override : armFromKey(key);
-            
+
             // ── Gripper keys ───────────────────────────────────────────────────
             if (arm == "left_gripper" || arm == "right_gripper") {
                 std::string lower_key = key;
                 std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(), ::tolower);
                 std::string arm_name = (arm.find("left") != std::string::npos) ? "left_arm" : "right_arm";
-                
+
                 xml << "      <!-- " << key << " -->\n";
                 if (lower_key.find("open") != std::string::npos || lower_key.find("release") != std::string::npos) {
                     xml << "      <OpenGripper arm=\"" << arm_name << "\" open_position=\"0.044\" duration=\"1.0\"/>\n";
                 } else {
                     xml << "      <CloseGripper arm=\"" << arm_name << "\" close_position=\"0.0\" duration=\"1.5\"/>\n";
                 }
+                ++idx;
                 continue;
             }
-            
+
             // ── Head keys — skip ───────────────────────────────────────────────
             std::string lower_key = key;
             std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(), ::tolower);
@@ -267,9 +299,10 @@ void convertSequenceToBt(const std::string& yaml_path,
                     token_str += tokens[i];
                 }
                 xml << "      <!-- " << key << ": head move (not yet wired to BT node) — values: " << token_str << " -->\n";
+                ++idx;
                 continue;
             }
-            
+
             // ── Arm keys ───────────────────────────────────────────────────────
             if (arm.empty()) {
                 std::string token_str;
@@ -278,27 +311,102 @@ void convertSequenceToBt(const std::string& yaml_path,
                     token_str += tokens[i];
                 }
                 xml << "      <!-- config: " << key << " = " << token_str << " -->\n";
+                ++idx;
                 continue;
             }
-            
+
             auto planner_res = plannerFromValues(tokens);
             std::string profile = planner_res.first;
             std::vector<std::string> value_tokens = planner_res.second;
             if (value_tokens.empty()) {
+                ++idx;
                 continue;
             }
-            
+
+            // ── Numbered *Angle run merge ─────────────────────────────────────
+            // A consecutive run (N, N+1, N+2...) of waypoint_recorder's
+            // "<prefix><N>Angle" auto-numbered keys, sharing arm + planner
+            // profile, becomes ONE <PlanToJointSequence> (single blended
+            // trajectory, no per-waypoint stop) instead of N independent
+            // <PlanToJointTarget> nodes. A run of length 1, non-consecutive
+            // numbering, an arm/profile change, or a key that doesn't match
+            // the numbered convention at all falls through unchanged to the
+            // normal single-key emission below.
+            std::string run_prefix;
+            long run_number = 0;
+            if (isJointAngle(key) && parseNumberedAngleKey(key, run_prefix, run_number)) {
+                std::vector<std::vector<std::string>> run_values;
+                run_values.push_back(value_tokens);
+                long expected_number = run_number + 1;
+                size_t j = idx + 1;
+                while (j < section_entries.size()) {
+                    const std::string& next_key = section_entries[j].first;
+                    std::string next_prefix;
+                    long next_number = 0;
+                    if (!isJointAngle(next_key) || !parseNumberedAngleKey(next_key, next_prefix, next_number)) {
+                        break;
+                    }
+                    if (next_prefix != run_prefix || next_number != expected_number) {
+                        break;
+                    }
+                    std::string next_arm = (!arm_override.empty()) ? arm_override : armFromKey(next_key);
+                    if (next_arm != arm) {
+                        break;
+                    }
+                    std::string next_raw = getYamlValueAsString(section_entries[j].second);
+                    std::vector<std::string> next_tokens = parseValue(next_raw);
+                    if (next_tokens.empty()) {
+                        break;
+                    }
+                    auto next_planner_res = plannerFromValues(next_tokens);
+                    if (next_planner_res.first != profile || next_planner_res.second.empty()) {
+                        break;
+                    }
+                    run_values.push_back(next_planner_res.second);
+                    ++expected_number;
+                    ++j;
+                }
+
+                if (run_values.size() >= 2) {
+                    if (profile != last_profile) {
+                        xml << "      <SetPlannerConfig profile=\"" << profile << "\"/>\n";
+                        last_profile = profile;
+                    }
+                    xml << "      <!-- " << run_prefix << run_number << ".." << (expected_number - 1)
+                        << "Angle: " << run_values.size() << " waypoints, blended into one trajectory -->\n";
+                    std::string flat_tokens;
+                    for (size_t k = 0; k < run_values.size(); ++k) {
+                        for (size_t v = 0; v < run_values[k].size(); ++v) {
+                            if (k > 0 || v > 0) flat_tokens += ";";
+                            flat_tokens += run_values[k][v];
+                        }
+                    }
+                    xml << "      <PlanToJointSequence arm=\"" << arm << "\" joint_sequence=\"" << flat_tokens << "\"";
+                    if (section_speed.velocity >= 0.0) {
+                        xml << " velocity_scaling=\"" << formatScale(section_speed.velocity) << "\"";
+                    }
+                    if (section_speed.acceleration >= 0.0) {
+                        xml << " acceleration_scaling=\"" << formatScale(section_speed.acceleration) << "\"";
+                    }
+                    xml << " output_trajectory=\"{plan_trajectory}\"/>\n";
+
+                    idx = j;
+                    continue;
+                }
+                // Run length 1 - fall through to the normal single-key path.
+            }
+
             if (profile != last_profile) {
                 xml << "      <SetPlannerConfig profile=\"" << profile << "\"/>\n";
                 last_profile = profile;
             }
-            
+
             std::string val_token_str;
             for (size_t i = 0; i < value_tokens.size(); ++i) {
                 if (i > 0) val_token_str += ", ";
                 val_token_str += value_tokens[i];
             }
-            
+
             if (isJointAngle(key)) {
                 // PlanToJointTarget takes raw joint values directly (via the
                 // "move_to_joint" skill, robot_skills/MoveToJointSkill) - no
@@ -330,8 +438,9 @@ void convertSequenceToBt(const std::string& yaml_path,
                 }
                 xml << " position_only=\"false\" output_trajectory=\"{plan_trajectory}\"/>\n";
             }
+            ++idx;
         }
-        
+
         xml << "    </Sequence>\n";
         xml << "  </BehaviorTree>\n";
     }

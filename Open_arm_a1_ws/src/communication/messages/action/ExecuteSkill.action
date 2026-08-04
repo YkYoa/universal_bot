@@ -1,7 +1,7 @@
 # ── Request ───────────────────────────────────────────────────
 string skill_name
 # Options: "move_to_pose" | "move_to_named_pose" | "cartesian_move"
-#          "open_gripper"  | "close_gripper"
+#          "open_gripper"  | "close_gripper" | "move_to_joint" | "move_to_joint_sequence"
 
 string arm
 # "left_arm" | "right_arm" | "both_arms"
@@ -20,6 +20,7 @@ float64 velocity_override                 # 0 = use profile default
 float64 acceleration_override             # 0 = use profile default
 bool position_only                        # skip orientation constraint
 float64[] joint_targets                   # for move_to_joint
+float64[] joint_sequence                  # for move_to_joint_sequence; flat, stride-7 chunks
 ---
 # ── Result ────────────────────────────────────────────────────
 bool success

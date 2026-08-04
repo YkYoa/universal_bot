@@ -1,8 +1,10 @@
 #include "motion_planner/moveit_cpp_planner_manager.hpp"
+#include <algorithm>
 #include <moveit/robot_state/conversions.hpp>
 #include <moveit/robot_state/cartesian_interpolator.hpp>
 #include <moveit/robot_trajectory/robot_trajectory.hpp>
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
+#include <moveit/trajectory_processing/ruckig_traj_smoothing.hpp>
 #include <moveit/planning_scene_monitor/planning_scene_monitor.hpp>
 #include <filesystem>
 #include <fstream>
@@ -38,6 +40,16 @@ std::string get_plan_filename(const planning_interface::PlannerRequest& request)
         const auto& last = request.getWaypoints().back().pose;
         ss << "_from_" << std::fixed << std::setprecision(4) << first.position.x << "_" << first.position.y << "_" << first.position.z
            << "_to_" << last.position.x << "_" << last.position.y << "_" << last.position.z;
+    } else if (!request.getJointSequence().empty()) {
+        ss << "_jointseq_" << request.getJointSequence().size();
+        ss << "_from";
+        for (double v : request.getJointSequence().front()) {
+            ss << "_" << std::fixed << std::setprecision(4) << v;
+        }
+        ss << "_to";
+        for (double v : request.getJointSequence().back()) {
+            ss << "_" << std::fixed << std::setprecision(4) << v;
+        }
     }
     std::string s = ss.str();
     for (char& c : s) {
@@ -107,6 +119,67 @@ moveit_msgs::msg::RobotTrajectory deserialize_trajectory(const YAML::Node& node)
         }
     }
     return trajectory;
+}
+
+// Rounds the sharp direction-change at each interior waypoint of a joint-
+// space path with a local quadratic Bezier corner-cut, instead of routing
+// exactly through it. For each corner index c (not the first/last state in
+// `states`), takes a point a few samples before it (P_before) and a few
+// samples after it (P_after) - both already inside the neighboring,
+// already-planned segments - and replaces the points between them with
+// samples along B(t) = (1-t)^2*P_before + 2t(1-t)*P_apex + t^2*P_after per
+// joint. This starts exactly at P_before, ends exactly at P_after (so it
+// splices cleanly into the untouched rest of the path), and passes near -
+// not exactly over - the original corner, eliminating the vertex that
+// forces TOTG/Ruckig to slow down there. Blend windows are clamped so they
+// never overlap a neighboring corner or run off the ends of the path; a
+// corner whose neighbors are too close to leave any room is left unblended.
+std::vector<moveit::core::RobotStatePtr> blendJointSequenceCorners(
+    const std::vector<moveit::core::RobotStatePtr>& states, const std::vector<size_t>& corner_indices,
+    const std::string& group_name)
+{
+    constexpr size_t kBlendWindow = 5;  // points on each side of a corner, before clamping
+
+    std::vector<moveit::core::RobotStatePtr> blended = states;
+
+    for (size_t c = 0; c < corner_indices.size(); ++c) {
+        const size_t corner_idx = corner_indices[c];
+        const size_t prev_bound = (c == 0) ? 0 : corner_indices[c - 1];
+        const size_t next_bound = (c + 1 < corner_indices.size()) ? corner_indices[c + 1] : (states.size() - 1);
+
+        const size_t window_before = std::min(kBlendWindow, (corner_idx - prev_bound) / 2);
+        const size_t window_after = std::min(kBlendWindow, (next_bound - corner_idx) / 2);
+        if (window_before == 0 || window_after == 0) {
+            continue;  // neighboring corners too close together to blend safely
+        }
+
+        const size_t before_idx = corner_idx - window_before;
+        const size_t after_idx = corner_idx + window_after;
+
+        std::vector<double> p_before, p_apex, p_after;
+        states[before_idx]->copyJointGroupPositions(group_name, p_before);
+        states[corner_idx]->copyJointGroupPositions(group_name, p_apex);
+        states[after_idx]->copyJointGroupPositions(group_name, p_after);
+
+        const size_t num_points = after_idx - before_idx + 1;
+        for (size_t k = 0; k < num_points; ++k) {
+            const double t = static_cast<double>(k) / static_cast<double>(num_points - 1);
+            const double one_minus_t = 1.0 - t;
+
+            std::vector<double> blended_vals(p_apex.size());
+            for (size_t d = 0; d < p_apex.size(); ++d) {
+                blended_vals[d] = one_minus_t * one_minus_t * p_before[d] + 2.0 * t * one_minus_t * p_apex[d] +
+                    t * t * p_after[d];
+            }
+
+            auto blended_state = std::make_shared<moveit::core::RobotState>(*states[before_idx]);
+            blended_state->setJointGroupPositions(group_name, blended_vals);
+            blended_state->update();
+            blended[before_idx + k] = blended_state;
+        }
+    }
+
+    return blended;
 }
 
 } // namespace
@@ -383,6 +456,171 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         goal_state.setJointGroupPositions(request.getGroupName(), request.getJointTargets());
         goal_state.update();
         planning_component->setGoal(goal_state);
+    } else if (!request.getJointSequence().empty()) {
+        // Plan each waypoint segment individually (collision-aware, same as
+        // a normal joint-target plan), but concatenate every segment's
+        // states into ONE robot_trajectory::RobotTrajectory and re-time the
+        // whole thing with a single TOTG pass at the end - this is exactly
+        // the pattern already used below for Cartesian `waypoints`, applied
+        // to joint-space. TOTG only forces zero velocity at the very first
+        // and last point of the whole path, not at interior waypoints, so
+        // this produces one continuous motion instead of N stop-start
+        // segments.
+        const auto& joint_sequence = request.getJointSequence();
+
+        moveit::core::RobotStatePtr start_state;
+        if (request.getStartState()) {
+            start_state = std::make_shared<moveit::core::RobotState>(*request.getStartState());
+        } else {
+            start_state = moveit_cpp_->getCurrentState();
+        }
+
+        if (!start_state) {
+            response.success = false;
+            response.error_message = "Failed to acquire starting RobotState.";
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
+            return response;
+        }
+
+        std::vector<moveit::core::RobotStatePtr> traj_states;
+        std::vector<size_t> corner_indices;  // traj_states index of each interior recorded waypoint
+        moveit::core::RobotState active_state(*start_state);
+
+        for (size_t i = 0; i < joint_sequence.size(); ++i) {
+            planning_component->setStartState(active_state);
+
+            moveit::core::RobotState goal_state(active_state);
+            goal_state.setJointGroupPositions(request.getGroupName(), joint_sequence[i]);
+            goal_state.update();
+            planning_component->setGoal(goal_state);
+
+            auto seg_solution = planning_component->plan(plan_params);
+            if (!seg_solution) {
+                RCLCPP_ERROR(node_->get_logger(),
+                             "[MoveItCppPlannerManager] Joint-sequence planning failed at waypoint %zu of %zu",
+                             i, joint_sequence.size());
+                response.success = false;
+                response.error_message = "Joint-sequence planning failed at waypoint " + std::to_string(i);
+                publish_target_marker_for_request(request, false);
+                publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
+                return response;
+            }
+
+            // Each segment's trajectory includes both endpoints - skip
+            // index 0 for every segment after the first to avoid a
+            // duplicate (zero-duration) waypoint at the join.
+            size_t start_idx = (i == 0) ? 0 : 1;
+            for (size_t j = start_idx; j < seg_solution.trajectory->getWayPointCount(); ++j) {
+                traj_states.push_back(std::make_shared<moveit::core::RobotState>(seg_solution.trajectory->getWayPoint(j)));
+            }
+            active_state = *traj_states.back();
+            if (i + 1 < joint_sequence.size()) {
+                // This is an interior waypoint (not the very last target) -
+                // a corner-blend candidate.
+                corner_indices.push_back(traj_states.size() - 1);
+            }
+        }
+
+        // Round the sharp direction-change at each interior waypoint (a
+        // local quadratic Bezier corner-cut, see blendJointSequenceCorners)
+        // instead of routing exactly through it - otherwise TOTG/Ruckig
+        // correctly (but undesirably) slow the arm to near-zero velocity at
+        // any waypoint where incoming/outgoing direction differs sharply.
+        // Revalidate against the planning scene and fall back to the exact
+        // (already collision-checked) path if the blend isn't safe.
+        std::vector<moveit::core::RobotStatePtr> final_states = traj_states;
+        if (!corner_indices.empty()) {
+            auto blended_states = blendJointSequenceCorners(traj_states, corner_indices, request.getGroupName());
+
+            auto blended_rt = std::make_shared<robot_trajectory::RobotTrajectory>(moveit_cpp_->getRobotModel(), request.getGroupName());
+            for (const auto& state : blended_states) {
+                blended_rt->addSuffixWayPoint(state, 0.0);
+            }
+
+            bool blend_valid = true;
+            if (moveit_cpp_->getPlanningSceneMonitorNonConst()) {
+                planning_scene_monitor::LockedPlanningSceneRO planning_scene(moveit_cpp_->getPlanningSceneMonitorNonConst());
+                if (planning_scene && !planning_scene->isPathValid(*blended_rt, request.getGroupName())) {
+                    blend_valid = false;
+                }
+            }
+
+            if (blend_valid) {
+                final_states = blended_states;
+            } else {
+                RCLCPP_WARN(node_->get_logger(),
+                    "[MoveItCppPlannerManager] Corner-blended joint sequence path is in collision - "
+                    "using the exact (unblended) path instead.");
+            }
+        }
+
+        auto rt = std::make_shared<robot_trajectory::RobotTrajectory>(moveit_cpp_->getRobotModel(), request.getGroupName());
+        for (const auto& state : final_states) {
+            rt->addSuffixWayPoint(state, 0.0);
+        }
+
+        trajectory_processing::TimeOptimalTrajectoryGeneration totg;
+        if (!totg.computeTimeStamps(*rt, profile.velocity_scaling, profile.acceleration_scaling)) {
+            response.success = false;
+            response.error_message = "Time parameterization failed for joint sequence.";
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
+            return response;
+        }
+
+        // TOTG alone is only velocity/acceleration-limited (no jerk bound), so
+        // acceleration can still change instantaneously at corners between
+        // waypoints. Ruckig smoothing runs on the already time-parameterized
+        // trajectory and re-adjusts timing so jerk stays bounded too - same
+        // adapter this repo already configures for the OMPL pipeline
+        // (ompl_planning.yaml's AddRuckigTrajectorySmoothing). Non-fatal on
+        // failure: the TOTG-only trajectory above is already valid and used
+        // as-is if this doesn't succeed.
+        if (!trajectory_processing::RuckigSmoothing::applySmoothing(
+                *rt, profile.velocity_scaling > 0.0 ? profile.velocity_scaling : 1.0,
+                profile.acceleration_scaling > 0.0 ? profile.acceleration_scaling : 1.0)) {
+            RCLCPP_WARN(node_->get_logger(),
+                "[MoveItCppPlannerManager] Ruckig jerk-limited smoothing failed for joint sequence - "
+                "using TOTG-only timing instead.");
+        }
+
+        response.success = true;
+        rt->getRobotTrajectoryMsg(response.trajectory);
+        response.planning_time = 0.01;
+
+        if (save_plan) {
+            try {
+                std::filesystem::path plan_dir(PLAN_DIR);
+                if (!std::filesystem::exists(plan_dir)) {
+                    std::filesystem::create_directories(plan_dir);
+                }
+                YAML::Node plan_node = serialize_trajectory(response.trajectory);
+                std::ofstream fout(plan_filepath.string());
+                fout << plan_node;
+                fout.close();
+                RCLCPP_INFO(node_->get_logger(),
+                    "[MoveItCppPlannerManager] Saved successfully run plan to: %s",
+                    plan_filepath.string().c_str());
+            } catch (const std::exception& e) {
+                RCLCPP_WARN(node_->get_logger(),
+                    "[MoveItCppPlannerManager] Failed to save plan to '%s': %s",
+                    plan_filepath.string().c_str(), e.what());
+            }
+        }
+
+        publish_target_marker_for_request(request, true);
+        publish_trajectory_markers(response.trajectory, request.getGroupName(), true);
+
+        moveit_msgs::msg::DisplayTrajectory display_msg;
+        display_msg.model_id = moveit_cpp_->getRobotModel()->getName();
+        display_msg.trajectory.push_back(response.trajectory);
+        moveit::core::robotStateToRobotStateMsg(*start_state, display_msg.trajectory_start);
+        if (display_pub_) {
+            display_pub_->publish(display_msg);
+        }
+
+        return response;
     } else if (!request.getWaypoints().empty()) {
         std::string ee_link = ee_link_for_group(request.getGroupName());
         if (ee_link.empty()) {
@@ -716,6 +954,33 @@ void MoveItCppPlannerManager::publish_target_marker_for_request(const planning_i
             moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
             goal_state.setToDefaultValues();
             goal_state.setJointGroupPositions(request.getGroupName(), request.getJointTargets());
+            goal_state.update();
+
+            std::string ee_link = ee_link_for_group(request.getGroupName());
+            if (!ee_link.empty()) {
+                const Eigen::Isometry3d& ee_state = goal_state.getGlobalLinkTransform(ee_link);
+                geometry_msgs::msg::PoseStamped pose;
+                pose.header.frame_id = moveit_cpp_->getRobotModel()->getModelFrame();
+                pose.header.stamp = node_->get_clock()->now();
+
+                Eigen::Vector3d translation = ee_state.translation();
+                Eigen::Quaterniond rotation(ee_state.linear());
+                pose.pose.position.x = translation.x();
+                pose.pose.position.y = translation.y();
+                pose.pose.position.z = translation.z();
+                pose.pose.orientation.x = rotation.x();
+                pose.pose.orientation.y = rotation.y();
+                pose.pose.orientation.z = rotation.z();
+                pose.pose.orientation.w = rotation.w();
+
+                target_pose = pose;
+            }
+        }
+    } else if (!request.getJointSequence().empty()) {
+        if (moveit_cpp_ && moveit_cpp_->getRobotModel()) {
+            moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
+            goal_state.setToDefaultValues();
+            goal_state.setJointGroupPositions(request.getGroupName(), request.getJointSequence().back());
             goal_state.update();
 
             std::string ee_link = ee_link_for_group(request.getGroupName());

@@ -6,40 +6,8 @@
   <BehaviorTree ID="Waveposes">
     <Sequence name="wavePoses">
       <SetPlannerConfig profile="fast_ptp"/>
-      <!-- laWavePoses1Angle: joint angles [0.126841, 0.018883, -0.0791562, 0.745212, 0.0104906, -0.179484, -0.210002] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="0.126841;0.018883;-0.0791562;0.745212;0.0104906;-0.179484;-0.210002" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses2Angle: joint angles [-0.0673304, -0.443847, -0.121881, 0.745594, -0.370985, -0.564012, -0.776875] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-0.0673304;-0.443847;-0.121881;0.745594;-0.370985;-0.564012;-0.776875" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses3Angle: joint angles [-0.136378, -0.84287, -0.134089, 1.1183, -0.325589, -0.299268, -0.769245] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-0.136378;-0.84287;-0.134089;1.1183;-0.325589;-0.299268;-0.769245" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses4Angle: joint angles [-0.418288, -1.28004, -0.134089, 1.12173, -0.356107, -0.239376, -0.867285] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-0.418288;-1.28004;-0.134089;1.12173;-0.356107;-0.239376;-0.867285" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses5Angle: joint angles [-0.764668, -1.11105, -0.133707, 1.42958, -0.657473, -0.0936522, -0.646029] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-0.764668;-1.11105;-0.133707;1.42958;-0.657473;-0.0936522;-0.646029" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses6Angle: joint angles [-1.17742, -0.407988, 0.288205, 1.42958, -0.186732, 0.0642786, -0.541123] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-1.17742;-0.407988;0.288205;1.42958;-0.186732;0.0642786;-0.541123" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses7Angle: joint angles [-1.14424, 0.0547417, 0.288205, 1.42958, 0.0829709, -0.118067, -0.462158] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-1.14424;0.0547417;0.288205;1.42958;0.0829709;-0.118067;-0.462158" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses8Angle: joint angles [-1.06641, 0.173762, 0.564012, 1.42958, 0.180247, -0.113107, -0.462539] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-1.06641;0.173762;0.564012;1.42958;0.180247;-0.113107;-0.462539" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses9Angle: joint angles [-1.1492, 0.163081, 0.0120165, 1.42958, 0.172618, 0.0371939, -0.305753] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-1.1492;0.163081;0.0120165;1.42958;0.172618;0.0371939;-0.305753" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses10Angle: joint angles [-1.15263, 0.162699, -0.37747, 1.42958, 0.164607, 0.0612268, -0.360685] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-1.15263;0.162699;-0.37747;1.42958;0.164607;0.0612268;-0.360685" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses11Angle: joint angles [-1.11906, -0.263409, -0.562867, 1.42958, -0.146677, 0.082208, -0.326734] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-1.11906;-0.263409;-0.562867;1.42958;-0.146677;0.082208;-0.326734" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses12Angle: joint angles [-1.11563, -0.488098, -0.564012, 1.42958, -0.169184, -0.0677119, -0.648318] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-1.11563;-0.488098;-0.564012;1.42958;-0.169184;-0.0677119;-0.648318" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses13Angle: joint angles [-0.95922, -0.313382, -0.266842, 1.42958, -0.0410086, -0.220302, -0.647173] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-0.95922;-0.313382;-0.266842;1.42958;-0.0410086;-0.220302;-0.647173" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses14Angle: joint angles [-0.498779, -0.307279, -0.0577935, 1.42996, -0.0867857, -0.197414, -0.647936] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-0.498779;-0.307279;-0.0577935;1.42996;-0.0867857;-0.197414;-0.647936" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses15Angle: joint angles [-0.184062, -0.293927, -0.0513085, 1.42996, 0.172999, -0.337797, 0.0688563] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-0.184062;-0.293927;-0.0513085;1.42996;0.172999;-0.337797;0.0688563" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses16Angle: joint angles [0.39807, -0.0143053, 0.0280385, 1.42996, -0.15774, -0.0928893, 0.319104] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="0.39807;-0.0143053;0.0280385;1.42996;-0.15774;-0.0928893;0.319104" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePoses17Angle: joint angles [0.0246052, 0.0135424, -0.00934615, 0.128367, 0.00324254, -0.0371939, 0.215724] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="0.0246052;0.0135424;-0.00934615;0.128367;0.00324254;-0.0371939;0.215724" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
+      <!-- laWavePoses1..17Angle: 17 waypoints, blended into one trajectory -->
+      <PlanToJointSequence arm="left_arm" joint_sequence="0.126841;0.018883;-0.0791562;0.745212;0.0104906;-0.179484;-0.210002;-0.0673304;-0.443847;-0.121881;0.745594;-0.370985;-0.564012;-0.776875;-0.136378;-0.84287;-0.134089;1.1183;-0.325589;-0.299268;-0.769245;-0.418288;-1.28004;-0.134089;1.12173;-0.356107;-0.239376;-0.867285;-0.764668;-1.11105;-0.133707;1.42958;-0.657473;-0.0936522;-0.646029;-1.17742;-0.407988;0.288205;1.42958;-0.186732;0.0642786;-0.541123;-1.14424;0.0547417;0.288205;1.42958;0.0829709;-0.118067;-0.462158;-1.06641;0.173762;0.564012;1.42958;0.180247;-0.113107;-0.462539;-1.1492;0.163081;0.0120165;1.42958;0.172618;0.0371939;-0.305753;-1.15263;0.162699;-0.37747;1.42958;0.164607;0.0612268;-0.360685;-1.11906;-0.263409;-0.562867;1.42958;-0.146677;0.082208;-0.326734;-1.11563;-0.488098;-0.564012;1.42958;-0.169184;-0.0677119;-0.648318;-0.95922;-0.313382;-0.266842;1.42958;-0.0410086;-0.220302;-0.647173;-0.498779;-0.307279;-0.0577935;1.42996;-0.0867857;-0.197414;-0.647936;-0.184062;-0.293927;-0.0513085;1.42996;0.172999;-0.337797;0.0688563;0.39807;-0.0143053;0.0280385;1.42996;-0.15774;-0.0928893;0.319104;0.0246052;0.0135424;-0.00934615;0.128367;0.00324254;-0.0371939;0.215724" velocity_scaling="0.50" acceleration_scaling="1.00" output_trajectory="{plan_trajectory}"/>
     </Sequence>
   </BehaviorTree>
 </root>

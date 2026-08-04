@@ -50,6 +50,7 @@ def generate_launch_description():
         PathJoinSubstitution([FindPackageShare("openarm_description"),
                               "urdf", "robot", "v10.urdf.xacro"]),
         " bimanual:=true ros2_control:=true use_fake_hardware:=true",
+        " head_use_fake_hardware:=true",
         " mobile_base:=true",
         " mobile_base_xyz:='0 0 0.31'",
         " mobile_base_body_xyz:='0 0 0'",

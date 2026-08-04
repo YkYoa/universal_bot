@@ -118,6 +118,7 @@ void SkillServer::execute_goal(const std::shared_ptr<GoalHandleExecuteSkill>& go
     req.acceleration_override = goal->acceleration_override;
     req.position_only = goal->position_only;
     req.joint_targets = goal->joint_targets;
+    req.joint_sequence = goal->joint_sequence;
 
     feedback->status = "planning";
     goal_handle->publish_feedback(feedback);

@@ -25,6 +25,7 @@ namespace robot_skills
         double acceleration_override = 0.0;
         bool position_only = false;
         std::vector<double> joint_targets;
+        std::vector<double> joint_sequence;  // flat, stride-7 chunks
     };
 
     struct SkillResult

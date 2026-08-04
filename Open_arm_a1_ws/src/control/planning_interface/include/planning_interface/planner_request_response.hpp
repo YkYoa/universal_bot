@@ -78,6 +78,18 @@ public:
     waypoints_ = wps;
   }
 
+  // Joint-space waypoint sequence (used by MoveToJointSequenceSkill) -
+  // mutually exclusive with pose target / single joint target. Each entry
+  // is one waypoint's joint values.
+  const std::vector<std::vector<double>> & getJointSequence() const {
+    return joint_sequence_;
+  }
+  void setJointSequence(const std::vector<std::vector<double>> & seq) {
+    joint_sequence_ = seq;
+    target_pose_.reset();
+    joint_targets_.clear();
+  }
+
   // Position-only flag: skip orientation constraint in IK
   bool isPositionOnly() const          { return position_only_; }
   void setPositionOnly(bool p)         { position_only_ = p; }
@@ -88,6 +100,7 @@ private:
   std::optional<geometry_msgs::msg::PoseStamped>      target_pose_;
   std::vector<double>                                 joint_targets_;
   std::vector<geometry_msgs::msg::PoseStamped>        waypoints_;
+  std::vector<std::vector<double>>                    joint_sequence_;
   moveit::core::RobotStateConstPtr                    start_state_;
   PlanRequestParameters                               parameters_;
   bool                                                position_only_ = false;
