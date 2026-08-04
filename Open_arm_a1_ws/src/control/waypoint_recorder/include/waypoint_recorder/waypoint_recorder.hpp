@@ -49,15 +49,18 @@ public:
     const std::string& arm_prefix, const std::string& section, const std::string& waypoint_name,
     const std::string& file_path, std::string& out_error);
 
-  // Interactive loop over stdin. Each line is either "name" (recorded under
-  // the current section) or "section/name" (switches the current section,
-  // then records under it) - so section doesn't have to be fixed for the
-  // whole session via a CLI flag, it can change waypoint-to-waypoint.
-  // default_section (may be empty) seeds the current section before the
-  // first line; if empty, the first line must use "section/name" form.
-  // Repeats until an empty line or EOF. Individual recordOne() failures are
-  // printed to stderr and the loop continues (a bad capture shouldn't lose
-  // the rest of the session). Returns the count successfully recorded.
+  // Interactive loop over stdin, two phases:
+  //  - Section-select: lists sections already in file_path, prompts for one
+  //    to record into (existing name reuses it, new name creates it). Empty
+  //    line here quits.
+  //  - Pose-recording: previews the next auto-numbered
+  //    "<arm_prefix><PascalCase(section)><N>Angle" key; plain Enter records
+  //    it as-is, a typed name overrides it, 's' goes back to section-select,
+  //    'q' quits.
+  // default_section (may be empty) skips the first section-select round.
+  // Individual recordOne() failures are printed to stderr and the loop
+  // continues (a bad capture shouldn't lose the rest of the session).
+  // Returns the count successfully recorded.
   int recordLoop(const std::string& arm_prefix, const std::string& default_section, const std::string& file_path);
 
 private:

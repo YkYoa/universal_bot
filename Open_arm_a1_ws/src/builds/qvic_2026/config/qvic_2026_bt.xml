@@ -10,8 +10,13 @@
       <PlanToJointTarget arm="left_arm" joint_targets="0;0;0;0;0;0;0" duration="3.0" output_trajectory="{plan_trajectory}"/>
       <!-- raHomeAngle: joint angles [0, 0, 0, 0, 0, 0, 0] -->
       <PlanToJointTarget arm="left_arm" joint_targets="0;0;0;0;0;0;0" duration="3.0" output_trajectory="{plan_trajectory}"/>
-      <!-- laWavePosesAngle: joint angles [-0.435073, -0.0307088, -0.0787747, 1.06565, 0.231365, -0.066186, -0.882925] -->
-      <PlanToJointTarget arm="left_arm" joint_targets="-0.435073;-0.0307088;-0.0787747;1.06565;0.231365;-0.066186;-0.882925" duration="3.0" output_trajectory="{plan_trajectory}"/>
+    </Sequence>
+  </BehaviorTree>
+  <BehaviorTree ID="Waveposes">
+    <Sequence name="wavePoses">
+      <SetPlannerConfig profile="fast_ptp"/>
+      <!-- laWavePosesAngle: joint angles [-0.435073, -0.0307088, -0.0787747, 1.06565, 0.231365, -0.0658045, -0.882544] -->
+      <PlanToJointTarget arm="left_arm" joint_targets="-0.435073;-0.0307088;-0.0787747;1.06565;0.231365;-0.0658045;-0.882544" duration="3.0" output_trajectory="{plan_trajectory}"/>
     </Sequence>
   </BehaviorTree>
 </root>

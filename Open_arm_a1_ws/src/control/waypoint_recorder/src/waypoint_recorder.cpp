@@ -5,6 +5,8 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <regex>
+#include <set>
 #include <sstream>
 #include <thread>
 
@@ -74,6 +76,79 @@ bool isBlank(const std::string& line)
 bool startsWithWhitespace(const std::string& line)
 {
   return !line.empty() && (line[0] == ' ' || line[0] == '\t');
+}
+
+// Reserved top-level keys that aren't a poses/waypoints section (so they're
+// left out of the --loop section picker's suggestion list).
+const std::set<std::string> kReservedTopLevelKeys = {"speed"};
+
+// Top-level ("unindented, bare 'name:'") section headers already present in
+// file_path, in file order, skipping kReservedTopLevelKeys. Empty (not an
+// error) if the file can't be read - callers just get no suggestions.
+std::vector<std::string> listSections(const std::string& file_path)
+{
+  std::vector<std::string> sections;
+  std::ifstream in(file_path);
+  if (!in.good()) {
+    return sections;
+  }
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.empty() || startsWithWhitespace(line) || line[0] == '#' || line.back() != ':') {
+      continue;
+    }
+    const std::string key = line.substr(0, line.size() - 1);
+    if (key.empty() || kReservedTopLevelKeys.count(key)) {
+      continue;
+    }
+    sections.push_back(key);
+  }
+  return sections;
+}
+
+// Scans `section`'s body in file_path for keys already following the
+// "<arm_prefix><PascalCase(section)><N>Angle" auto-numbering scheme and
+// returns the next unused N (1 if the section doesn't exist yet, or none of
+// its keys match the scheme).
+int nextOrdinal(const std::string& file_path, const std::string& arm_prefix, const std::string& section)
+{
+  std::ifstream in(file_path);
+  if (!in.good()) {
+    return 1;
+  }
+  std::vector<std::string> lines;
+  std::string line;
+  while (std::getline(in, line)) {
+    lines.push_back(line);
+  }
+
+  const std::string section_header = section + ":";
+  int section_idx = -1;
+  for (size_t i = 0; i < lines.size(); ++i) {
+    if (lines[i] == section_header) {
+      section_idx = static_cast<int>(i);
+      break;
+    }
+  }
+  if (section_idx < 0) {
+    return 1;
+  }
+
+  const std::regex key_re("^\\s*" + arm_prefix + toPascalCase(section) + "(\\d+)Angle\\s*:");
+  int max_n = 0;
+  for (size_t i = static_cast<size_t>(section_idx) + 1; i < lines.size(); ++i) {
+    if (isBlank(lines[i])) {
+      continue;
+    }
+    if (!startsWithWhitespace(lines[i])) {
+      break;
+    }
+    std::smatch m;
+    if (std::regex_search(lines[i], m, key_re)) {
+      max_n = std::max(max_n, std::stoi(m[1].str()));
+    }
+  }
+  return max_n + 1;
 }
 
 }  // namespace
@@ -233,42 +308,58 @@ bool WaypointRecorder::recordOne(
 int WaypointRecorder::recordLoop(
   const std::string& arm_prefix, const std::string& default_section, const std::string& file_path)
 {
-  std::cout << "Loop mode - arm '" << arm_prefix << "'.\n"
-            << "Enter 'name' to record under the current section, or 'section/name' to switch\n"
-            << "section first. Empty line to quit.\n";
+  std::cout << "Loop mode - arm '" << arm_prefix << "'.\n";
   std::string current_section = default_section;
   int count = 0;
   std::string line;
   while (true) {
-    std::cout << "[" << (current_section.empty() ? "<no section yet>" : current_section) << "] name or section/name> "
-              << std::flush;
-    if (!std::getline(std::cin, line)) {
-      break;  // EOF (e.g. Ctrl-D)
+    if (current_section.empty()) {
+      // Section-select phase: show what's already in the file, let the user
+      // pick one or type a new name to create it.
+      const auto sections = listSections(file_path);
+      std::cout << "Existing sections: ";
+      if (sections.empty()) {
+        std::cout << "(none yet)";
+      } else {
+        for (size_t i = 0; i < sections.size(); ++i) {
+          if (i > 0) std::cout << ", ";
+          std::cout << sections[i];
+        }
+      }
+      std::cout << "\nEnter a section to record into (existing or new), empty line to quit> " << std::flush;
+      if (!std::getline(std::cin, line)) {
+        break;  // EOF (e.g. Ctrl-D)
+      }
+      const std::string entry = trim(line);
+      if (entry.empty()) {
+        break;
+      }
+      current_section = entry;
+      continue;
     }
-    const std::string entry = trim(line);
-    if (entry.empty()) {
+
+    // Pose-recording phase: default is the next auto-numbered
+    // "<arm_prefix><PascalSection><N>Angle" key; a typed name overrides it.
+    const int n = nextOrdinal(file_path, arm_prefix, current_section);
+    const std::string auto_name = current_section + std::to_string(n);
+    const std::string preview_key = arm_prefix + toPascalCase(auto_name) + "Angle";
+    std::cout << "[" << current_section << "] Enter records '" << preview_key
+              << "' - or type a custom name; 's' switches section, 'q' quits> " << std::flush;
+    if (!std::getline(std::cin, line)) {
       break;
     }
-
-    std::string section = current_section;
-    std::string name = entry;
-    const size_t slash = entry.find('/');
-    if (slash != std::string::npos) {
-      section = trim(entry.substr(0, slash));
-      name = trim(entry.substr(slash + 1));
+    const std::string entry = trim(line);
+    if (entry == "q") {
+      break;
     }
-    if (section.empty()) {
-      std::cerr << "[ERROR] No section set yet - use 'section/name' for the first waypoint\n";
+    if (entry == "s") {
+      current_section.clear();
       continue;
     }
-    if (name.empty()) {
-      std::cerr << "[ERROR] Empty waypoint name\n";
-      continue;
-    }
-    current_section = section;
+    const std::string waypoint_name = entry.empty() ? auto_name : entry;
 
     std::string error;
-    if (recordOne(arm_prefix, section, name, file_path, error)) {
+    if (recordOne(arm_prefix, current_section, waypoint_name, file_path, error)) {
       ++count;
     } else {
       std::cerr << "[ERROR] " << error << "\n";
