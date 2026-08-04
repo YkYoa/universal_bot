@@ -279,14 +279,21 @@ void convertSequenceToBt(const std::string& yaml_path,
             }
             
             if (isJointAngle(key)) {
-                xml << "      <!-- " << key << ": joint angles [" << val_token_str << "] → add this as SRDF named_state or extend SkillRequest with joint_targets -->\n";
-                xml << "      <PlanToNamedPose arm=\"" << arm << "\" pose_name=\"" << key << "\" duration=\"3.0\" output_trajectory=\"{plan_trajectory}\"";
-                if (section_vel >= 0.0) {
-                    char vel_buf[32];
-                    snprintf(vel_buf, sizeof(vel_buf), "%.2f", section_vel);
-                    xml << " velocity_scaling=\"" << vel_buf << "\"";
+                // PlanToJointTarget takes raw joint values directly (via the
+                // "move_to_joint" skill, robot_skills/MoveToJointSkill) - no
+                // SRDF named_state needed. joint_targets is a
+                // BT::InputPort<std::vector<double>>, semicolon-separated
+                // per BT.CPP's default vector parsing convention (sequence.yaml
+                // itself stays comma-separated - only the emitted XML attribute
+                // uses semicolons).
+                std::string semicolon_tokens;
+                for (size_t i = 0; i < value_tokens.size(); ++i) {
+                    if (i > 0) semicolon_tokens += ";";
+                    semicolon_tokens += value_tokens[i];
                 }
-                xml << "/>\n";
+                xml << "      <!-- " << key << ": joint angles [" << val_token_str << "] -->\n";
+                xml << "      <PlanToJointTarget arm=\"" << arm << "\" joint_targets=\"" << semicolon_tokens
+                    << "\" duration=\"3.0\" output_trajectory=\"{plan_trajectory}\"/>\n";
             } else {
                 xml << "      <!-- " << key << ": [" << val_token_str << "]  → set BB key \"" << key << "_pose\" before this node -->\n";
                 xml << "      <PlanToPose arm=\"" << arm << "\" target_pose=\"{" << key << "_pose}\"";

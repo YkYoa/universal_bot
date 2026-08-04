@@ -50,6 +50,7 @@ add_executable(bt_executor_node
   src/nodes/conditions/is_arm_at_pose.cpp
   src/nodes/conditions/is_replan_needed.cpp
   src/nodes/conditions/is_goal_changed.cpp
+  src/nodes/actions/plan_to_joint_target.cpp
   src/nodes/actions/plan_to_named_pose.cpp
   src/nodes/actions/plan_to_pose.cpp
   src/nodes/actions/execute_trajectory.cpp

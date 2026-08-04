@@ -54,6 +54,7 @@
 #include "bt_executor/nodes/conditions/is_goal_changed.hpp"
 
 // ── Action node headers ───────────────────────────────────────────────────────
+#include "bt_executor/nodes/actions/plan_to_joint_target.hpp"
 #include "bt_executor/nodes/actions/plan_to_named_pose.hpp"
 #include "bt_executor/nodes/actions/plan_to_pose.hpp"
 #include "bt_executor/nodes/actions/execute_trajectory.hpp"
@@ -276,6 +277,7 @@ public:
     factory_.registerNodeType<QueryVLA>       ("QueryVLA",        vla_params);
     factory_.registerNodeType<PlanToPose>     ("PlanToPose",      ros_params);
     factory_.registerNodeType<PlanToNamedPose>("PlanToNamedPose", ros_params);
+    factory_.registerNodeType<PlanToJointTarget>("PlanToJointTarget", ros_params);
     factory_.registerNodeType<CloseGripper>   ("CloseGripper",    gripper_params);
     factory_.registerNodeType<OpenGripper>    ("OpenGripper",     gripper_params);
 
