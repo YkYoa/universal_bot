@@ -52,8 +52,11 @@
 
   <xacro:arg name="can_fd" default="true" />
   <xacro:arg name="control_mode" default="mit" />
+  <xacro:arg name="position_mode_velocity" default="1.0" />
   <xacro:arg name="shutdown_disable_retries" default="3" />
   <xacro:arg name="shutdown_retry_delay_ms" default="100" />
+  <xacro:arg name="shutdown_home_timeout_ms" default="3000" />
+  <xacro:arg name="shutdown_home_tolerance" default="0.05" />
   <xacro:arg name="gazebo" default="false" />
   <xacro:arg name="mobile_base" default="false" />
   <xacro:arg name="mobile_base_xyz" default="0 0 0.31" />
@@ -100,8 +103,11 @@
   left_arm_base_rpy="$(arg left_arm_base_rpy)"
   can_fd="$(arg can_fd)"
   control_mode="$(arg control_mode)"
+  position_mode_velocity="$(arg position_mode_velocity)"
   shutdown_disable_retries="$(arg shutdown_disable_retries)"
   shutdown_retry_delay_ms="$(arg shutdown_retry_delay_ms)"
+  shutdown_home_timeout_ms="$(arg shutdown_home_timeout_ms)"
+  shutdown_home_tolerance="$(arg shutdown_home_tolerance)"
   gazebo="$(arg gazebo)"
   mobile_base="$(arg mobile_base)"
   mobile_base_xyz="$(arg mobile_base_xyz)"

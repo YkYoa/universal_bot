@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <optional>
 #include <sstream>
@@ -81,6 +82,15 @@ bool OpenArm_v10HW::parse_config()
         "control_mode must be 'mit', 'position', or 'velocity', got '%s'", control_mode_.c_str());
       return false;
     }
+  }
+  if (auto it = params.find("position_mode_velocity"); it != params.end()) {
+    position_mode_velocity_ = std::stod(it->second);
+  }
+  if (auto it = params.find("shutdown_home_timeout_ms"); it != params.end()) {
+    shutdown_home_timeout_ms_ = std::stoi(it->second);
+  }
+  if (auto it = params.find("shutdown_home_tolerance"); it != params.end()) {
+    shutdown_home_tolerance_ = std::stod(it->second);
   }
   if (auto it = params.find("shutdown_disable_retries"); it != params.end()) {
     shutdown_disable_retries_ = std::stoi(it->second);
@@ -263,10 +273,10 @@ void OpenArm_v10HW::return_to_zero()
         {{gripper_kp_, gripper_kd_, GRIPPER_MOTOR_CLOSED, 0.0, 0.0}});
     }
   } else if (control_mode_ == "position") {
-    std::vector<openarm::damiao_motor::PosVelParam> arm_params(ARM_DOF, {0.0, 0.0});
+    std::vector<openarm::damiao_motor::PosVelParam> arm_params(ARM_DOF, {0.0, position_mode_velocity_});
     impl_->openarm->get_arm().posvel_control_all(arm_params);
     if (hand_) {
-      impl_->openarm->get_gripper().posvel_control_all({{GRIPPER_MOTOR_CLOSED, 0.0}});
+      impl_->openarm->get_gripper().posvel_control_all({{GRIPPER_MOTOR_CLOSED, position_mode_velocity_}});
     }
   }
   // "velocity" mode has no position reference to return to - skip (write()
@@ -274,6 +284,44 @@ void OpenArm_v10HW::return_to_zero()
 
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
   impl_->openarm->recv_all();
+#endif
+}
+
+void OpenArm_v10HW::drive_home_blocking()
+{
+#if defined(OPENARM_HARDWARE_HAS_OPENARMCAN)
+  if (!impl_ || !impl_->openarm || control_mode_ == "velocity") {
+    return;
+  }
+
+  const auto deadline =
+    std::chrono::steady_clock::now() + std::chrono::milliseconds(shutdown_home_timeout_ms_);
+
+  while (std::chrono::steady_clock::now() < deadline) {
+    return_to_zero();  // re-sends the zero-position command each iteration
+
+    impl_->openarm->refresh_all();
+    impl_->openarm->recv_all();
+
+    const auto& arm_motors = impl_->openarm->get_arm().get_motors();
+    bool all_home = true;
+    for (std::size_t i = 0; i < ARM_DOF && i < arm_motors.size(); ++i) {
+      if (std::abs(arm_motors[i].get_position()) > shutdown_home_tolerance_) {
+        all_home = false;
+        break;
+      }
+    }
+    if (all_home) {
+      RCLCPP_INFO(rclcpp::get_logger("OpenArm_v10HW"), "Reached home position, disabling.");
+      return;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  RCLCPP_WARN(
+    rclcpp::get_logger("OpenArm_v10HW"),
+    "Did not reach home within %dms, disabling torque anyway.", shutdown_home_timeout_ms_);
 #endif
 }
 
@@ -308,6 +356,8 @@ hardware_interface::CallbackReturn OpenArm_v10HW::on_deactivate(
 {
 #if defined(OPENARM_HARDWARE_HAS_OPENARMCAN)
   if (impl_ && impl_->openarm) {
+    drive_home_blocking();
+
     for (int i = 0; i < shutdown_disable_retries_; ++i) {
       impl_->openarm->disable_all();
       std::this_thread::sleep_for(std::chrono::milliseconds(shutdown_retry_delay_ms_));
@@ -372,14 +422,18 @@ hardware_interface::return_type OpenArm_v10HW::write(
         {{gripper_kp_, gripper_kd_, gripper_motor_cmd, 0.0, 0.0}});
     }
   } else if (control_mode_ == "position") {
+    // dq intentionally NOT sourced from vel_commands_ - the active
+    // joint_trajectory_controller config only claims the position command
+    // interface, so vel_commands_ is always 0 (see position_mode_velocity_'s
+    // doc comment in the header).
     std::vector<openarm::damiao_motor::PosVelParam> arm_params;
     arm_params.reserve(ARM_DOF);
     for (std::size_t i = 0; i < ARM_DOF; ++i) {
-      arm_params.push_back({pos_commands_[i], vel_commands_[i]});
+      arm_params.push_back({pos_commands_[i], position_mode_velocity_});
     }
     impl_->openarm->get_arm().posvel_control_all(arm_params);
     if (has_gripper) {
-      impl_->openarm->get_gripper().posvel_control_all({{gripper_motor_cmd, 0.0}});
+      impl_->openarm->get_gripper().posvel_control_all({{gripper_motor_cmd, position_mode_velocity_}});
     }
   } else {  // "velocity"
     std::vector<openarm::damiao_motor::VelParam> arm_params;

@@ -32,7 +32,16 @@ joint3:
 
 joint4:
   limit:
-    lower: 0.0
+    # Small negative margin (not the real 0.0 mechanical stop) - MoveIt
+    # Jazzy's CheckStartStateBounds adapter has zero tolerance (the
+    # start_state_max_bounds_error param used in older MoveIt versions was
+    # removed - confirmed via `strings` on
+    # libmoveit_default_planning_request_adapter_plugins.so, no longer
+    # referenced), so real encoder noise at the exact lower limit (e.g.
+    # -0.0002 rad) gets rejected as "start state out of bounds" even though
+    # the joint is physically fine. This margin absorbs that noise; it does
+    # not change the motor's actual/firmware safety limit.
+    lower: -0.02
     upper: 2.443461
     effort: 87.0
     velocity: 2.175

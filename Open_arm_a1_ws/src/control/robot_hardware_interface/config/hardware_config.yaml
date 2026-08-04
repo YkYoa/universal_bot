@@ -29,16 +29,14 @@ head_board:
   port: 9877       # SERVO/STATUS/RELEASE/STEPPER (head_motor_driver_node)
   led_port: 9878   # RGB/MODE/BRIGHTNESS (head_led_node)
 
-# Damiao motor control mode for the arms - one of "mit" (default, position+
-# velocity+torque with local gains), "position" (POS_VEL mode), "velocity"
-# (VEL mode). See https://wiki.seeedstudio.com/damiao_series/#4-control-settings.
-# Set once per motor at init, not runtime-switchable - changing this requires
-# relaunching.
-control_mode: mit
+control_mode: position
+position_mode_velocity: 1.0
 
-# Retry behavior for OpenArm_v10HW::on_deactivate()'s disable_all() -
-# read/confirm loop that runs on every controller shutdown (Ctrl+C included).
-# Defaults below match what was previously hardcoded in hardware_interface.cpp.
 shutdown:
   disable_retries: 3
   retry_delay_ms: 100
+  # OpenArm_v10HW::on_deactivate() drives the arm back to zero (mit/position
+  # modes only) before cutting torque - how long it waits and how close is
+  # "close enough" before giving up and disabling anyway.
+  home_timeout_ms: 3000
+  home_tolerance: 0.05

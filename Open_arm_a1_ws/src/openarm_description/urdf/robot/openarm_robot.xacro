@@ -40,8 +40,11 @@
             right_arm_prefix:='right_'
             can_fd:='true'
             control_mode:='mit'
+            position_mode_velocity:='1.0'
             shutdown_disable_retries:='3'
             shutdown_retry_delay_ms:='100'
+            shutdown_home_timeout_ms:='3000'
+            shutdown_home_tolerance:='0.05'
             gazebo:=false
             mobile_base:=false
             mobile_base_xyz:='0 0 0'
@@ -157,7 +160,9 @@
             body_type="${body_type}"
             no_prefix="${no_prefix}"
             shutdown_disable_retries="${shutdown_disable_retries}"
-            shutdown_retry_delay_ms="${shutdown_retry_delay_ms}"/>
+            shutdown_retry_delay_ms="${shutdown_retry_delay_ms}"
+            shutdown_home_timeout_ms="${shutdown_home_timeout_ms}"
+            shutdown_home_tolerance="${shutdown_home_tolerance}"/>
         </xacro:if>
 
         <xacro:if value="$(eval hand and ee_type == 'openarm_hand')">

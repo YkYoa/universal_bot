@@ -138,6 +138,9 @@ def launch_setup(context, *args, **kwargs):
 
     shutdown_disable_retries = str(hw_cfg["shutdown"]["disable_retries"])
     shutdown_retry_delay_ms = str(hw_cfg["shutdown"]["retry_delay_ms"])
+    shutdown_home_timeout_ms = str(hw_cfg["shutdown"].get("home_timeout_ms", 3000))
+    shutdown_home_tolerance = str(hw_cfg["shutdown"].get("home_tolerance", 0.05))
+    position_mode_velocity = str(hw_cfg.get("position_mode_velocity", 1.0))
 
     use_fake_hardware = "false" if arms_real else "true"
     head_use_fake_hardware = "false" if head_real else "true"
@@ -165,7 +168,13 @@ def launch_setup(context, *args, **kwargs):
             " ",
             "shutdown_retry_delay_ms:=", shutdown_retry_delay_ms,
             " ",
+            "shutdown_home_timeout_ms:=", shutdown_home_timeout_ms,
+            " ",
+            "shutdown_home_tolerance:=", shutdown_home_tolerance,
+            " ",
             "control_mode:=", control_mode,
+            " ",
+            "position_mode_velocity:=", position_mode_velocity,
             " ",
             "gazebo:=false",
             " ",

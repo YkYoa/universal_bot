@@ -66,6 +66,14 @@ private:
   bool parse_config();
   void generate_joint_names();
   void return_to_zero();
+  // Sends the zero-position command repeatedly (a single send_all() only
+  // sets a target the motor's own firmware then chases - on_deactivate()
+  // was cutting torque via disable_all() milliseconds later, before the
+  // arm had any real time to get there) and waits, polling real position,
+  // until all joints are within shutdown_home_tolerance_ or
+  // shutdown_home_timeout_ms_ elapses. No-op in "velocity" mode (no
+  // position reference to home to - see return_to_zero()).
+  void drive_home_blocking();
 
   double joint_to_motor_radians(double joint_value) const;
   double motor_radians_to_joint(double motor_radians) const;
@@ -80,8 +88,20 @@ private:
   // forward, no torque/gain control), "velocity" (damiao VEL mode - dq
   // only). See https://wiki.seeedstudio.com/damiao_series/#4-control-settings.
   std::string control_mode_{"mit"};
+  // Cruise speed (rad/s) used as POS_VEL mode's dq when control_mode_ ==
+  // "position". The active joint_trajectory_controller config
+  // (bimanual_controllers.yaml) only claims the position command interface,
+  // so vel_commands_ is never written by anything - using it directly as dq
+  // would command 0 velocity forever (motor accepts the position target but
+  // never actually moves toward it). This fixed value stands in for that
+  // missing live velocity command.
+  double position_mode_velocity_{1.0};
   int shutdown_disable_retries_{3};
   int shutdown_retry_delay_ms_{100};
+  // How long (max) and how close drive_home_blocking() waits/requires
+  // before giving up and disabling torque anyway on shutdown.
+  int shutdown_home_timeout_ms_{3000};
+  double shutdown_home_tolerance_{0.05};
 
   std::array<double, ARM_DOF> kp_{70.0, 70.0, 70.0, 60.0, 10.0, 10.0, 10.0};
   std::array<double, ARM_DOF> kd_{2.75, 2.5, 2.0, 2.0, 0.7, 0.6, 0.5};
