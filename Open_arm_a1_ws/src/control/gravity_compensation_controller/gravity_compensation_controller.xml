@@ -1,0 +1,13 @@
+<library path="gravity_compensation_controller">
+  <class name="gravity_compensation_controller/GravityCompensationController"
+         type="gravity_compensation_controller::GravityCompensationController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      Joint-space (KDL-based) gravity compensation for free-drive/hand-guiding.
+      Static gravity torque only, no Coriolis/inertia compensation. Writes 0
+      torque until enabled via the ~/enable (std_srvs/SetBool) service, then
+      ramps to full torque over a configurable duration. Only meaningful when
+      the hardware plugin's control_mode is "torque" (kp=kd=0).
+    </description>
+  </class>
+</library>

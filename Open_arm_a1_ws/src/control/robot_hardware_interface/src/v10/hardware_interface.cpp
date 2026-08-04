@@ -76,10 +76,12 @@ bool OpenArm_v10HW::parse_config()
   }
   if (auto it = params.find("control_mode"); it != params.end()) {
     control_mode_ = it->second;
-    if (control_mode_ != "mit" && control_mode_ != "position" && control_mode_ != "velocity") {
+    if (control_mode_ != "mit" && control_mode_ != "position" && control_mode_ != "velocity" &&
+        control_mode_ != "torque") {
       RCLCPP_ERROR(
         rclcpp::get_logger("OpenArm_v10HW"),
-        "control_mode must be 'mit', 'position', or 'velocity', got '%s'", control_mode_.c_str());
+        "control_mode must be 'mit', 'position', 'velocity', or 'torque', got '%s'",
+        control_mode_.c_str());
       return false;
     }
   }
@@ -279,8 +281,9 @@ void OpenArm_v10HW::return_to_zero()
       impl_->openarm->get_gripper().posvel_control_all({{GRIPPER_MOTOR_CLOSED, position_mode_velocity_}});
     }
   }
-  // "velocity" mode has no position reference to return to - skip (write()
-  // will command 0 velocity on the first cycle after activation regardless).
+  // "velocity"/"torque" modes have no position reference to return to -
+  // skip (write() will command 0 velocity, or whatever tau_commands_ is,
+  // on the first cycle after activation regardless).
 
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
   impl_->openarm->recv_all();
@@ -290,7 +293,7 @@ void OpenArm_v10HW::return_to_zero()
 void OpenArm_v10HW::drive_home_blocking()
 {
 #if defined(OPENARM_HARDWARE_HAS_OPENARMCAN)
-  if (!impl_ || !impl_->openarm || control_mode_ == "velocity") {
+  if (!impl_ || !impl_->openarm || control_mode_ == "velocity" || control_mode_ == "torque") {
     return;
   }
 
@@ -435,7 +438,7 @@ hardware_interface::return_type OpenArm_v10HW::write(
     if (has_gripper) {
       impl_->openarm->get_gripper().posvel_control_all({{gripper_motor_cmd, position_mode_velocity_}});
     }
-  } else {  // "velocity"
+  } else if (control_mode_ == "velocity") {
     std::vector<openarm::damiao_motor::VelParam> arm_params;
     arm_params.reserve(ARM_DOF);
     for (std::size_t i = 0; i < ARM_DOF; ++i) {
@@ -444,6 +447,19 @@ hardware_interface::return_type OpenArm_v10HW::write(
     impl_->openarm->get_arm().vel_control_all(arm_params);
     if (has_gripper) {
       impl_->openarm->get_gripper().vel_control_all({{vel_commands_[ARM_DOF]}});
+    }
+  } else {  // "torque" - kp=kd=0 always, tau_commands_ as pure feedforward.
+    // Only meaningful when something is actually writing tau_commands_ (e.g.
+    // gravity_compensation_controller) - no controller in
+    // bimanual_controllers.yaml claims the effort interface by default.
+    std::vector<openarm::damiao_motor::MITParam> arm_params;
+    arm_params.reserve(ARM_DOF);
+    for (std::size_t i = 0; i < ARM_DOF; ++i) {
+      arm_params.push_back({0.0, 0.0, 0.0, 0.0, tau_commands_[i]});
+    }
+    impl_->openarm->get_arm().mit_control_all(arm_params);
+    if (has_gripper) {
+      impl_->openarm->get_gripper().mit_control_all({{0.0, 0.0, 0.0, 0.0, tau_commands_[ARM_DOF]}});
     }
   }
 

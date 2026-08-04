@@ -11,6 +11,18 @@ controller_manager:
     right_arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
+    # Free-drive/hand-guiding (see gravity_compensation_controller package).
+    # Only meaningful when control_mode: torque is set in hardware_config.yaml
+    # - not auto-spawned by bringup.launch.py, load/activate explicitly
+    # (`ros2 control load_controller` / `switch_controllers`) when wanted.
+    # Writes 0 torque until you call its ~/enable service - see the plan's
+    # staged real-hardware validation procedure before enabling.
+    left_gravity_comp_controller:
+      type: gravity_compensation_controller/GravityCompensationController
+
+    right_gravity_comp_controller:
+      type: gravity_compensation_controller/GravityCompensationController
+
     left_gripper_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
@@ -73,6 +85,34 @@ right_arm_controller:
     state_interfaces:
       - position
       - velocity
+
+left_gravity_comp_controller:
+  ros__parameters:
+    joints:
+      - openarm_left_joint1
+      - openarm_left_joint2
+      - openarm_left_joint3
+      - openarm_left_joint4
+      - openarm_left_joint5
+      - openarm_left_joint6
+      - openarm_left_joint7
+    base_link: openarm_body_link0
+    tip_link: openarm_left_link7
+    ramp_duration_sec: 2.0
+
+right_gravity_comp_controller:
+  ros__parameters:
+    joints:
+      - openarm_right_joint1
+      - openarm_right_joint2
+      - openarm_right_joint3
+      - openarm_right_joint4
+      - openarm_right_joint5
+      - openarm_right_joint6
+      - openarm_right_joint7
+    base_link: openarm_body_link0
+    tip_link: openarm_right_link7
+    ramp_duration_sec: 2.0
 
 left_gripper_controller:
   ros__parameters:

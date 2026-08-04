@@ -35,8 +35,5 @@ position_mode_velocity: 1.0
 shutdown:
   disable_retries: 3
   retry_delay_ms: 100
-  # OpenArm_v10HW::on_deactivate() drives the arm back to zero (mit/position
-  # modes only) before cutting torque - how long it waits and how close is
-  # "close enough" before giving up and disabling anyway.
   home_timeout_ms: 3000
   home_tolerance: 0.05
