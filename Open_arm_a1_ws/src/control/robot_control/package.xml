@@ -12,6 +12,9 @@
   <depend>sensor_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>geometry_msgs</depend>
+  <depend>openarm_messages</depend>
+  <depend>eigen</depend>
+  <depend>urdf</depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>control_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>

@@ -12,6 +12,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetColor.srv"
   "srv/SetMode.srv"
   "srv/SetBrightness.srv"
+  "srv/DriveCommand.srv"
   DEPENDENCIES geometry_msgs moveit_msgs
 )
 

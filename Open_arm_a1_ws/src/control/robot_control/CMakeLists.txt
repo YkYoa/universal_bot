@@ -10,6 +10,14 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(openarm_messages REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(urdf REQUIRED)
+
+# Optional: OpenArmCAN (openarm_can library), same pattern as
+# robot_hardware_interface - keeps the workspace buildable on machines
+# without the hardware stack installed (drive_control builds in stub mode).
+find_package(OpenArmCAN QUIET)
 
 add_executable(get_robot_state
   src/get_robot_state.cpp
@@ -27,7 +35,55 @@ ament_target_dependencies(get_robot_state
   geometry_msgs
 )
 
-install(TARGETS get_robot_state
+add_executable(control_server
+  src/control_server.cpp
+  src/drive_control.cpp
+)
+target_compile_features(control_server PRIVATE cxx_std_17)
+target_include_directories(control_server PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(control_server
+  rclcpp
+  openarm_messages
+)
+if(OpenArmCAN_FOUND)
+  target_link_libraries(control_server OpenArmCAN::openarm_can)
+  target_compile_definitions(control_server PRIVATE ROBOT_CONTROL_HAS_OPENARMCAN=1)
+else()
+  message(WARNING "OpenArmCAN not found. control_server/drive_control will build in stub mode (no real CAN). Install libopenarm-can-dev to enable real hardware.")
+endif()
+
+add_executable(control_client
+  src/control_client.cpp
+)
+target_compile_features(control_client PRIVATE cxx_std_17)
+target_include_directories(control_client PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(control_client
+  rclcpp
+  openarm_messages
+)
+
+add_executable(hand_kinematic
+  src/hand_kinematic.cpp
+)
+target_compile_features(hand_kinematic PRIVATE cxx_std_17)
+target_include_directories(hand_kinematic PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${EIGEN3_INCLUDE_DIR}
+)
+ament_target_dependencies(hand_kinematic
+  rclcpp
+  sensor_msgs
+  urdf
+)
+
+install(TARGETS get_robot_state control_server control_client hand_kinematic
   DESTINATION lib/${PROJECT_NAME}
 )
 
