@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>waypoint_recorder</name>
+  <version>0.0.0</version>
+  <description>
+    Core library for recording the arm's current /joint_states into a named
+    "*Angle" waypoint in a sequence.yaml (single-shot or interactive loop),
+    plus a targeted-text-insertion yaml writer that preserves comments. Used
+    by builds/openarm_demo's record_waypoint CLI and any future project that
+    wants to record waypoints (CLI, BT node, GUI, ...) without reimplementing
+    the capture/write logic.
+  </description>
+  <maintainer email="hans@todo.todo">hans</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

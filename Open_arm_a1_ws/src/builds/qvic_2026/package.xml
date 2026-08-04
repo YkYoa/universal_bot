@@ -1,23 +1,18 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>openarm_demo</name>
+  <name>qvic_2026</name>
   <version>0.0.0</version>
-  <description>Test package for bimanual robot realtime preemption using Behavior Trees</description>
+  <description>QVIC 2026 (Qualcomm) project - hand-guided waypoint sequences replayed via bt_executor.</description>
   <maintainer email="hans@todo.todo">hans</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>rclcpp</depend>
-  <depend>geometry_msgs</depend>
-  <depend>std_msgs</depend>
-  <depend>std_srvs</depend>
-  <depend>bt_executor</depend>
-  <depend>computation</depend>
-  <depend>common</depend>
-  <depend>openarm_messages</depend>
-  <depend>yaml-cpp</depend>
+  <exec_depend>bt_executor</exec_depend>
+  <exec_depend>openarm_demo</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -9,7 +9,6 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(computation REQUIRED)
@@ -19,13 +18,6 @@ find_package(openarm_messages REQUIRED)
 add_executable(sequence_to_bt src/sequence_to_bt.cpp)
 ament_target_dependencies(sequence_to_bt
   computation
-)
-
-add_executable(record_waypoint src/record_waypoint.cpp)
-target_compile_features(record_waypoint PRIVATE cxx_std_17)
-ament_target_dependencies(record_waypoint
-  rclcpp
-  sensor_msgs
 )
 
 add_executable(openarm_demo_node src/openarm_demo_node.cpp)
@@ -47,7 +39,6 @@ ament_target_dependencies(openarm_demo_node
 install(TARGETS
   sequence_to_bt
   openarm_demo_node
-  record_waypoint
   DESTINATION lib/${PROJECT_NAME}
 )
 

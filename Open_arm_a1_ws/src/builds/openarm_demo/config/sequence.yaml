@@ -19,7 +19,7 @@ speed:
 
 homePoses:
   headHome: 0
-  laHomeAngle: 0, 0, 0, 0, 0, 0, 0
+  laHomeAngle: 0.00782025, -0.018883, 0.0444419, 0.110437, -0.0307088, -0.0593194, 0.058175
   raHomeAngle: 0, 0, 0, 0, 0, 0, 0
 
 graspPoses: 

@@ -1,0 +1,29 @@
+# key-rule: (same convention as builds/openarm_demo/config/sequence.yaml)
+
+#   Planning group indicator:
+#     If the key start with:
+#       la/ra: arm goal
+#       lh/rh: hand goal
+#       head: head goal
+
+#   Pose or Joint-angle-vector:
+#     Key name contain Angle or Joint
+#       If Angle > joint-angle-vector (recorded via `record_waypoint`, replayed via PlanToJointTarget)
+#       If Joint > pose data: 3 position and 4 quarternion follow
+#       Can auto detect radian or degree
+
+# speed scale factor
+
+speed:
+  home: 1, 1, 1, 1, 1, 1, 1
+
+# Record waypoints here with, e.g.:
+#   ros2 run openarm_demo record_waypoint --arm la --section homePoses --name Home \
+#     --file $(ros2 pkg prefix qvic_2026)/share/qvic_2026/config/sequence.yaml
+# (or point --file at this file directly under src/ if editing the source copy)
+
+homePoses:
+  laHomeAngle: 0, 0, 0, 0, 0, 0, 0
+  raHomeAngle: 0, 0, 0, 0, 0, 0, 0
+
+
