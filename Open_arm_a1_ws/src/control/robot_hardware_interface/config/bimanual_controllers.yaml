@@ -97,7 +97,15 @@ left_gravity_comp_controller:
       - openarm_left_joint6
       - openarm_left_joint7
     base_link: openarm_body_link0
-    tip_link: openarm_left_link7
+    # hand_tcp (not link7) so the gripper's mass (0.35kg "hand" link, fixed-
+    # jointed straight onto link7 - adds zero DOF to the KDL chain) is
+    # included in the gravity model. Only valid when launched with
+    # ee_type:=openarm_hand hand:=true (what this workspace normally runs) -
+    # revert to openarm_left_link7 if launched without the gripper attached,
+    # or on_configure() will fail to find this link in the URDF. Left/right
+    # fingers (~0.036kg each) are NOT included - they're a side branch off
+    # "hand", not on the direct base->tip path a KDL chain can follow.
+    tip_link: openarm_left_hand_tcp
     ramp_duration_sec: 2.0
 
 right_gravity_comp_controller:
@@ -111,7 +119,8 @@ right_gravity_comp_controller:
       - openarm_right_joint6
       - openarm_right_joint7
     base_link: openarm_body_link0
-    tip_link: openarm_right_link7
+    # See left_gravity_comp_controller's tip_link comment above.
+    tip_link: openarm_right_hand_tcp
     ramp_duration_sec: 2.0
 
 left_gripper_controller:
