@@ -75,6 +75,11 @@ private:
   std::string ee_type_{"parallel_link"};
   bool hand_{false};
   bool can_fd_{true};
+  // One of "mit" (default, unchanged behavior - position+velocity+torque
+  // with local gains), "position" (damiao POS_VEL mode - q + dq feed-
+  // forward, no torque/gain control), "velocity" (damiao VEL mode - dq
+  // only). See https://wiki.seeedstudio.com/damiao_series/#4-control-settings.
+  std::string control_mode_{"mit"};
   int shutdown_disable_retries_{3};
   int shutdown_retry_delay_ms_{100};
 

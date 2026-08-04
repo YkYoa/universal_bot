@@ -1,5 +1,6 @@
 import os
 import re
+import subprocess
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -46,6 +47,36 @@ def _interface_has_carrier(interface_name):
         return False
 
 
+def _ensure_can_up(interface_name, bitrate, dbitrate):
+    """Bring a CAN-FD interface up (sudo ip link ... type can ... fd on) if
+    it isn't already - so a plain `ros2 launch` works right after plugging
+    the adapter in, without a separate manual
+    openarm-can-configure-socketcan-4-arms step first.
+
+    Best-effort: any failure here (no sudo, interface missing, adapter not
+    powered) is just printed - _interface_has_carrier()'s existing check
+    downstream still catches it and correctly falls back to fake, so a
+    failure here can't make ros2_control think hardware is present when
+    it isn't."""
+    if _interface_has_carrier(interface_name):
+        return  # already up and live - don't reset an interface mid-use
+
+    print(f"[bringup] {interface_name} is down, bringing it up (bitrate={bitrate}, dbitrate={dbitrate}, fd)...")
+    try:
+        subprocess.run(["sudo", "ip", "link", "set", interface_name, "down"], check=False)
+        result = subprocess.run(
+            ["sudo", "ip", "link", "set", interface_name, "type", "can",
+             "bitrate", str(bitrate), "dbitrate", str(dbitrate), "fd", "on"],
+            check=False)
+        if result.returncode != 0:
+            print(f"[bringup] WARNING: failed to configure {interface_name} (not found / adapter unplugged?)")
+            return
+        subprocess.run(["sudo", "ip", "link", "set", interface_name, "up"], check=False)
+    except FileNotFoundError:
+        print("[bringup] WARNING: 'sudo'/'ip' not found - can't auto-configure CAN, run "
+              "openarm-can-configure-socketcan-4-arms manually")
+
+
 def launch_setup(context, *args, **kwargs):
     hw_config_pkg = get_package_share_directory("robot_hardware_interface")
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
@@ -77,12 +108,20 @@ def launch_setup(context, *args, **kwargs):
           f"(mode={head_mode}, interface={hw_cfg['interfaces']['head_ethernet']})")
 
     # arms:=auto (default) - same pattern as head: real only if
-    # hardware_config.yaml enables it AND both CAN interfaces are up (brought
-    # up via openarm-can-configure-socketcan beforehand - this launch does not
-    # configure CAN itself). arms:=true/false forces the decision.
+    # hardware_config.yaml enables it AND both CAN interfaces are up. Unless
+    # arms:=false, this launch brings the CAN interfaces up itself first
+    # (see _ensure_can_up) - no separate manual
+    # openarm-can-configure-socketcan-4-arms step needed. arms:=true/false
+    # forces the real/fake decision either way.
     left_can_interface = hw_cfg["interfaces"]["left_can"]
     right_can_interface = hw_cfg["interfaces"]["right_can"]
+    can_cfg = hw_cfg.get("can", {})
+    can_bitrate = can_cfg.get("bitrate", 1000000)
+    can_dbitrate = can_cfg.get("dbitrate", 5000000)
     arms_mode = LaunchConfiguration("arms").perform(context)
+    if arms_mode != "false":
+        _ensure_can_up(left_can_interface, can_bitrate, can_dbitrate)
+        _ensure_can_up(right_can_interface, can_bitrate, can_dbitrate)
     if arms_mode == "auto":
         arms_real = (
             hw_cfg["hardware_enable"]["arms"] == 1
@@ -92,8 +131,10 @@ def launch_setup(context, *args, **kwargs):
     else:
         arms_real = arms_mode == "true"
 
+    control_mode = hw_cfg.get("control_mode", "mit")
     print(f"[bringup] arms hardware: {'REAL' if arms_real else 'FAKE'} "
-          f"(mode={arms_mode}, left={left_can_interface}, right={right_can_interface})")
+          f"(mode={arms_mode}, left={left_can_interface}, right={right_can_interface}, "
+          f"control_mode={control_mode})")
 
     shutdown_disable_retries = str(hw_cfg["shutdown"]["disable_retries"])
     shutdown_retry_delay_ms = str(hw_cfg["shutdown"]["retry_delay_ms"])
@@ -123,6 +164,8 @@ def launch_setup(context, *args, **kwargs):
             "shutdown_disable_retries:=", shutdown_disable_retries,
             " ",
             "shutdown_retry_delay_ms:=", shutdown_retry_delay_ms,
+            " ",
+            "control_mode:=", control_mode,
             " ",
             "gazebo:=false",
             " ",

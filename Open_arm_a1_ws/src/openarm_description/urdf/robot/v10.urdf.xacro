@@ -51,6 +51,7 @@
   <xacro:arg name="left_arm_base_rpy" default="1.5708 3.14159 3.14159" />
 
   <xacro:arg name="can_fd" default="true" />
+  <xacro:arg name="control_mode" default="mit" />
   <xacro:arg name="shutdown_disable_retries" default="3" />
   <xacro:arg name="shutdown_retry_delay_ms" default="100" />
   <xacro:arg name="gazebo" default="false" />
@@ -98,6 +99,7 @@
   right_arm_base_rpy="$(arg right_arm_base_rpy)"
   left_arm_base_rpy="$(arg left_arm_base_rpy)"
   can_fd="$(arg can_fd)"
+  control_mode="$(arg control_mode)"
   shutdown_disable_retries="$(arg shutdown_disable_retries)"
   shutdown_retry_delay_ms="$(arg shutdown_retry_delay_ms)"
   gazebo="$(arg gazebo)"

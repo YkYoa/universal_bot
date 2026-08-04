@@ -39,6 +39,7 @@
             left_arm_prefix:='left_'
             right_arm_prefix:='right_'
             can_fd:='true'
+            control_mode:='mit'
             shutdown_disable_retries:='3'
             shutdown_retry_delay_ms:='100'
             gazebo:=false

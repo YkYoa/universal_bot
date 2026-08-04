@@ -16,6 +16,7 @@
              right_arm_prefix:=^|right_
              gazebo:=^|false
              can_fd:=^|true
+             control_mode:=^|mit
              shutdown_disable_retries:=^|3
              shutdown_retry_delay_ms:=^|100
              body_type:=^|v1
@@ -65,6 +66,7 @@
                 <param name="arm_prefix">${left_arm_prefix}</param>
                 <param name="hand">${hand}</param>
                 <param name="can_fd">${can_fd}</param>
+                <param name="control_mode">${control_mode}</param>
                 <param name="shutdown_disable_retries">${shutdown_disable_retries}</param>
                 <param name="shutdown_retry_delay_ms">${shutdown_retry_delay_ms}</param>
                 <param name="kp1">${control_gains['joint1']['kp']}</param>
@@ -157,6 +159,7 @@
                 <param name="arm_prefix">${right_arm_prefix}</param>
                 <param name="hand">${hand}</param>
                 <param name="can_fd">${can_fd}</param>
+                <param name="control_mode">${control_mode}</param>
                 <param name="shutdown_disable_retries">${shutdown_disable_retries}</param>
                 <param name="shutdown_retry_delay_ms">${shutdown_retry_delay_ms}</param>
                 <param name="kp1">${control_gains['joint1']['kp']}</param>

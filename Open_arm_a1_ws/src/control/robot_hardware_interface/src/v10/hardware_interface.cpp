@@ -30,6 +30,21 @@ struct OpenArm_v10HW::Impl
 #endif
 };
 
+#if defined(OPENARM_HARDWARE_HAS_OPENARMCAN)
+namespace {
+openarm::damiao_motor::ControlMode damiaoControlModeFor(const std::string& control_mode)
+{
+  if (control_mode == "position") {
+    return openarm::damiao_motor::ControlMode::POS_VEL;
+  }
+  if (control_mode == "velocity") {
+    return openarm::damiao_motor::ControlMode::VEL;
+  }
+  return openarm::damiao_motor::ControlMode::MIT;
+}
+}  // namespace
+#endif
+
 OpenArm_v10HW::OpenArm_v10HW()
 : impl_(std::make_unique<Impl>())
 {
@@ -58,6 +73,15 @@ bool OpenArm_v10HW::parse_config()
     std::transform(v.begin(), v.end(), v.begin(), ::tolower);
     can_fd_ = (v == "true" || v == "1");
   }
+  if (auto it = params.find("control_mode"); it != params.end()) {
+    control_mode_ = it->second;
+    if (control_mode_ != "mit" && control_mode_ != "position" && control_mode_ != "velocity") {
+      RCLCPP_ERROR(
+        rclcpp::get_logger("OpenArm_v10HW"),
+        "control_mode must be 'mit', 'position', or 'velocity', got '%s'", control_mode_.c_str());
+      return false;
+    }
+  }
   if (auto it = params.find("shutdown_disable_retries"); it != params.end()) {
     shutdown_disable_retries_ = std::stoi(it->second);
   }
@@ -83,13 +107,14 @@ bool OpenArm_v10HW::parse_config()
 
   RCLCPP_INFO(
     rclcpp::get_logger("OpenArm_v10HW"),
-    "Config: can=%s prefix=%s hand=%s can_fd=%s ee_type=%s "
+    "Config: can=%s prefix=%s hand=%s can_fd=%s ee_type=%s control_mode=%s "
     "shutdown_disable_retries=%d shutdown_retry_delay_ms=%d",
     can_interface_.c_str(),
     arm_prefix_.c_str(),
     hand_ ? "true" : "false",
     can_fd_ ? "true" : "false",
     ee_type_.c_str(),
+    control_mode_.c_str(),
     shutdown_disable_retries_,
     shutdown_retry_delay_ms_);
 
@@ -161,11 +186,16 @@ hardware_interface::CallbackReturn OpenArm_v10HW::on_init(
   static const std::vector<uint32_t> send_ids = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
   static const std::vector<uint32_t> recv_ids = {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17};
 
-  impl_->openarm->init_arm_motors(motor_types, send_ids, recv_ids);
+  // Set per motor at init time (matches openarm_can's own examples, e.g.
+  // python/examples/test_posvel.py) - not a runtime-switchable register.
+  const openarm::damiao_motor::ControlMode dm_mode = damiaoControlModeFor(control_mode_);
+  const std::vector<openarm::damiao_motor::ControlMode> control_modes(motor_types.size(), dm_mode);
+
+  impl_->openarm->init_arm_motors(motor_types, send_ids, recv_ids, control_modes);
 
   if (hand_) {
     impl_->openarm->init_gripper_motor(
-      openarm::damiao_motor::MotorType::DM4310, 0x08, 0x18);
+      openarm::damiao_motor::MotorType::DM4310, 0x08, 0x18, dm_mode);
   }
 #endif
 
@@ -222,16 +252,25 @@ void OpenArm_v10HW::return_to_zero()
 
   impl_->openarm->refresh_all();
 
-  std::vector<openarm::damiao_motor::MITParam> arm_params;
-  for (std::size_t i = 0; i < ARM_DOF; ++i) {
-    arm_params.push_back({kp_[i], kd_[i], 0.0, 0.0, 0.0});
+  if (control_mode_ == "mit") {
+    std::vector<openarm::damiao_motor::MITParam> arm_params;
+    for (std::size_t i = 0; i < ARM_DOF; ++i) {
+      arm_params.push_back({kp_[i], kd_[i], 0.0, 0.0, 0.0});
+    }
+    impl_->openarm->get_arm().mit_control_all(arm_params);
+    if (hand_) {
+      impl_->openarm->get_gripper().mit_control_all(
+        {{gripper_kp_, gripper_kd_, GRIPPER_MOTOR_CLOSED, 0.0, 0.0}});
+    }
+  } else if (control_mode_ == "position") {
+    std::vector<openarm::damiao_motor::PosVelParam> arm_params(ARM_DOF, {0.0, 0.0});
+    impl_->openarm->get_arm().posvel_control_all(arm_params);
+    if (hand_) {
+      impl_->openarm->get_gripper().posvel_control_all({{GRIPPER_MOTOR_CLOSED, 0.0}});
+    }
   }
-  impl_->openarm->get_arm().mit_control_all(arm_params);
-
-  if (hand_) {
-    impl_->openarm->get_gripper().mit_control_all(
-      {{gripper_kp_, gripper_kd_, GRIPPER_MOTOR_CLOSED, 0.0, 0.0}});
-  }
+  // "velocity" mode has no position reference to return to - skip (write()
+  // will command 0 velocity on the first cycle after activation regardless).
 
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
   impl_->openarm->recv_all();
@@ -318,17 +357,40 @@ hardware_interface::return_type OpenArm_v10HW::write(
     return hardware_interface::return_type::ERROR;
   }
 
-  std::vector<openarm::damiao_motor::MITParam> arm_params;
-  arm_params.reserve(ARM_DOF);
-  for (std::size_t i = 0; i < ARM_DOF; ++i) {
-    arm_params.push_back({kp_[i], kd_[i], pos_commands_[i], vel_commands_[i], tau_commands_[i]});
-  }
-  impl_->openarm->get_arm().mit_control_all(arm_params);
+  const bool has_gripper = hand_ && joint_names_.size() > ARM_DOF;
+  const double gripper_motor_cmd = has_gripper ? joint_to_motor_radians(pos_commands_[ARM_DOF]) : 0.0;
 
-  if (hand_ && joint_names_.size() > ARM_DOF) {
-    const double motor_cmd = joint_to_motor_radians(pos_commands_[ARM_DOF]);
-    impl_->openarm->get_gripper().mit_control_all(
-      {{gripper_kp_, gripper_kd_, motor_cmd, 0.0, 0.0}});
+  if (control_mode_ == "mit") {
+    std::vector<openarm::damiao_motor::MITParam> arm_params;
+    arm_params.reserve(ARM_DOF);
+    for (std::size_t i = 0; i < ARM_DOF; ++i) {
+      arm_params.push_back({kp_[i], kd_[i], pos_commands_[i], vel_commands_[i], tau_commands_[i]});
+    }
+    impl_->openarm->get_arm().mit_control_all(arm_params);
+    if (has_gripper) {
+      impl_->openarm->get_gripper().mit_control_all(
+        {{gripper_kp_, gripper_kd_, gripper_motor_cmd, 0.0, 0.0}});
+    }
+  } else if (control_mode_ == "position") {
+    std::vector<openarm::damiao_motor::PosVelParam> arm_params;
+    arm_params.reserve(ARM_DOF);
+    for (std::size_t i = 0; i < ARM_DOF; ++i) {
+      arm_params.push_back({pos_commands_[i], vel_commands_[i]});
+    }
+    impl_->openarm->get_arm().posvel_control_all(arm_params);
+    if (has_gripper) {
+      impl_->openarm->get_gripper().posvel_control_all({{gripper_motor_cmd, 0.0}});
+    }
+  } else {  // "velocity"
+    std::vector<openarm::damiao_motor::VelParam> arm_params;
+    arm_params.reserve(ARM_DOF);
+    for (std::size_t i = 0; i < ARM_DOF; ++i) {
+      arm_params.push_back({vel_commands_[i]});
+    }
+    impl_->openarm->get_arm().vel_control_all(arm_params);
+    if (has_gripper) {
+      impl_->openarm->get_gripper().vel_control_all({{vel_commands_[ARM_DOF]}});
+    }
   }
 
   impl_->openarm->recv_all(100);
