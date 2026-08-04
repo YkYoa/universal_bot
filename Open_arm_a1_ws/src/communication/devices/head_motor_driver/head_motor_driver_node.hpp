@@ -15,7 +15,7 @@
 //  head_motor_driver_node
 //
 //  Server side of HEAD_DRIVER_SPEC.md's UDS/NDJSON contract, consumed by
-//  openarm_hardware's HeadHW plugin. Internally owns one persistent TCP
+//  robot_hardware_interface's HeadHW plugin. Internally owns one persistent TCP
 //  connection to the STM32 neck board (raw text protocol, SERVO/STATUS
 //  commands - see robot-healthmate's NETWORK_PROTOCOL.md) and converts
 //  radians <-> PWM us / ADC counts on this side only; the STM32 never sees

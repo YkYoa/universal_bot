@@ -33,7 +33,7 @@ double nowSeconds()
     .count();
 }
 
-/* Minimal flat-JSON field extraction, mirroring openarm_hardware's
+/* Minimal flat-JSON field extraction, mirroring robot_hardware_interface's
  * HeadHW parser - both ends of this socket are written together for one
  * fixed schema, so a full JSON library is unnecessary overhead here. */
 

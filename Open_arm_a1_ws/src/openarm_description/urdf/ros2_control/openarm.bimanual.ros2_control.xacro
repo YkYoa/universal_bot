@@ -60,7 +60,7 @@
                 <plugin>gz_ros2_control/GazeboSimSystem</plugin>
               </xacro:if>
               <xacro:unless value="${gazebo}">
-                <plugin>openarm_hardware/OpenArm_v10HW</plugin>
+                <plugin>robot_hardware_interface/OpenArm_v10HW</plugin>
                 <param name="can_interface">${left_can_interface}</param>
                 <param name="arm_prefix">${left_arm_prefix}</param>
                 <param name="hand">${hand}</param>
@@ -152,7 +152,7 @@
                 <plugin>gz_ros2_control/GazeboSimSystem</plugin>
               </xacro:if>
               <xacro:unless value="${gazebo}">
-                <plugin>openarm_hardware/OpenArm_v10HW</plugin>
+                <plugin>robot_hardware_interface/OpenArm_v10HW</plugin>
                 <param name="can_interface">${right_can_interface}</param>
                 <param name="arm_prefix">${right_arm_prefix}</param>
                 <param name="hand">${hand}</param>
@@ -270,7 +270,7 @@
         <hardware>
           <!-- Decoupled from arms/hands' use_fake_hardware - driven by
                hardware_config.yaml + live ethernet detection in
-               openarm_hardware/launch/bringup.launch.py, since the head
+               robot_hardware_interface/launch/bringup.launch.py, since the head
                board can be real while arms/hands aren't physically present
                (and vice versa). -->
           <xacro:if value="${head_use_fake_hardware}">
@@ -283,7 +283,7 @@
               <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </xacro:if>
             <xacro:unless value="${gazebo}">
-              <plugin>openarm_hardware/HeadHW</plugin>
+              <plugin>robot_hardware_interface/HeadHW</plugin>
               <param name="socket_path">/tmp/openarm_head_motor.sock</param>
               <!-- EMA smoothing on raw position feedback (1.0=off, lower=more
                    smoothing/lag). Fixes joint_states/RViz showing jitter that
@@ -300,7 +300,7 @@
 
   <gazebo>
     <plugin name="gz_ros2_control::GazeboSimROS2ControlPlugin" filename="libgz_ros2_control-system.so">
-      <parameters>$(find arm_control)/config/bimanual_controllers.yaml</parameters>
+      <parameters>$(find robot_control)/config/bimanual_controllers.yaml</parameters>
     </plugin>
   </gazebo>
 
