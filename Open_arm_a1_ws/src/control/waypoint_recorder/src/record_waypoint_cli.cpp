@@ -24,9 +24,13 @@ void printUsage(const char* prog)
                " [--timeout <sec>]\n"
             << "  Records the arm's current /joint_states position as '<arm><WaypointName>Angle'\n"
             << "  under '<section>:' in the given sequence.yaml.\n\n"
-            << "  --loop: interactive mode instead of a single --name. Prompts for a waypoint\n"
-            << "    name repeatedly, recording one on each Enter; empty line quits.\n"
-            << "  --auto-convert: after --loop quits, run sequence_to_bt (requires --bt-out).\n"
+            << "  --loop: interactive mode instead of a single --name. Prompts for 'name' (recorded\n"
+            << "    under the current section) or 'section/name' (switches section first); empty\n"
+            << "    line quits. --section becomes optional and just seeds the starting section - if\n"
+            << "    omitted, the first prompt must use 'section/name' form.\n"
+            << "  --auto-convert: after --loop quits, run sequence_to_bt over the whole file\n"
+            << "    (requires --bt-out) - covers every section touched during the loop, not just\n"
+            << "    the starting one.\n"
             << "  --bt-out <path>: output XML path for --auto-convert.\n";
 }
 
@@ -74,13 +78,13 @@ int main(int argc, char** argv)
     }
   }
 
-  if (arm_prefix.empty() || section.empty() || file_path.empty()) {
-    std::cerr << "[ERROR] --arm, --section, and --file are all required\n";
+  if (arm_prefix.empty() || file_path.empty()) {
+    std::cerr << "[ERROR] --arm and --file are always required\n";
     printUsage(argv[0]);
     return 1;
   }
-  if (!loop_mode && name.empty()) {
-    std::cerr << "[ERROR] --name is required unless --loop is given\n";
+  if (!loop_mode && (section.empty() || name.empty())) {
+    std::cerr << "[ERROR] --section and --name are required unless --loop is given\n";
     printUsage(argv[0]);
     return 1;
   }
@@ -113,7 +117,7 @@ int main(int argc, char** argv)
       std::cerr << "[ERROR] " << error << "\n";
     }
   } else {
-    recorder.recordLoop(arm_prefix, section, file_path);
+    recorder.recordLoop(arm_prefix, section, file_path);  // section here is just the optional starting default
   }
 
   rclcpp::shutdown();
@@ -124,11 +128,15 @@ int main(int argc, char** argv)
 
   if (auto_convert) {
     const std::string& side = side_it->second;  // "left" | "right"
+    // Loop mode may have touched several sections (switched via
+    // "section/name" prompts) - convert the whole file (empty --section
+    // filter) rather than just the one --section this process started with.
+    const std::string section_filter = loop_mode ? "" : section;
     std::ostringstream cmd;
     cmd << "ros2 run openarm_demo sequence_to_bt"
         << " --yaml " << waypoint_recorder::shellQuote(file_path)
         << " --out " << waypoint_recorder::shellQuote(bt_out)
-        << " --section " << waypoint_recorder::shellQuote(section)
+        << " --section " << waypoint_recorder::shellQuote(section_filter)
         << " --arm " << waypoint_recorder::shellQuote(side + "_arm");
     std::cout << "[INFO] Auto-converting: " << cmd.str() << "\n";
     int rc = std::system(cmd.str().c_str());

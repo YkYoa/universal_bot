@@ -19,15 +19,24 @@ std::string toPascalCase(const std::string& s)
 {
   std::string result;
   bool capitalize_next = true;
+  char prev = '\0';
   for (char c : s) {
     if (c == '_' || std::isspace(static_cast<unsigned char>(c))) {
       capitalize_next = true;
-    } else if (capitalize_next) {
+      continue;
+    }
+    // An uppercase letter right after a lowercase one is a word boundary in
+    // the input's own casing (camelCase/PascalCase) - preserve it instead of
+    // forcing it lowercase, so "wavePoses" -> "WavePoses", not "Waveposes".
+    const bool camel_boundary =
+      std::isupper(static_cast<unsigned char>(c)) && std::islower(static_cast<unsigned char>(prev));
+    if (capitalize_next || camel_boundary) {
       result += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-      capitalize_next = false;
     } else {
       result += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
+    capitalize_next = false;
+    prev = c;
   }
   return result;
 }
@@ -221,21 +230,43 @@ bool WaypointRecorder::recordOne(
   return true;
 }
 
-int WaypointRecorder::recordLoop(const std::string& arm_prefix, const std::string& section, const std::string& file_path)
+int WaypointRecorder::recordLoop(
+  const std::string& arm_prefix, const std::string& default_section, const std::string& file_path)
 {
-  std::cout << "Loop mode - arm '" << arm_prefix << "', section '" << section << "'.\n"
-            << "Enter a waypoint name and press Enter to record; empty line to quit.\n";
+  std::cout << "Loop mode - arm '" << arm_prefix << "'.\n"
+            << "Enter 'name' to record under the current section, or 'section/name' to switch\n"
+            << "section first. Empty line to quit.\n";
+  std::string current_section = default_section;
   int count = 0;
   std::string line;
   while (true) {
-    std::cout << "waypoint name> " << std::flush;
+    std::cout << "[" << (current_section.empty() ? "<no section yet>" : current_section) << "] name or section/name> "
+              << std::flush;
     if (!std::getline(std::cin, line)) {
       break;  // EOF (e.g. Ctrl-D)
     }
-    const std::string name = trim(line);
-    if (name.empty()) {
+    const std::string entry = trim(line);
+    if (entry.empty()) {
       break;
     }
+
+    std::string section = current_section;
+    std::string name = entry;
+    const size_t slash = entry.find('/');
+    if (slash != std::string::npos) {
+      section = trim(entry.substr(0, slash));
+      name = trim(entry.substr(slash + 1));
+    }
+    if (section.empty()) {
+      std::cerr << "[ERROR] No section set yet - use 'section/name' for the first waypoint\n";
+      continue;
+    }
+    if (name.empty()) {
+      std::cerr << "[ERROR] Empty waypoint name\n";
+      continue;
+    }
+    current_section = section;
+
     std::string error;
     if (recordOne(arm_prefix, section, name, file_path, error)) {
       ++count;

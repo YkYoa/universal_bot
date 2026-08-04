@@ -25,5 +25,7 @@ speed:
 homePoses:
   laHomeAngle: 0, 0, 0, 0, 0, 0, 0
   raHomeAngle: 0, 0, 0, 0, 0, 0, 0
+  laWavePosesAngle: -0.435073, -0.0307088, -0.0787747, 1.06565, 0.231365, -0.066186, -0.882925
+
 
 

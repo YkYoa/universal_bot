@@ -49,12 +49,16 @@ public:
     const std::string& arm_prefix, const std::string& section, const std::string& waypoint_name,
     const std::string& file_path, std::string& out_error);
 
-  // Interactive loop over stdin: prompts for a waypoint name, records it via
-  // recordOne(), repeats until an empty line or EOF. Individual recordOne()
-  // failures are printed to stderr and the loop continues (a bad capture
-  // shouldn't lose the rest of the session). Returns the count successfully
-  // recorded.
-  int recordLoop(const std::string& arm_prefix, const std::string& section, const std::string& file_path);
+  // Interactive loop over stdin. Each line is either "name" (recorded under
+  // the current section) or "section/name" (switches the current section,
+  // then records under it) - so section doesn't have to be fixed for the
+  // whole session via a CLI flag, it can change waypoint-to-waypoint.
+  // default_section (may be empty) seeds the current section before the
+  // first line; if empty, the first line must use "section/name" form.
+  // Repeats until an empty line or EOF. Individual recordOne() failures are
+  // printed to stderr and the loop continues (a bad capture shouldn't lose
+  // the rest of the session). Returns the count successfully recorded.
+  int recordLoop(const std::string& arm_prefix, const std::string& default_section, const std::string& file_path);
 
 private:
   // Blocks (spinning the internal executor) until a /joint_states message

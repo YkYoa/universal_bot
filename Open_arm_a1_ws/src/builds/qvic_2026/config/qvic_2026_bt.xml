@@ -1,0 +1,17 @@
+<?xml version="1.0" ?>
+<!-- Auto-generated from sequence.yaml by sequence_to_bt.py.
+     DO NOT edit manually — regenerate from the YAML instead.
+     Wire BB keys for Cartesian poses before executing. -->
+<root BTCPP_format="4" main_tree_to_execute="Homeposes">
+  <BehaviorTree ID="Homeposes">
+    <Sequence name="homePoses">
+      <SetPlannerConfig profile="fast_ptp"/>
+      <!-- laHomeAngle: joint angles [0, 0, 0, 0, 0, 0, 0] -->
+      <PlanToJointTarget arm="left_arm" joint_targets="0;0;0;0;0;0;0" duration="3.0" output_trajectory="{plan_trajectory}"/>
+      <!-- raHomeAngle: joint angles [0, 0, 0, 0, 0, 0, 0] -->
+      <PlanToJointTarget arm="left_arm" joint_targets="0;0;0;0;0;0;0" duration="3.0" output_trajectory="{plan_trajectory}"/>
+      <!-- laWavePosesAngle: joint angles [-0.435073, -0.0307088, -0.0787747, 1.06565, 0.231365, -0.066186, -0.882925] -->
+      <PlanToJointTarget arm="left_arm" joint_targets="-0.435073;-0.0307088;-0.0787747;1.06565;0.231365;-0.066186;-0.882925" duration="3.0" output_trajectory="{plan_trajectory}"/>
+    </Sequence>
+  </BehaviorTree>
+</root>
