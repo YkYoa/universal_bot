@@ -254,13 +254,21 @@ sensor_msgs::msg::JointState::SharedPtr WaypointRecorder::captureJointState()
   return latest_msg_;
 }
 
-bool WaypointRecorder::recordOne(
-  const std::string& arm_prefix, const std::string& section, const std::string& waypoint_name,
-  const std::string& file_path, std::string& out_error)
+namespace
+{
+
+// Extracts arm_prefix's 7 joint positions from an already-captured
+// JointState message and writes them as a waypoint. Shared by recordOne()
+// (captures then writes once) and recordBoth() (captures once, writes
+// twice from the same message so both arms' keys reflect the exact same
+// instant).
+bool writeArmFromMessage(
+  const sensor_msgs::msg::JointState::SharedPtr& msg, const std::string& arm_prefix, const std::string& section,
+  const std::string& waypoint_name, const std::string& file_path, std::string& out_error)
 {
   auto side_it = kArmPrefixToSide.find(arm_prefix);
   if (side_it == kArmPrefixToSide.end() || side_it->second == "left_gripper" || side_it->second == "right_gripper") {
-    out_error = "--arm must be 'la' or 'ra' (got '" + arm_prefix + "') - gripper waypoint recording isn't supported";
+    out_error = "arm must be 'la' or 'ra' (got '" + arm_prefix + "') - gripper waypoint recording isn't supported";
     return false;
   }
   const std::string side = side_it->second;  // "left" | "right"
@@ -269,13 +277,6 @@ bool WaypointRecorder::recordOne(
   std::vector<std::string> joint_names;
   for (const auto& suffix : kJointSuffixes) {
     joint_names.push_back("openarm_" + side + "_joint" + suffix);
-  }
-
-  auto msg = captureJointState();
-  if (!msg) {
-    out_error = "Timed out waiting for /joint_states (" + std::to_string(timeout_sec_) +
-      "s) - is bringup.launch.py running?";
-    return false;
   }
 
   std::vector<double> values(joint_names.size(), 0.0);
@@ -305,19 +306,76 @@ bool WaypointRecorder::recordOne(
   return true;
 }
 
-int WaypointRecorder::recordLoop(
-  const std::string& arm_prefix, const std::string& default_section, const std::string& file_path)
+}  // namespace
+
+bool WaypointRecorder::recordOne(
+  const std::string& arm_prefix, const std::string& section, const std::string& waypoint_name,
+  const std::string& file_path, std::string& out_error)
 {
-  std::cout << "Loop mode - arm '" << arm_prefix << "'.\n";
+  auto msg = captureJointState();
+  if (!msg) {
+    out_error = "Timed out waiting for /joint_states (" + std::to_string(timeout_sec_) +
+      "s) - is bringup.launch.py running?";
+    return false;
+  }
+  return writeArmFromMessage(msg, arm_prefix, section, waypoint_name, file_path, out_error);
+}
+
+bool WaypointRecorder::recordBoth(
+  const std::string& section, const std::string& waypoint_name, const std::string& file_path, std::string& out_error)
+{
+  auto msg = captureJointState();
+  if (!msg) {
+    out_error = "Timed out waiting for /joint_states (" + std::to_string(timeout_sec_) +
+      "s) - is bringup.launch.py running?";
+    return false;
+  }
+  std::string left_error, right_error;
+  const bool left_ok = writeArmFromMessage(msg, "la", section, waypoint_name, file_path, left_error);
+  const bool right_ok = writeArmFromMessage(msg, "ra", section, waypoint_name, file_path, right_error);
+  if (!left_ok || !right_ok) {
+    out_error = left_error + (!left_ok && !right_ok ? "; " : "") + right_error;
+    return false;
+  }
+  return true;
+}
+
+int WaypointRecorder::recordLoop(
+  const std::string& default_arm, const std::string& default_section, const std::string& file_path)
+{
+  std::string current_arm = default_arm;
   std::string current_section = default_section;
   int count = 0;
   std::string line;
   while (true) {
+    if (current_arm.empty()) {
+      // Arm-select phase. 'both' records the same pose on both arms at once
+      // from a single capture (matching bimanual joint counts/timing).
+      std::cout << "Enter arm ('la', 'ra', or 'both'), empty line to quit> " << std::flush;
+      if (!std::getline(std::cin, line)) {
+        break;  // EOF (e.g. Ctrl-D)
+      }
+      const std::string entry = trim(line);
+      if (entry.empty()) {
+        break;
+      }
+      if (entry != "both") {
+        const auto side_it = kArmPrefixToSide.find(entry);
+        if (side_it == kArmPrefixToSide.end() || side_it->second == "left_gripper" ||
+            side_it->second == "right_gripper") {
+          std::cerr << "[ERROR] Arm must be 'la', 'ra', or 'both' (got '" << entry << "')\n";
+          continue;
+        }
+      }
+      current_arm = entry;
+      continue;
+    }
+
     if (current_section.empty()) {
       // Section-select phase: show what's already in the file, let the user
       // pick one or type a new name to create it.
       const auto sections = listSections(file_path);
-      std::cout << "Existing sections: ";
+      std::cout << "[" << current_arm << "] Existing sections: ";
       if (sections.empty()) {
         std::cout << "(none yet)";
       } else {
@@ -328,7 +386,7 @@ int WaypointRecorder::recordLoop(
       }
       std::cout << "\nEnter a section to record into (existing or new), empty line to quit> " << std::flush;
       if (!std::getline(std::cin, line)) {
-        break;  // EOF (e.g. Ctrl-D)
+        break;
       }
       const std::string entry = trim(line);
       if (entry.empty()) {
@@ -339,18 +397,27 @@ int WaypointRecorder::recordLoop(
     }
 
     // Pose-recording phase: default is the next auto-numbered
-    // "<arm_prefix><PascalSection><N>Angle" key; a typed name overrides it.
-    const int n = nextOrdinal(file_path, arm_prefix, current_section);
+    // "<arm><PascalSection><N>Angle" key; a typed name overrides it. For
+    // 'both', take the max ordinal across la/ra so laWavePoses3Angle and
+    // raWavePoses3Angle stay paired even if one side has more entries.
+    const bool both = (current_arm == "both");
+    const int n = both ? std::max(nextOrdinal(file_path, "la", current_section), nextOrdinal(file_path, "ra", current_section))
+                        : nextOrdinal(file_path, current_arm, current_section);
     const std::string auto_name = current_section + std::to_string(n);
-    const std::string preview_key = arm_prefix + toPascalCase(auto_name) + "Angle";
-    std::cout << "[" << current_section << "] Enter records '" << preview_key
-              << "' - or type a custom name; 's' switches section, 'q' quits> " << std::flush;
+    const std::string preview_key =
+      both ? "la/ra" + toPascalCase(auto_name) + "Angle" : current_arm + toPascalCase(auto_name) + "Angle";
+    std::cout << "[" << current_arm << "/" << current_section << "] Enter records '" << preview_key
+              << "' - or type a custom name; 'a' switches arm, 's' switches section, 'q' quits> " << std::flush;
     if (!std::getline(std::cin, line)) {
       break;
     }
     const std::string entry = trim(line);
     if (entry == "q") {
       break;
+    }
+    if (entry == "a") {
+      current_arm.clear();
+      continue;
     }
     if (entry == "s") {
       current_section.clear();
@@ -359,7 +426,9 @@ int WaypointRecorder::recordLoop(
     const std::string waypoint_name = entry.empty() ? auto_name : entry;
 
     std::string error;
-    if (recordOne(arm_prefix, current_section, waypoint_name, file_path, error)) {
+    const bool recorded = both ? recordBoth(current_section, waypoint_name, file_path, error)
+                                : recordOne(current_arm, current_section, waypoint_name, file_path, error);
+    if (recorded) {
       ++count;
     } else {
       std::cerr << "[ERROR] " << error << "\n";

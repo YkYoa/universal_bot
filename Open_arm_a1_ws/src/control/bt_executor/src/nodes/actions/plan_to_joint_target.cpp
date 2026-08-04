@@ -27,13 +27,19 @@ bool PlanToJointTarget::setGoal(Goal & goal)
   (void)config().blackboard->get(BB_PLANNER_PROFILE, profile_name);
   (void)config().blackboard->get(BB_PLANNING_MODE, planning_mode);
 
+  double velocity_scaling = 0.0;
+  getInput("velocity_scaling", velocity_scaling);
+  double acceleration_scaling = 0.0;
+  getInput("acceleration_scaling", acceleration_scaling);
+
   // Set ExecuteSkill goal fields
   goal.skill_name = "move_to_joint";
   goal.arm = arm;
   goal.planner_profile = profile_name;
   goal.planning_mode = planning_mode;
   goal.joint_targets = joint_targets;
-  goal.velocity_override = 0.0; // default profile speed
+  goal.velocity_override = velocity_scaling; // 0.0 = skill's default profile speed
+  goal.acceleration_override = acceleration_scaling; // 0.0 = skill's default profile
   goal.position_only = false;
 
   std::string targets_str;
@@ -42,9 +48,10 @@ bool PlanToJointTarget::setGoal(Goal & goal)
     targets_str += std::to_string(joint_targets[i]);
   }
   RCLCPP_INFO(logger(),
-    "[PlanToJointTarget] ExecuteSkill: %s | arm: %s | profile: %s | mode: %s | joint_targets: [%s]",
+    "[PlanToJointTarget] ExecuteSkill: %s | arm: %s | profile: %s | mode: %s | velocity_scaling: %.2f | "
+    "acceleration_scaling: %.2f | joint_targets: [%s]",
     goal.skill_name.c_str(), goal.arm.c_str(), goal.planner_profile.c_str(),
-    goal.planning_mode.c_str(), targets_str.c_str());
+    goal.planning_mode.c_str(), velocity_scaling, acceleration_scaling, targets_str.c_str());
 
   return true;
 }

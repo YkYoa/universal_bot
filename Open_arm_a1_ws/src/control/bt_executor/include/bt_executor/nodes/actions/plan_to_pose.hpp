@@ -25,6 +25,7 @@ public:
       BT::InputPort<std::string>("arm", "left_arm | right_arm"),
       BT::InputPort<geometry_msgs::msg::PoseStamped>("target_pose"),
       BT::InputPort<double>("velocity_scaling", 0.3, "Velocity scaling"),
+      BT::InputPort<double>("acceleration_scaling", 0.0, "Acceleration scaling [0-1]; 0 = skill's default profile"),
       BT::InputPort<bool>("position_only", false, "If true, skip orientation constraint"),
       BT::OutputPort<moveit_msgs::msg::RobotTrajectory>("output_trajectory", "Dummy trajectory for compat"),
     });

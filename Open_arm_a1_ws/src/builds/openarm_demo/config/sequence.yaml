@@ -12,10 +12,15 @@
 #       If Joint > pose data: 3 position and 4 quarternion follow  
 #       Can auto detect radian or degree
 
-# speed scale factor
+# speed: <section>: <velocity>[, <acceleration>] - MoveIt velocity_scaling /
+# acceleration_scaling factors [0-1] applied to every waypoint in that
+# section (both PlanToJointTarget and PlanToPose). Missing or 0 = skill's
+# default profile value. One pair per section, not per joint - MoveIt scales
+# the whole trajectory uniformly. acceleration is optional (velocity alone
+# is fine: "home: 1.0").
 
-speed: 
-  home: 1, 1, 1, 1, 1, 1, 1
+speed:
+  home: 1.0
 
 homePoses:
   headHome: 0

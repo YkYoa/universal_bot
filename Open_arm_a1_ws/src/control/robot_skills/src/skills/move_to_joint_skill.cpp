@@ -41,8 +41,9 @@ SkillResult MoveToJointSkill::execute(
 
     // Apply scaling overrides
     planning_interface::PlanRequestParameters params;
-    if (req.velocity_override > 0.0) {
+    if (req.velocity_override > 0.0 || req.acceleration_override > 0.0) {
         params.velocity_scaling = req.velocity_override;
+        params.acceleration_scaling = req.acceleration_override;
         plan_req.setParameters(params);
     }
 

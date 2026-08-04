@@ -24,14 +24,15 @@ void printUsage(const char* prog)
                " [--timeout <sec>]\n"
             << "  Records the arm's current /joint_states position as '<arm><WaypointName>Angle'\n"
             << "  under '<section>:' in the given sequence.yaml.\n\n"
-            << "  --loop: interactive mode instead of a single --name. Prompts for a section first\n"
-            << "    (lists existing ones, or type a new name to create it), then for each pose:\n"
-            << "    Enter records the next auto-numbered '<arm><Section><N>Angle', a typed name\n"
-            << "    overrides it, 's' switches section, 'q' quits. --section becomes optional and\n"
-            << "    just skips the first section prompt.\n"
-            << "  --auto-convert: after --loop quits, run sequence_to_bt over the whole file\n"
-            << "    (requires --bt-out) - covers every section touched during the loop, not just\n"
-            << "    the starting one.\n"
+            << "  --loop: interactive mode instead of a single --name. Prompts for arm ('la', 'ra',\n"
+            << "    or 'both' - 'both' records la+ra together from one /joint_states capture), then\n"
+            << "    a section (lists existing ones, or type a new name to create it), then for each\n"
+            << "    pose: Enter records the next auto-numbered '<arm><Section><N>Angle', a typed name\n"
+            << "    overrides it, 'a' switches arm, 's' switches section, 'q' quits. One session can\n"
+            << "    cover both arms and several sections. --arm/--section become optional and just\n"
+            << "    skip their respective first prompt.\n"
+            << "  --auto-convert: after --loop quits, run sequence_to_bt over the whole file (both\n"
+            << "    arms, every section) - requires --bt-out.\n"
             << "  --bt-out <path>: output XML path for --auto-convert.\n";
 }
 
@@ -79,13 +80,13 @@ int main(int argc, char** argv)
     }
   }
 
-  if (arm_prefix.empty() || file_path.empty()) {
-    std::cerr << "[ERROR] --arm and --file are always required\n";
+  if (file_path.empty()) {
+    std::cerr << "[ERROR] --file is always required\n";
     printUsage(argv[0]);
     return 1;
   }
-  if (!loop_mode && (section.empty() || name.empty())) {
-    std::cerr << "[ERROR] --section and --name are required unless --loop is given\n";
+  if (!loop_mode && (arm_prefix.empty() || section.empty() || name.empty())) {
+    std::cerr << "[ERROR] --arm, --section, and --name are required unless --loop is given\n";
     printUsage(argv[0]);
     return 1;
   }
@@ -98,12 +99,14 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  const auto side_it = waypoint_recorder::kArmPrefixToSide.find(arm_prefix);
-  if (side_it == waypoint_recorder::kArmPrefixToSide.end() || side_it->second == "left_gripper" ||
-      side_it->second == "right_gripper") {
-    std::cerr << "[ERROR] --arm must be 'la' or 'ra' (got '" << arm_prefix << "') - "
-              << "gripper waypoint recording isn't supported by this tool\n";
-    return 1;
+  if (!arm_prefix.empty()) {
+    const auto side_it = waypoint_recorder::kArmPrefixToSide.find(arm_prefix);
+    if (side_it == waypoint_recorder::kArmPrefixToSide.end() || side_it->second == "left_gripper" ||
+        side_it->second == "right_gripper") {
+      std::cerr << "[ERROR] --arm must be 'la' or 'ra' (got '" << arm_prefix << "') - "
+                << "gripper waypoint recording isn't supported by this tool\n";
+      return 1;
+    }
   }
 
   rclcpp::init(argc, argv);
@@ -118,7 +121,10 @@ int main(int argc, char** argv)
       std::cerr << "[ERROR] " << error << "\n";
     }
   } else {
-    recorder.recordLoop(arm_prefix, section, file_path);  // section here is just the optional starting default
+    // arm_prefix/section here are just optional starting defaults - the loop
+    // can switch either interactively ('a'/'s'), covering both arms and
+    // multiple sections in one session.
+    recorder.recordLoop(arm_prefix, section, file_path);
   }
 
   rclcpp::shutdown();
@@ -128,17 +134,18 @@ int main(int argc, char** argv)
   }
 
   if (auto_convert) {
-    const std::string& side = side_it->second;  // "left" | "right"
-    // Loop mode may have touched several sections (switched via
-    // "section/name" prompts) - convert the whole file (empty --section
-    // filter) rather than just the one --section this process started with.
+    // Loop mode may have touched either/both arms and several sections -
+    // convert the whole file (empty --section/--arm filters let
+    // sequence_to_bt auto-derive both per key) rather than just what this
+    // process started with.
     const std::string section_filter = loop_mode ? "" : section;
+    const std::string arm_filter = loop_mode ? "" : waypoint_recorder::kArmPrefixToSide.at(arm_prefix) + "_arm";
     std::ostringstream cmd;
     cmd << "ros2 run openarm_demo sequence_to_bt"
         << " --yaml " << waypoint_recorder::shellQuote(file_path)
         << " --out " << waypoint_recorder::shellQuote(bt_out)
         << " --section " << waypoint_recorder::shellQuote(section_filter)
-        << " --arm " << waypoint_recorder::shellQuote(side + "_arm");
+        << " --arm " << waypoint_recorder::shellQuote(arm_filter);
     std::cout << "[INFO] Auto-converting: " << cmd.str() << "\n";
     int rc = std::system(cmd.str().c_str());
     if (rc != 0) {

@@ -116,20 +116,41 @@ std::string getYamlValueAsString(const YAML::Node& node) {
     return "";
 }
 
-double speedForSection(const std::map<std::string, std::string>& speed_dict, const std::string& section) {
+std::string formatScale(double v) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%.2f", v);
+    return std::string(buf);
+}
+
+// speed: <section>: <velocity>[, <acceleration>] - up to two MoveIt scaling
+// factors [0-1] per section. Missing/absent -> -1.0 (caller omits the
+// attribute, skill falls back to its profile default).
+struct SectionSpeed {
+    double velocity = -1.0;
+    double acceleration = -1.0;
+};
+
+SectionSpeed speedForSection(const std::map<std::string, std::string>& speed_dict, const std::string& section) {
+    SectionSpeed speed;
     auto it = speed_dict.find(section);
     if (it == speed_dict.end()) {
-        return -1.0;
+        return speed;
     }
     std::vector<std::string> tokens = parseValue(it->second);
     if (tokens.empty()) {
-        return -1.0;
+        return speed;
     }
     try {
-        return std::stod(tokens[0]);
+        speed.velocity = std::stod(tokens[0]);
     } catch (...) {
-        return -1.0;
     }
+    if (tokens.size() > 1) {
+        try {
+            speed.acceleration = std::stod(tokens[1]);
+        } catch (...) {
+        }
+    }
+    return speed;
 }
 
 } // namespace
@@ -208,7 +229,7 @@ void convertSequenceToBt(const std::string& yaml_path,
         xml << "  <BehaviorTree ID=\"" << bt_id << "\">\n";
         xml << "    <Sequence name=\"" << section_name << "\">\n";
         
-        double section_vel = speedForSection(speed_dict, section_name);
+        SectionSpeed section_speed = speedForSection(speed_dict, section_name);
         std::string last_profile = "";
         
         for (auto it = section_data.begin(); it != section_data.end(); ++it) {
@@ -292,17 +313,20 @@ void convertSequenceToBt(const std::string& yaml_path,
                     semicolon_tokens += value_tokens[i];
                 }
                 xml << "      <!-- " << key << ": joint angles [" << val_token_str << "] -->\n";
-                xml << "      <PlanToJointTarget arm=\"" << arm << "\" joint_targets=\"" << semicolon_tokens
-                    << "\" duration=\"3.0\" output_trajectory=\"{plan_trajectory}\"/>\n";
+                xml << "      <PlanToJointTarget arm=\"" << arm << "\" joint_targets=\"" << semicolon_tokens << "\"";
+                if (section_speed.velocity >= 0.0) {
+                    xml << " velocity_scaling=\"" << formatScale(section_speed.velocity) << "\"";
+                }
+                if (section_speed.acceleration >= 0.0) {
+                    xml << " acceleration_scaling=\"" << formatScale(section_speed.acceleration) << "\"";
+                }
+                xml << " output_trajectory=\"{plan_trajectory}\"/>\n";
             } else {
                 xml << "      <!-- " << key << ": [" << val_token_str << "]  → set BB key \"" << key << "_pose\" before this node -->\n";
                 xml << "      <PlanToPose arm=\"" << arm << "\" target_pose=\"{" << key << "_pose}\"";
-                if (section_vel >= 0.0) {
-                    char vel_buf[32];
-                    snprintf(vel_buf, sizeof(vel_buf), "%.2f", section_vel);
-                    xml << " velocity_scaling=\"" << vel_buf << "\"";
-                } else {
-                    xml << " velocity_scaling=\"0.3\"";
+                xml << " velocity_scaling=\"" << formatScale(section_speed.velocity >= 0.0 ? section_speed.velocity : 0.3) << "\"";
+                if (section_speed.acceleration >= 0.0) {
+                    xml << " acceleration_scaling=\"" << formatScale(section_speed.acceleration) << "\"";
                 }
                 xml << " position_only=\"false\" output_trajectory=\"{plan_trajectory}\"/>\n";
             }

@@ -31,7 +31,10 @@ public:
     return providedBasicPorts({
       BT::InputPort<std::string>("arm", "left_arm | right_arm"),
       BT::InputPort<std::vector<double>>("joint_targets", "Semicolon-separated joint angles [rad]"),
-      BT::InputPort<double>("duration", 3.0, "Trajectory duration [s]"),
+      BT::InputPort<double>(
+        "velocity_scaling", 0.0, "MoveIt velocity scaling factor [0-1]; 0 = skill's default profile speed"),
+      BT::InputPort<double>(
+        "acceleration_scaling", 0.0, "MoveIt acceleration scaling factor [0-1]; 0 = skill's default profile"),
       BT::OutputPort<moveit_msgs::msg::RobotTrajectory>("output_trajectory", "Dummy trajectory for compat"),
     });
   }

@@ -22,6 +22,7 @@ namespace robot_skills
         std::string named_pose;
         std::vector<geometry_msgs::msg::PoseStamped> waypoints;
         double velocity_override = 0.0;
+        double acceleration_override = 0.0;
         bool position_only = false;
         std::vector<double> joint_targets;
     };

@@ -18,8 +18,10 @@ bool PlanToPose::setGoal(Goal & goal)
   }
 
   double vel = 0.3;
+  double accel = 0.0;
   bool position_only = false;
   getInput("velocity_scaling", vel);
+  getInput("acceleration_scaling", accel);
   getInput("position_only", position_only);
 
   // Read config from blackboard
@@ -36,6 +38,7 @@ bool PlanToPose::setGoal(Goal & goal)
   goal.planning_mode = planning_mode;
   goal.target_pose = target;
   goal.velocity_override = vel;
+  goal.acceleration_override = accel;
   goal.position_only = position_only;
 
   RCLCPP_INFO(logger(), 

@@ -49,19 +49,30 @@ public:
     const std::string& arm_prefix, const std::string& section, const std::string& waypoint_name,
     const std::string& file_path, std::string& out_error);
 
-  // Interactive loop over stdin, two phases:
+  // Records both arms from a single /joint_states capture - writes both
+  // "la<Name>Angle" and "ra<Name>Angle" from the exact same instant, for
+  // bimanual poses where both arms need to match up. On failure returns
+  // false with out_error set (either side's error, or both joined).
+  bool recordBoth(
+    const std::string& section, const std::string& waypoint_name, const std::string& file_path,
+    std::string& out_error);
+
+  // Interactive loop over stdin, three phases:
+  //  - Arm-select: prompts for 'la' or 'ra'. Empty line here quits.
   //  - Section-select: lists sections already in file_path, prompts for one
   //    to record into (existing name reuses it, new name creates it). Empty
   //    line here quits.
   //  - Pose-recording: previews the next auto-numbered
-  //    "<arm_prefix><PascalCase(section)><N>Angle" key; plain Enter records
-  //    it as-is, a typed name overrides it, 's' goes back to section-select,
-  //    'q' quits.
-  // default_section (may be empty) skips the first section-select round.
+  //    "<arm><PascalCase(section)><N>Angle" key; plain Enter records it as
+  //    -is, a typed name overrides it, 'a' goes back to arm-select (keeping
+  //    the current section - handy for recording the same pose set on both
+  //    arms), 's' goes back to section-select, 'q' quits.
+  // default_arm/default_section (either may be empty) skip their respective
+  // first prompt. One session can cover both arms and several sections.
   // Individual recordOne() failures are printed to stderr and the loop
   // continues (a bad capture shouldn't lose the rest of the session).
   // Returns the count successfully recorded.
-  int recordLoop(const std::string& arm_prefix, const std::string& default_section, const std::string& file_path);
+  int recordLoop(const std::string& default_arm, const std::string& default_section, const std::string& file_path);
 
 private:
   // Blocks (spinning the internal executor) until a /joint_states message
