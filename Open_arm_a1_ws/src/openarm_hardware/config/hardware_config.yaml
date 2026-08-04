@@ -1,21 +1,30 @@
-# Real-hardware detection & port config for the head board, used by
-# openarm_hardware/launch/bringup.launch.py. Arms/hands already have their
-# own hardware setup via arm_control/openarm_moveit_config's launch files -
-# this file is only about the head/neck + LED board, the new hardware.
+# Real-hardware detection & port config, used by
+# openarm_hardware/launch/bringup.launch.py.
 #
-# hardware_enable: 1 = real hardware, -1 = force fake (board not present).
+# hardware_enable: 1 = real hardware, -1 = force fake (board/CAN not present).
 # 1 is still auto-downgraded to fake if `interface` isn't actually up (cable
-# unplugged, board unpowered) - a stale hardware_enable=1 left over from a
-# previous setup should never make ros2_control try to activate hardware
+# unplugged, board unpowered, or CAN interface not brought up via
+# openarm-can-configure-socketcan) - a stale hardware_enable=1 left over from
+# a previous setup should never make ros2_control try to activate hardware
 # that isn't really there.
 
 hardware_enable:
   head: 1
+  arms: 1
 
 interfaces:
   head_ethernet: enp2s0   # host NIC wired to the STM32 board's W5500 module
+  left_can: can1
+  right_can: can0
 
 head_board:
   ip: 192.168.10.101
   port: 9877       # SERVO/STATUS/RELEASE/STEPPER (head_motor_driver_node)
   led_port: 9878   # RGB/MODE/BRIGHTNESS (head_led_node)
+
+# Retry behavior for OpenArm_v10HW::on_deactivate()'s disable_all() -
+# read/confirm loop that runs on every controller shutdown (Ctrl+C included).
+# Defaults below match what was previously hardcoded in hardware_interface.cpp.
+shutdown:
+  disable_retries: 3
+  retry_delay_ms: 100

@@ -19,6 +19,7 @@ def launch_setup(context, *args, **kwargs):
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
 
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
+    head = LaunchConfiguration("head")
     use_rviz = LaunchConfiguration("use_rviz")
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_robot_skills = LaunchConfiguration("use_robot_skills")
@@ -49,7 +50,7 @@ def launch_setup(context, *args, **kwargs):
             use_fake_hardware,
             " ",
             "head_use_fake_hardware:=",
-            use_fake_hardware,
+            PythonExpression(["'false' if '", head, "' == 'true' else 'true'"]),
             " ",
             "mobile_base:=true",
             " ",
@@ -344,6 +345,14 @@ def generate_launch_description():
         default_value="true",
         description="Whether to run with fake/mock hardware (true) or real hardware (false).",
     )
+    head_arg = DeclareLaunchArgument(
+        "head",
+        default_value="false",
+        description="Whether the head/neck board is physically present and wired (true) or "
+                     "not (false, default). Decoupled from use_fake_hardware so arm-only rigs "
+                     "(body_type:=v2 but no head board) don't need to fake the whole robot to "
+                     "avoid HeadHW blocking on a socket that's never started.",
+    )
     use_rviz_arg = DeclareLaunchArgument(
         "use_rviz",
         default_value="true",
@@ -380,6 +389,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             use_fake_hardware_arg,
+            head_arg,
             use_rviz_arg,
             use_sim_time_arg,
             ee_type_arg,

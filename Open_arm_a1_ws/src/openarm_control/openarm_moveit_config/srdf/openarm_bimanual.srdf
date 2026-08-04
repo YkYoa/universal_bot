@@ -343,6 +343,11 @@
   <disable_collisions link1="openarm_body_link0" link2="openarm_left_ahand_distal_3" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_right_ahand_distal_3" reason="Never"/>
 
+  <!-- Body to openarm_hand (2-finger gripper) at rest: same rest-pose overlap
+       as amazing_hand above, this time for the gripper's own hand link. -->
+  <disable_collisions link1="openarm_body_link0" link2="openarm_left_hand" reason="Never"/>
+  <disable_collisions link1="openarm_body_link0" link2="openarm_right_hand" reason="Never"/>
+
   <!-- amazing_hand internal: proximal_1/proximal_2 overlap the (thumb?) proximal
        segment at rest - same GetStateValidity finding as above, right hand only
        (left hand's mirrored geometry didn't show the same contact) -->

@@ -83,8 +83,17 @@ def generate_launch_description():
         default_value="v1",
         description="Chassis/body version: 'v1' (single rigid base) or 'v2' (new chassis mesh with articulated neck + head).",
     )
+    head_arg = DeclareLaunchArgument(
+        "head",
+        default_value="false",
+        description="Whether the head/neck board is physically present and wired (true) or "
+                     "not (false, default). Decoupled from use_fake_hardware so body_type:=v2 "
+                     "with real arm hardware but no head board doesn't crash HeadHW trying to "
+                     "activate a socket that's never started.",
+    )
 
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
+    head = LaunchConfiguration("head")
     gazebo = LaunchConfiguration("gazebo")
     left_can_interface = LaunchConfiguration("left_can_interface")
     right_can_interface = LaunchConfiguration("right_can_interface")
@@ -112,7 +121,7 @@ def generate_launch_description():
             " ",
             "use_fake_hardware:=", use_fake_hardware,
             " ",
-            "head_use_fake_hardware:=", use_fake_hardware,
+            "head_use_fake_hardware:=", PythonExpression(["'false' if '", head, "' == 'true' else 'true'"]),
             " ",
             "gazebo:=", gazebo,
             " ",
@@ -413,6 +422,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             use_fake_hardware_arg,
+            head_arg,
             gazebo_arg,
             left_can_interface_arg,
             right_can_interface_arg,

@@ -16,6 +16,8 @@
              right_arm_prefix:=^|right_
              gazebo:=^|false
              can_fd:=^|true
+             shutdown_disable_retries:=^|3
+             shutdown_retry_delay_ms:=^|100
              body_type:=^|v1
              no_prefix:=^|false">
 
@@ -63,6 +65,8 @@
                 <param name="arm_prefix">${left_arm_prefix}</param>
                 <param name="hand">${hand}</param>
                 <param name="can_fd">${can_fd}</param>
+                <param name="shutdown_disable_retries">${shutdown_disable_retries}</param>
+                <param name="shutdown_retry_delay_ms">${shutdown_retry_delay_ms}</param>
                 <param name="kp1">${control_gains['joint1']['kp']}</param>
                 <param name="kp2">${control_gains['joint2']['kp']}</param>
                 <param name="kp3">${control_gains['joint3']['kp']}</param>
@@ -118,7 +122,13 @@
             </xacro:unless>
           </xacro:unless>
         </hardware>
-        <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}finger_joint1" initial_position="0.0" />
+        <!-- finger_joint1 is the real motor: owned by openarm_left_hardware_interface
+             (OpenArm_v10HW) whenever hand=true, so only declare it here on the
+             fake/gazebo path - declaring it in both components crashes
+             controller_manager with a duplicate CommandInterface key. -->
+        <xacro:if value="${use_isaac_sim or use_fake_hardware or gazebo}">
+          <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}finger_joint1" initial_position="0.0" />
+        </xacro:if>
         <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}finger_joint2" initial_position="0.0" />
       </ros2_control>
     </xacro:if>
@@ -147,6 +157,8 @@
                 <param name="arm_prefix">${right_arm_prefix}</param>
                 <param name="hand">${hand}</param>
                 <param name="can_fd">${can_fd}</param>
+                <param name="shutdown_disable_retries">${shutdown_disable_retries}</param>
+                <param name="shutdown_retry_delay_ms">${shutdown_retry_delay_ms}</param>
                 <param name="kp1">${control_gains['joint1']['kp']}</param>
                 <param name="kp2">${control_gains['joint2']['kp']}</param>
                 <param name="kp3">${control_gains['joint3']['kp']}</param>
@@ -202,7 +214,13 @@
             </xacro:unless>
           </xacro:unless>
         </hardware>
-        <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}finger_joint1" initial_position="0.0" />
+        <!-- finger_joint1 is the real motor: owned by openarm_right_hardware_interface
+             (OpenArm_v10HW) whenever hand=true, so only declare it here on the
+             fake/gazebo path - declaring it in both components crashes
+             controller_manager with a duplicate CommandInterface key. -->
+        <xacro:if value="${use_isaac_sim or use_fake_hardware or gazebo}">
+          <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}finger_joint1" initial_position="0.0" />
+        </xacro:if>
         <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}finger_joint2" initial_position="0.0" />
       </ros2_control>
     </xacro:if>

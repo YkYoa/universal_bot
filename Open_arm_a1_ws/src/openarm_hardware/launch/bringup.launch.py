@@ -76,12 +76,29 @@ def launch_setup(context, *args, **kwargs):
     print(f"[bringup] head hardware: {'REAL' if head_real else 'FAKE'} "
           f"(mode={head_mode}, interface={hw_cfg['interfaces']['head_ethernet']})")
 
-    # Arms/hands/base already have their own real-hardware bringup in
-    # arm_control/openarm_moveit_config's launch files - this launch targets
-    # the head-only scenario, so they always run as mock_components/GenericSystem
-    # here regardless of head:=. head_use_fake_hardware (decoupled in
-    # openarm.bimanual.ros2_control.xacro) covers the head only.
-    use_fake_hardware = "true"
+    # arms:=auto (default) - same pattern as head: real only if
+    # hardware_config.yaml enables it AND both CAN interfaces are up (brought
+    # up via openarm-can-configure-socketcan beforehand - this launch does not
+    # configure CAN itself). arms:=true/false forces the decision.
+    left_can_interface = hw_cfg["interfaces"]["left_can"]
+    right_can_interface = hw_cfg["interfaces"]["right_can"]
+    arms_mode = LaunchConfiguration("arms").perform(context)
+    if arms_mode == "auto":
+        arms_real = (
+            hw_cfg["hardware_enable"]["arms"] == 1
+            and _interface_has_carrier(left_can_interface)
+            and _interface_has_carrier(right_can_interface)
+        )
+    else:
+        arms_real = arms_mode == "true"
+
+    print(f"[bringup] arms hardware: {'REAL' if arms_real else 'FAKE'} "
+          f"(mode={arms_mode}, left={left_can_interface}, right={right_can_interface})")
+
+    shutdown_disable_retries = str(hw_cfg["shutdown"]["disable_retries"])
+    shutdown_retry_delay_ms = str(hw_cfg["shutdown"]["retry_delay_ms"])
+
+    use_fake_hardware = "false" if arms_real else "true"
     head_use_fake_hardware = "false" if head_real else "true"
 
     # ── Robot Description (URDF) ──
@@ -98,6 +115,14 @@ def launch_setup(context, *args, **kwargs):
             "use_fake_hardware:=", use_fake_hardware,
             " ",
             "head_use_fake_hardware:=", head_use_fake_hardware,
+            " ",
+            "left_can_interface:=", left_can_interface,
+            " ",
+            "right_can_interface:=", right_can_interface,
+            " ",
+            "shutdown_disable_retries:=", shutdown_disable_retries,
+            " ",
+            "shutdown_retry_delay_ms:=", shutdown_retry_delay_ms,
             " ",
             "gazebo:=false",
             " ",
@@ -357,6 +382,13 @@ def generate_launch_description():
                      "say yes. 'true'/'false': force real/fake for the whole robot, skipping "
                      "detection.",
     )
+    arms_arg = DeclareLaunchArgument(
+        "arms",
+        default_value="auto",
+        description="'auto' (default): read hardware_config.yaml and auto-detect whether both "
+                     "CAN interfaces are up, use real hardware only if both say yes. "
+                     "'true'/'false': force real/fake, skipping detection.",
+    )
     use_rviz_arg = DeclareLaunchArgument(
         "use_rviz", default_value="true", description="Whether to launch RViz."
     )
@@ -372,6 +404,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             head_arg,
+            arms_arg,
             use_rviz_arg,
             ee_type_arg,
             body_type_arg,

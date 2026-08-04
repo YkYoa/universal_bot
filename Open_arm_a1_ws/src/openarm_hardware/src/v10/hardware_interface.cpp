@@ -58,6 +58,12 @@ bool OpenArm_v10HW::parse_config()
     std::transform(v.begin(), v.end(), v.begin(), ::tolower);
     can_fd_ = (v == "true" || v == "1");
   }
+  if (auto it = params.find("shutdown_disable_retries"); it != params.end()) {
+    shutdown_disable_retries_ = std::stoi(it->second);
+  }
+  if (auto it = params.find("shutdown_retry_delay_ms"); it != params.end()) {
+    shutdown_retry_delay_ms_ = std::stoi(it->second);
+  }
 
   for (std::size_t i = 1; i <= ARM_DOF; ++i) {
     if (auto it = params.find("kp" + std::to_string(i)); it != params.end()) {
@@ -77,12 +83,15 @@ bool OpenArm_v10HW::parse_config()
 
   RCLCPP_INFO(
     rclcpp::get_logger("OpenArm_v10HW"),
-    "Config: can=%s prefix=%s hand=%s can_fd=%s ee_type=%s",
+    "Config: can=%s prefix=%s hand=%s can_fd=%s ee_type=%s "
+    "shutdown_disable_retries=%d shutdown_retry_delay_ms=%d",
     can_interface_.c_str(),
     arm_prefix_.c_str(),
     hand_ ? "true" : "false",
     can_fd_ ? "true" : "false",
-    ee_type_.c_str());
+    ee_type_.c_str(),
+    shutdown_disable_retries_,
+    shutdown_retry_delay_ms_);
 
   return true;
 }
@@ -260,9 +269,9 @@ hardware_interface::CallbackReturn OpenArm_v10HW::on_deactivate(
 {
 #if defined(OPENARM_HARDWARE_HAS_OPENARMCAN)
   if (impl_ && impl_->openarm) {
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < shutdown_disable_retries_; ++i) {
       impl_->openarm->disable_all();
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      std::this_thread::sleep_for(std::chrono::milliseconds(shutdown_retry_delay_ms_));
       impl_->openarm->recv_all();
     }
   }

@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="${SCRIPT_DIR}/Open_arm_a1_ws"
 
 # Path to the company repository workspace root
-COMPANY_REPO_ROOT="/home/hans/robot-healthmate/robot-healthmate"
+COMPANY_REPO_ROOT="/home/hans/robot-healthmate"
 
 # Destination subdirectory in the company workspace
 DEST_DIR="${COMPANY_REPO_ROOT}/robot/Open_arm_a1_ws"
@@ -105,6 +105,7 @@ rsync -av --delete \
     --exclude="*.log" \
     --exclude=".git/" \
     --exclude=".gitattributes" \
+    --exclude="*.usda" \
     "$SRC_DIR/" "$DEST_DIR/"
 
 # 4. Git status & push in the company repository

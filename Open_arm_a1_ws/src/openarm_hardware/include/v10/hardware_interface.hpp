@@ -75,6 +75,8 @@ private:
   std::string ee_type_{"parallel_link"};
   bool hand_{false};
   bool can_fd_{true};
+  int shutdown_disable_retries_{3};
+  int shutdown_retry_delay_ms_{100};
 
   std::array<double, ARM_DOF> kp_{70.0, 70.0, 70.0, 60.0, 10.0, 10.0, 10.0};
   std::array<double, ARM_DOF> kd_{2.75, 2.5, 2.0, 2.0, 0.7, 0.6, 0.5};

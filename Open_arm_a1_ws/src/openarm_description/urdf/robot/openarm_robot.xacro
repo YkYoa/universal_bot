@@ -39,6 +39,8 @@
             left_arm_prefix:='left_'
             right_arm_prefix:='right_'
             can_fd:='true'
+            shutdown_disable_retries:='3'
+            shutdown_retry_delay_ms:='100'
             gazebo:=false
             mobile_base:=false
             mobile_base_xyz:='0 0 0'
@@ -152,7 +154,9 @@
             hand="${hand}"
             ee_type="${ee_type}"
             body_type="${body_type}"
-            no_prefix="${no_prefix}"/>
+            no_prefix="${no_prefix}"
+            shutdown_disable_retries="${shutdown_disable_retries}"
+            shutdown_retry_delay_ms="${shutdown_retry_delay_ms}"/>
         </xacro:if>
 
         <xacro:if value="$(eval hand and ee_type == 'openarm_hand')">
