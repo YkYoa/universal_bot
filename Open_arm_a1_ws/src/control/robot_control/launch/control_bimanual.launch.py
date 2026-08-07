@@ -293,48 +293,6 @@ def generate_launch_description():
         condition=IfCondition(run_amazing_hand)
     )
 
-    # hand_kinematics_node solves each amazing_hand's closed-loop linkage;
-    # one instance per side, scoped via link_prefix/alias_prefix like
-    # control_amazing_hand.launch.py, wired to that side's ros2_control
-    # topics (openarm_robot.xacro: /left_ahand, /right_ahand).
-    left_hand_kinematics_node = Node(
-        package="openarm_description",
-        executable="hand_kinematics_node.py",
-        name="left_hand_kinematics_node",
-        parameters=[
-            robot_description,
-            {
-                "command_space": "knuckle",
-                "link_prefix": "openarm_left_ahand_",
-                "alias_prefix": "openarm_left_",
-                "joint_commands_topic": "/left_ahand/joint_commands",
-                "joint_states_topic": "/left_ahand/joint_states",
-                "use_sim_time": use_sim_time,
-            },
-        ],
-        output="both",
-        condition=IfCondition(run_amazing_hand)
-    )
-
-    right_hand_kinematics_node = Node(
-        package="openarm_description",
-        executable="hand_kinematics_node.py",
-        name="right_hand_kinematics_node",
-        parameters=[
-            robot_description,
-            {
-                "command_space": "knuckle",
-                "link_prefix": "openarm_right_ahand_",
-                "alias_prefix": "openarm_right_",
-                "joint_commands_topic": "/right_ahand/joint_commands",
-                "joint_states_topic": "/right_ahand/joint_states",
-                "use_sim_time": use_sim_time,
-            },
-        ],
-        output="both",
-        condition=IfCondition(run_amazing_hand)
-    )
-
     # body v2 articulated neck + head
     head_controller_spawner = Node(
         package="controller_manager",
@@ -438,9 +396,6 @@ def generate_launch_description():
             # Standalone (Fake & Real)
             ros2_control_node,
             load_controllers_event_standalone,
-            # amazing_hand kinematics (no-op unless ee_type:=amazing_hand)
-            left_hand_kinematics_node,
-            right_hand_kinematics_node,
             # Static TF world -> odom
             static_tf_pub_node,
             # RViz

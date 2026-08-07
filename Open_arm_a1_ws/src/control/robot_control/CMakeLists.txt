@@ -11,8 +11,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(openarm_messages REQUIRED)
-find_package(Eigen3 REQUIRED)
-find_package(urdf REQUIRED)
+find_package(amazing_hand_kinematics REQUIRED)
 
 # Optional: OpenArmCAN (openarm_can library), same pattern as
 # robot_hardware_interface - keeps the workspace buildable on machines
@@ -75,12 +74,11 @@ target_compile_features(hand_kinematic PRIVATE cxx_std_17)
 target_include_directories(hand_kinematic PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-  ${EIGEN3_INCLUDE_DIR}
 )
 ament_target_dependencies(hand_kinematic
   rclcpp
   sensor_msgs
-  urdf
+  amazing_hand_kinematics
 )
 
 install(TARGETS get_robot_state control_server control_client hand_kinematic

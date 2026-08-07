@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>amazing_hand_kinematics</name>
+  <version>0.0.0</version>
+  <description>
+    Closed-loop rod/gimbal linkage solver for the amazing_hand end effector
+    (URDF FK + box-constrained nonlinear least squares) - pure Eigen/urdf,
+    no rclcpp dependency. Structural C++ port of
+    openarm_description/scripts/hand_kinematics_node.py's math. Consumed by
+    control/robot_control's topic-based hand_kinematic node and
+    control/robot_hardware_interface's AmazingHandHW ros2_control plugin.
+  </description>
+  <maintainer email="hans@todo.todo">hans</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>eigen</depend>
+  <depend>urdf</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

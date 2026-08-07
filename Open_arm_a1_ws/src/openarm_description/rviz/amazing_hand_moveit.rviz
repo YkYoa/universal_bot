@@ -43,7 +43,7 @@ Visualization Manager:
         Planning Group: hand_fingers
         Interactive Marker Size: 0.2
         Query Goal State: true
-        Query Start State: false
+        Query Start State: true
       Scene Geometry:
         Scene Alpha: 0.9
         Scene Color: 50; 230; 50

@@ -22,7 +22,6 @@
             can_interface:=''
             use_fake_hardware:=false
             head_use_fake_hardware:=false
-            use_isaac_sim:=false
             fake_sensor_commands:=false
             no_prefix:='false'
             arm_prefix:=''
@@ -150,7 +149,6 @@
             right_can_interface="${right_can_interface}"
             use_fake_hardware="${use_fake_hardware}"
             head_use_fake_hardware="${head_use_fake_hardware}"
-            use_isaac_sim="${use_isaac_sim}"
             fake_sensor_commands="${fake_sensor_commands}"
             left_arm_prefix="${left_arm_prefix}"
             right_arm_prefix="${right_arm_prefix}"
@@ -264,14 +262,10 @@
                 <xacro:amazing_hand_ros2_control
                     prefix="openarm_left_"
                     link_prefix="openarm_left_ahand_"
-                    joint_commands_topic="/left_ahand/joint_commands"
-                    joint_states_topic="/left_ahand/joint_states"
                 />
                 <xacro:amazing_hand_ros2_control
                     prefix="openarm_right_"
                     link_prefix="openarm_right_ahand_"
-                    joint_commands_topic="/right_ahand/joint_commands"
-                    joint_states_topic="/right_ahand/joint_states"
                 />
             </xacro:if>
         </xacro:if>
@@ -343,8 +337,6 @@
             <xacro:amazing_hand_ros2_control
                 prefix="${arm_prefix_modified}"
                 link_prefix="${arm_prefix_modified}ahand_"
-                joint_commands_topic="/ahand/joint_commands"
-                joint_states_topic="/ahand/joint_states"
             />
         </xacro:if>
         </xacro:if>

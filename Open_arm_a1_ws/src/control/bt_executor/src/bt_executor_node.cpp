@@ -60,6 +60,7 @@
 #include "bt_executor/nodes/actions/plan_to_pose.hpp"
 #include "bt_executor/nodes/actions/execute_trajectory.hpp"
 #include "bt_executor/nodes/actions/control_gripper.hpp"
+#include "bt_executor/nodes/actions/control_hand.hpp"
 #include "bt_executor/nodes/actions/query_vla.hpp"
 #include "bt_executor/nodes/actions/safe_abort.hpp"
 #include "bt_executor/nodes/actions/set_planner_config.hpp"
@@ -282,6 +283,8 @@ public:
     factory_.registerNodeType<PlanToJointSequence>("PlanToJointSequence", ros_params);
     factory_.registerNodeType<CloseGripper>   ("CloseGripper",    gripper_params);
     factory_.registerNodeType<OpenGripper>    ("OpenGripper",     gripper_params);
+    factory_.registerNodeType<SetHandYaw>     ("SetHandYaw",      gripper_params);
+    factory_.registerNodeType<SetHandFlex>    ("SetHandFlex",     gripper_params);
 
     // ── Load tree from XML ───────────────────────────────────────────────────
     load_tree();

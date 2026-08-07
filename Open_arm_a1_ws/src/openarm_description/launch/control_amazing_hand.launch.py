@@ -82,14 +82,6 @@ def generate_launch_description():
         output="both",
     )
 
-    hand_kinematics_node = Node(
-        package="openarm_description",
-        executable="hand_kinematics_node.py",
-        name="hand_kinematics_node",
-        parameters=[robot_description, {"command_space": "knuckle"}],
-        output="both",
-    )
-
     spawners = [
         Node(
             package="controller_manager",
@@ -136,7 +128,6 @@ def generate_launch_description():
     return LaunchDescription(declared_arguments + [
         robot_state_publisher_node,
         control_node,
-        hand_kinematics_node,
         *spawners,
         move_group_node,
         rviz_node,

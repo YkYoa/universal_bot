@@ -1,5 +1,4 @@
 import os
-import re
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
@@ -8,6 +7,7 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
+from openarm_moveit_config.srdf_utils import load_srdf_for_ee_type
 
 # Fix CycloneDDS buffer for large URDFs
 if "CYCLONEDDS_URI" not in os.environ:
@@ -62,57 +62,15 @@ def launch_setup(context, *args, **kwargs):
     robot_description = {"robot_description": ParameterValue(robot_description_content, value_type=str)}
 
     # ── Semantic Robot Description (SRDF) ──
+    # openarm_bimanual.srdf contains groups for both end-effector types; only
+    # one set is valid for the URDF actually being built here. See
+    # openarm_moveit_config/srdf_utils.py for why and what it strips.
     srdf_path = os.path.join(moveit_config_pkg, "srdf", "openarm_bimanual.srdf")
-    with open(srdf_path, "r") as f:
-        robot_description_semantic_content = f.read()
-
-    # The SRDF's <end_effector> tags hardcode group="left_gripper"/"right_gripper"
-    # (the openarm_hand 2-finger groups). Under ee_type:=amazing_hand those groups'
-    # joints don't exist in the URDF at all, so MoveIt logs "Group 'left_gripper'
-    # not found in model" and RobotState::getRobotMarkers() segfaults trying to
-    # render markers for the dangling end-effector. Point it at the finger groups
-    # that actually exist for this ee_type instead.
-    if LaunchConfiguration("ee_type").perform(context) == "amazing_hand":
-        robot_description_semantic_content = (
-            robot_description_semantic_content
-            .replace('group="left_gripper" parent_group="left_arm"',
-                      'group="left_hand_fingers" parent_group="left_arm"')
-            .replace('group="right_gripper" parent_group="right_arm"',
-                      'group="right_hand_fingers" parent_group="right_arm"')
-        )
-        # The rest of the SRDF (left_gripper/right_gripper groups, their open/close
-        # group_states, and disable_collisions entries for openarm_*_hand/*_finger)
-        # is written for ee_type:=openarm_hand's 2-finger gripper links, which don't
-        # exist under amazing_hand. Harmless but noisy: "Group 'left_gripper' is
-        # empty", "Joint '...finger_joint1' ... not known to the URDF", "Link
-        # '...hand' is not known to URDF. Cannot disable/enable collisons." on every
-        # move_group/robot_skills_node startup. Strip those blocks/lines here rather
-        # than forking the SRDF file, since it's the same dead-under-this-ee_type
-        # content each time.
-        robot_description_semantic_content = re.sub(
-            r'  <group name="(?:left|right)_gripper">.*?</group>\n\n',
-            '', robot_description_semantic_content, flags=re.DOTALL)
-        robot_description_semantic_content = re.sub(
-            r'  <group_state name="(?:open|close)" group="(?:left|right)_gripper">.*?</group_state>\n\n',
-            '', robot_description_semantic_content, flags=re.DOTALL)
-        robot_description_semantic_content = '\n'.join(
-            line for line in robot_description_semantic_content.split('\n')
-            if not re.search(r'openarm_(?:left|right)_(?:hand"|left_finger|right_finger)', line)
-        )
-
-    # body_type:=v2 adds an articulated neck_joint/head_joint (see openarm_body.xacro);
-    # v1/v10 don't have them. Neither is in any static SRDF group, so inject one here
-    # only when it actually exists in the URDF -- a static group would make v1 log
-    # "Joint 'openarm_body_neck_joint' ... not known to the URDF" on every startup.
-    if LaunchConfiguration("body_type").perform(context) == "v2":
-        robot_description_semantic_content = robot_description_semantic_content.replace(
-            "  <!-- Virtual joints -->",
-            '  <group name="head">\n'
-            '    <joint name="openarm_body_neck_joint"/>\n'
-            '    <joint name="openarm_body_head_joint"/>\n'
-            '  </group>\n\n'
-            "  <!-- Virtual joints -->"
-        )
+    robot_description_semantic_content = load_srdf_for_ee_type(
+        srdf_path,
+        LaunchConfiguration("ee_type").perform(context),
+        LaunchConfiguration("body_type").perform(context),
+    )
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_content}
 
     # ── Kinematics ──
@@ -213,8 +171,10 @@ def launch_setup(context, *args, **kwargs):
         condition=is_openarm_hand,
     )
 
-    # ── amazing_hand: controllers + per-side kinematics solver ──
-    # (ee_type:=amazing_hand only; see hand_kinematics_node.py for what it does)
+    # ── amazing_hand: controllers ──
+    # (ee_type:=amazing_hand only; the closed-loop linkage solve itself runs
+    # in-process inside robot_hardware_interface/AmazingHandHW - see
+    # ahand.ros2_control.xacro - no separate solver node needed.)
     hand_controller_spawners = [
         Node(
             package="controller_manager",
@@ -224,27 +184,6 @@ def launch_setup(context, *args, **kwargs):
         )
         for name in ("left_hand_j1_controller", "left_hand_j2_controller",
                      "right_hand_j1_controller", "right_hand_j2_controller")
-    ]
-
-    hand_kinematics_nodes = [
-        Node(
-            package="openarm_description",
-            executable="hand_kinematics_node.py",
-            name=f"hand_kinematics_node_{side}",
-            parameters=[
-                robot_description,
-                {
-                    "command_space": "knuckle",
-                    "link_prefix": f"openarm_{side}_ahand_",
-                    "alias_prefix": f"openarm_{side}_",
-                    "joint_commands_topic": f"/{side}_ahand/joint_commands",
-                    "joint_states_topic": f"/{side}_ahand/joint_states",
-                    "use_sim_time": use_sim_time,
-                },
-            ],
-            condition=is_amazing_hand,
-        )
-        for side in ("left", "right")
     ]
 
     # body v2 articulated neck + head
@@ -331,7 +270,6 @@ def launch_setup(context, *args, **kwargs):
         left_gripper_controller_spawner,
         right_gripper_controller_spawner,
         *hand_controller_spawners,
-        *hand_kinematics_nodes,
         head_controller_spawner,
         move_group_node,
         robot_skills_node,
@@ -368,7 +306,7 @@ def generate_launch_description():
         default_value="amazing_hand",
         description="End-effector type: 'openarm_hand' (2-finger gripper) or "
                      "'amazing_hand' (default, 8-DOF finger hand, adds left_hand_fingers/right_hand_fingers "
-                     "MoveIt groups and per-finger hand_kinematics_node + controllers).",
+                     "MoveIt groups and per-finger AmazingHandHW hardware interface + controllers).",
     )
     body_type_arg = DeclareLaunchArgument(
         "body_type",

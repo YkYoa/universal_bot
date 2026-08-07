@@ -8,7 +8,6 @@
              right_can_interface:=^|can0
              use_fake_hardware:=^|false
              head_use_fake_hardware:=^|false
-             use_isaac_sim:=^|false
              fake_sensor_commands:=^|false
              hand:=^|false
              ee_type:=^|openarm_hand
@@ -48,48 +47,41 @@
     <ros2_control name="openarm_left_hardware_interface" type="system">
         <hardware>
           <param name="arm_type">${arm_type}</param>
-          <xacro:if value="${use_isaac_sim}">
-            <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
-            <param name="joint_commands_topic">/isaac_left_arm/joint_commands</param>
-            <param name="joint_states_topic">/isaac_left_arm/joint_states</param>
+          <xacro:if value="${use_fake_hardware}">
+            <plugin>mock_components/GenericSystem</plugin>
+            <param name="fake_sensor_commands">${fake_sensor_commands}</param>
+            <param name="state_following_offset">0.0</param>
           </xacro:if>
-          <xacro:unless value="${use_isaac_sim}">
-            <xacro:if value="${use_fake_hardware}">
-              <plugin>mock_components/GenericSystem</plugin>
-              <param name="fake_sensor_commands">${fake_sensor_commands}</param>
-              <param name="state_following_offset">0.0</param>
+          <xacro:unless value="${use_fake_hardware}">
+            <xacro:if value="${gazebo}">
+              <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </xacro:if>
-            <xacro:unless value="${use_fake_hardware}">
-              <xacro:if value="${gazebo}">
-                <plugin>gz_ros2_control/GazeboSimSystem</plugin>
-              </xacro:if>
-              <xacro:unless value="${gazebo}">
-                <plugin>robot_hardware_interface/OpenArm_v10HW</plugin>
-                <param name="can_interface">${left_can_interface}</param>
-                <param name="arm_prefix">${left_arm_prefix}</param>
-                <param name="hand">${hand}</param>
-                <param name="can_fd">${can_fd}</param>
-                <param name="control_mode">${control_mode}</param>
-                <param name="position_mode_velocity">${position_mode_velocity}</param>
-                <param name="shutdown_disable_retries">${shutdown_disable_retries}</param>
-                <param name="shutdown_retry_delay_ms">${shutdown_retry_delay_ms}</param>
-                <param name="shutdown_home_timeout_ms">${shutdown_home_timeout_ms}</param>
-                <param name="shutdown_home_tolerance">${shutdown_home_tolerance}</param>
-                <param name="kp1">${control_gains['joint1']['kp']}</param>
-                <param name="kp2">${control_gains['joint2']['kp']}</param>
-                <param name="kp3">${control_gains['joint3']['kp']}</param>
-                <param name="kp4">${control_gains['joint4']['kp']}</param>
-                <param name="kp5">${control_gains['joint5']['kp']}</param>
-                <param name="kp6">${control_gains['joint6']['kp']}</param>
-                <param name="kp7">${control_gains['joint7']['kp']}</param>
-                <param name="kd1">${control_gains['joint1']['kd']}</param>
-                <param name="kd2">${control_gains['joint2']['kd']}</param>
-                <param name="kd3">${control_gains['joint3']['kd']}</param>
-                <param name="kd4">${control_gains['joint4']['kd']}</param>
-                <param name="kd5">${control_gains['joint5']['kd']}</param>
-                <param name="kd6">${control_gains['joint6']['kd']}</param>
-                <param name="kd7">${control_gains['joint7']['kd']}</param>
-              </xacro:unless>
+            <xacro:unless value="${gazebo}">
+              <plugin>robot_hardware_interface/OpenArm_v10HW</plugin>
+              <param name="can_interface">${left_can_interface}</param>
+              <param name="arm_prefix">${left_arm_prefix}</param>
+              <param name="hand">${hand}</param>
+              <param name="can_fd">${can_fd}</param>
+              <param name="control_mode">${control_mode}</param>
+              <param name="position_mode_velocity">${position_mode_velocity}</param>
+              <param name="shutdown_disable_retries">${shutdown_disable_retries}</param>
+              <param name="shutdown_retry_delay_ms">${shutdown_retry_delay_ms}</param>
+              <param name="shutdown_home_timeout_ms">${shutdown_home_timeout_ms}</param>
+              <param name="shutdown_home_tolerance">${shutdown_home_tolerance}</param>
+              <param name="kp1">${control_gains['joint1']['kp']}</param>
+              <param name="kp2">${control_gains['joint2']['kp']}</param>
+              <param name="kp3">${control_gains['joint3']['kp']}</param>
+              <param name="kp4">${control_gains['joint4']['kp']}</param>
+              <param name="kp5">${control_gains['joint5']['kp']}</param>
+              <param name="kp6">${control_gains['joint6']['kp']}</param>
+              <param name="kp7">${control_gains['joint7']['kp']}</param>
+              <param name="kd1">${control_gains['joint1']['kd']}</param>
+              <param name="kd2">${control_gains['joint2']['kd']}</param>
+              <param name="kd3">${control_gains['joint3']['kd']}</param>
+              <param name="kd4">${control_gains['joint4']['kd']}</param>
+              <param name="kd5">${control_gains['joint5']['kd']}</param>
+              <param name="kd6">${control_gains['joint6']['kd']}</param>
+              <param name="kd7">${control_gains['joint7']['kd']}</param>
             </xacro:unless>
           </xacro:unless>
         </hardware>
@@ -108,25 +100,18 @@
     <xacro:if value="${hand and ee_type == 'openarm_hand'}">
       <ros2_control name="openarm_left_gripper_hardware_interface" type="system">
         <hardware>
-          <xacro:if value="${use_isaac_sim}">
-            <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
-            <param name="joint_commands_topic">/isaac_left_gripper/joint_commands</param>
-            <param name="joint_states_topic">/isaac_left_gripper/joint_states</param>
+          <xacro:if value="${use_fake_hardware}">
+            <plugin>mock_components/GenericSystem</plugin>
+            <param name="fake_sensor_commands">${fake_sensor_commands}</param>
+            <param name="state_following_offset">0.0</param>
           </xacro:if>
-          <xacro:unless value="${use_isaac_sim}">
-            <xacro:if value="${use_fake_hardware}">
-              <plugin>mock_components/GenericSystem</plugin>
-              <param name="fake_sensor_commands">${fake_sensor_commands}</param>
-              <param name="state_following_offset">0.0</param>
+          <xacro:unless value="${use_fake_hardware}">
+            <xacro:if value="${gazebo}">
+              <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </xacro:if>
-            <xacro:unless value="${use_fake_hardware}">
-              <xacro:if value="${gazebo}">
-                <plugin>gz_ros2_control/GazeboSimSystem</plugin>
-              </xacro:if>
-              <xacro:unless value="${gazebo}">
-                <!-- Real robot driver if applicable -->
-                <plugin>mock_components/GenericSystem</plugin>
-              </xacro:unless>
+            <xacro:unless value="${gazebo}">
+              <!-- Real robot driver if applicable -->
+              <plugin>mock_components/GenericSystem</plugin>
             </xacro:unless>
           </xacro:unless>
         </hardware>
@@ -134,7 +119,7 @@
              (OpenArm_v10HW) whenever hand=true, so only declare it here on the
              fake/gazebo path - declaring it in both components crashes
              controller_manager with a duplicate CommandInterface key. -->
-        <xacro:if value="${use_isaac_sim or use_fake_hardware or gazebo}">
+        <xacro:if value="${use_fake_hardware or gazebo}">
           <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}finger_joint1" initial_position="0.0" />
         </xacro:if>
         <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}finger_joint2" initial_position="0.0" />
@@ -144,48 +129,41 @@
     <ros2_control name="openarm_right_hardware_interface" type="system">
         <hardware>
           <param name="arm_type">${arm_type}</param>
-          <xacro:if value="${use_isaac_sim}">
-            <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
-            <param name="joint_commands_topic">/isaac_right_arm/joint_commands</param>
-            <param name="joint_states_topic">/isaac_right_arm/joint_states</param>
+          <xacro:if value="${use_fake_hardware}">
+            <plugin>mock_components/GenericSystem</plugin>
+            <param name="fake_sensor_commands">${fake_sensor_commands}</param>
+            <param name="state_following_offset">0.0</param>
           </xacro:if>
-          <xacro:unless value="${use_isaac_sim}">
-            <xacro:if value="${use_fake_hardware}">
-              <plugin>mock_components/GenericSystem</plugin>
-              <param name="fake_sensor_commands">${fake_sensor_commands}</param>
-              <param name="state_following_offset">0.0</param>
+          <xacro:unless value="${use_fake_hardware}">
+            <xacro:if value="${gazebo}">
+              <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </xacro:if>
-            <xacro:unless value="${use_fake_hardware}">
-              <xacro:if value="${gazebo}">
-                <plugin>gz_ros2_control/GazeboSimSystem</plugin>
-              </xacro:if>
-              <xacro:unless value="${gazebo}">
-                <plugin>robot_hardware_interface/OpenArm_v10HW</plugin>
-                <param name="can_interface">${right_can_interface}</param>
-                <param name="arm_prefix">${right_arm_prefix}</param>
-                <param name="hand">${hand}</param>
-                <param name="can_fd">${can_fd}</param>
-                <param name="control_mode">${control_mode}</param>
-                <param name="position_mode_velocity">${position_mode_velocity}</param>
-                <param name="shutdown_disable_retries">${shutdown_disable_retries}</param>
-                <param name="shutdown_retry_delay_ms">${shutdown_retry_delay_ms}</param>
-                <param name="shutdown_home_timeout_ms">${shutdown_home_timeout_ms}</param>
-                <param name="shutdown_home_tolerance">${shutdown_home_tolerance}</param>
-                <param name="kp1">${control_gains['joint1']['kp']}</param>
-                <param name="kp2">${control_gains['joint2']['kp']}</param>
-                <param name="kp3">${control_gains['joint3']['kp']}</param>
-                <param name="kp4">${control_gains['joint4']['kp']}</param>
-                <param name="kp5">${control_gains['joint5']['kp']}</param>
-                <param name="kp6">${control_gains['joint6']['kp']}</param>
-                <param name="kp7">${control_gains['joint7']['kp']}</param>
-                <param name="kd1">${control_gains['joint1']['kd']}</param>
-                <param name="kd2">${control_gains['joint2']['kd']}</param>
-                <param name="kd3">${control_gains['joint3']['kd']}</param>
-                <param name="kd4">${control_gains['joint4']['kd']}</param>
-                <param name="kd5">${control_gains['joint5']['kd']}</param>
-                <param name="kd6">${control_gains['joint6']['kd']}</param>
-                <param name="kd7">${control_gains['joint7']['kd']}</param>
-              </xacro:unless>
+            <xacro:unless value="${gazebo}">
+              <plugin>robot_hardware_interface/OpenArm_v10HW</plugin>
+              <param name="can_interface">${right_can_interface}</param>
+              <param name="arm_prefix">${right_arm_prefix}</param>
+              <param name="hand">${hand}</param>
+              <param name="can_fd">${can_fd}</param>
+              <param name="control_mode">${control_mode}</param>
+              <param name="position_mode_velocity">${position_mode_velocity}</param>
+              <param name="shutdown_disable_retries">${shutdown_disable_retries}</param>
+              <param name="shutdown_retry_delay_ms">${shutdown_retry_delay_ms}</param>
+              <param name="shutdown_home_timeout_ms">${shutdown_home_timeout_ms}</param>
+              <param name="shutdown_home_tolerance">${shutdown_home_tolerance}</param>
+              <param name="kp1">${control_gains['joint1']['kp']}</param>
+              <param name="kp2">${control_gains['joint2']['kp']}</param>
+              <param name="kp3">${control_gains['joint3']['kp']}</param>
+              <param name="kp4">${control_gains['joint4']['kp']}</param>
+              <param name="kp5">${control_gains['joint5']['kp']}</param>
+              <param name="kp6">${control_gains['joint6']['kp']}</param>
+              <param name="kp7">${control_gains['joint7']['kp']}</param>
+              <param name="kd1">${control_gains['joint1']['kd']}</param>
+              <param name="kd2">${control_gains['joint2']['kd']}</param>
+              <param name="kd3">${control_gains['joint3']['kd']}</param>
+              <param name="kd4">${control_gains['joint4']['kd']}</param>
+              <param name="kd5">${control_gains['joint5']['kd']}</param>
+              <param name="kd6">${control_gains['joint6']['kd']}</param>
+              <param name="kd7">${control_gains['joint7']['kd']}</param>
             </xacro:unless>
           </xacro:unless>
         </hardware>
@@ -204,25 +182,18 @@
     <xacro:if value="${hand and ee_type == 'openarm_hand'}">
       <ros2_control name="openarm_right_gripper_hardware_interface" type="system">
         <hardware>
-          <xacro:if value="${use_isaac_sim}">
-            <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
-            <param name="joint_commands_topic">/isaac_right_gripper/joint_commands</param>
-            <param name="joint_states_topic">/isaac_right_gripper/joint_states</param>
+          <xacro:if value="${use_fake_hardware}">
+            <plugin>mock_components/GenericSystem</plugin>
+            <param name="fake_sensor_commands">${fake_sensor_commands}</param>
+            <param name="state_following_offset">0.0</param>
           </xacro:if>
-          <xacro:unless value="${use_isaac_sim}">
-            <xacro:if value="${use_fake_hardware}">
-              <plugin>mock_components/GenericSystem</plugin>
-              <param name="fake_sensor_commands">${fake_sensor_commands}</param>
-              <param name="state_following_offset">0.0</param>
+          <xacro:unless value="${use_fake_hardware}">
+            <xacro:if value="${gazebo}">
+              <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </xacro:if>
-            <xacro:unless value="${use_fake_hardware}">
-              <xacro:if value="${gazebo}">
-                <plugin>gz_ros2_control/GazeboSimSystem</plugin>
-              </xacro:if>
-              <xacro:unless value="${gazebo}">
-                <!-- Real robot driver if applicable -->
-                <plugin>mock_components/GenericSystem</plugin>
-              </xacro:unless>
+            <xacro:unless value="${gazebo}">
+              <!-- Real robot driver if applicable -->
+              <plugin>mock_components/GenericSystem</plugin>
             </xacro:unless>
           </xacro:unless>
         </hardware>
@@ -230,7 +201,7 @@
              (OpenArm_v10HW) whenever hand=true, so only declare it here on the
              fake/gazebo path - declaring it in both components crashes
              controller_manager with a duplicate CommandInterface key. -->
-        <xacro:if value="${use_isaac_sim or use_fake_hardware or gazebo}">
+        <xacro:if value="${use_fake_hardware or gazebo}">
           <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}finger_joint1" initial_position="0.0" />
         </xacro:if>
         <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}finger_joint2" initial_position="0.0" />

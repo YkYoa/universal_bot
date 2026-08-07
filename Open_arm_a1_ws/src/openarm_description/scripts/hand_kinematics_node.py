@@ -492,7 +492,13 @@ class HandKinematicsNode(Node):
     @staticmethod
     def _solve_multistart(res_fn, x0, args, bounds):
         """Least-squares from the warm start; if that lands in a poor local
-        minimum (the knuckle linkage has a mirror branch), retry from rest."""
+        minimum (the knuckle linkage has a mirror branch), retry from rest,
+        then - if still stuck - retry from a small grid of starting points
+        spread across the last variable's (twist) own range. scipy's TRF is
+        good enough that this rarely triggers here (unlike the hand-rolled
+        C++ port, where it's needed - see amazing_hand_kinematics.cpp's
+        solveMultistart), but keeping the same fallback structure in both
+        places avoids the two silently drifting apart."""
         sol = least_squares(res_fn, x0, args=args, bounds=bounds,
                              xtol=1e-10, ftol=1e-10, max_nfev=200)
         if sol.cost > 1e-9 and np.any(x0 != 0.0):
@@ -500,6 +506,17 @@ class HandKinematicsNode(Node):
                                       xtol=1e-10, ftol=1e-10, max_nfev=200)
             if sol_rest.cost < sol.cost:
                 sol = sol_rest
+        if sol.cost > 1e-9:
+            lower, upper = bounds
+            for frac in (-0.75, -0.35, 0.35, 0.75):
+                if sol.cost <= 1e-9:
+                    break
+                start = np.zeros_like(x0)
+                start[-1] = lower[-1] + (0.5 + 0.5 * frac) * (upper[-1] - lower[-1])
+                sol_grid = least_squares(res_fn, start, args=args, bounds=bounds,
+                                          xtol=1e-10, ftol=1e-10, max_nfev=200)
+                if sol_grid.cost < sol.cost:
+                    sol = sol_grid
         return sol
 
     def solve_finger_servo(self, f, res_fn, x0, raw):
@@ -510,8 +527,12 @@ class HandKinematicsNode(Node):
         args = (theta_A, theta_B)
         if self._args_unchanged(f.get('_last_servo_args'), args):
             return f['_last_servo_sol'], f['_last_servo_solved']
-        lower = [f['q1_lower'], -1.2, f['prox_lower'], -1.2, -0.02, -3.2]
-        upper = [f['q1_upper'], 1.2, f['prox_upper'], 1.2, 0.02, 3.2]
+        # q2/q_knu bounds (+-1.6, not a real URDF limit): a generic optimizer
+        # safety guard, not a physical joint limit. Was +-1.2, which capped
+        # max achievable flex around 1.15 rad even with correct servo range -
+        # confirmed against real hardware reaching ~1.31 rad (needs q2~1.42).
+        lower = [f['q1_lower'], -1.6, f['prox_lower'], -1.6, -0.02, -3.2]
+        upper = [f['q1_upper'], 1.6, f['prox_upper'], 1.6, 0.02, 3.2]
         sol = self._solve_multistart(res_fn, x0, args, (lower, upper))
         x0[:] = sol.x
         q1, q2, q_prox, q_knu, q_prism, q_twist = sol.x
@@ -534,8 +555,9 @@ class HandKinematicsNode(Node):
         if self._args_unchanged(f.get('_last_knuckle_args'), args):
             return f['_last_knuckle_sol'], f['_last_knuckle_solved']
         sd0, sd1 = f['servo_data']
-        lower = [sd0['lower'], sd1['lower'], -1.2, -1.2, -0.02, -3.2]
-        upper = [sd0['upper'], sd1['upper'], 1.2, 1.2, 0.02, 3.2]
+        # q2/q_knu bounds (+-1.6, not a real URDF limit) - see solve_finger_servo.
+        lower = [sd0['lower'], sd1['lower'], -1.6, -1.6, -0.02, -3.2]
+        upper = [sd0['upper'], sd1['upper'], 1.6, 1.6, 0.02, 3.2]
         sol = self._solve_multistart(res_fn, x0, args, (lower, upper))
         x0[:] = sol.x
         theta_A, theta_B, q2, q_knu, q_prism, q_twist = sol.x

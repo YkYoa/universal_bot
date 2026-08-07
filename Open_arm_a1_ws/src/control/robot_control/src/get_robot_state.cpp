@@ -9,6 +9,74 @@
 #include <algorithm>
 
 
+namespace {
+
+// amazing_hand's alias command joints (see ahand.ros2_control.xacro):
+// j11..j14 = yaw/abduction per finger 1-4 (4 = thumb), j21..j24 = proximal
+// flexion per finger. These are the stable SRDF/ros2_control names -
+// hand_kinematics_node's mapping to the real closed-loop linkage joints is
+// per-build/non-derivable (see openarm_amazing_hand memory), so the alias
+// joints are what's actually meaningful to print here.
+const std::vector<std::string> AHAND_JOINT_SUFFIXES = {
+  "j11", "j12", "j13", "j14", "j21", "j22", "j23", "j24"
+};
+
+// Detects which end effector is live from whichever joint names actually
+// show up in /joint_states, instead of requiring this tool to be told
+// ee_type separately - it already comes from the launch that's running.
+struct EndEffectorState {
+  bool is_gripper = false;
+  bool is_ahand = false;
+  double gripper_value = 0.0;
+  std::vector<double> ahand_values;  // parallel to AHAND_JOINT_SUFFIXES, NaN if missing
+};
+
+EndEffectorState detectEndEffector(const std::string& side_prefix,
+                                    const std::vector<std::string>& names,
+                                    const std::vector<double>& positions) {
+  EndEffectorState state;
+
+  auto it_gripper = std::find(names.begin(), names.end(), side_prefix + "finger_joint1");
+  if (it_gripper != names.end()) {
+    state.is_gripper = true;
+    state.gripper_value = positions[std::distance(names.begin(), it_gripper)];
+  }
+
+  for (const auto& suffix : AHAND_JOINT_SUFFIXES) {
+    auto it = std::find(names.begin(), names.end(), side_prefix + suffix);
+    if (it != names.end()) {
+      state.is_ahand = true;
+      state.ahand_values.push_back(positions[std::distance(names.begin(), it)]);
+    } else {
+      state.ahand_values.push_back(std::nan(""));
+    }
+  }
+
+  return state;
+}
+
+void printHandState(const std::string& label, const EndEffectorState& state) {
+  if (state.is_ahand) {
+    std::cout << "  " << label << "Joints: ";
+    for (size_t i = 0; i < AHAND_JOINT_SUFFIXES.size(); ++i) {
+      std::cout << AHAND_JOINT_SUFFIXES[i] << "=";
+      if (std::isnan(state.ahand_values[i])) {
+        std::cout << "?";
+      } else {
+        std::cout << std::setprecision(4) << state.ahand_values[i];
+      }
+      if (i < AHAND_JOINT_SUFFIXES.size() - 1) std::cout << ", ";
+    }
+    std::cout << "  # (Radians; j1x=yaw, j2x=flex, finger 1-4/4=thumb)\n";
+  } else if (state.is_gripper) {
+    std::cout << "  " << label << "Grasp: " << std::setprecision(4) << state.gripper_value << "\n";
+  } else {
+    std::cout << "  " << label << "Grasp: # Not found in /joint_states (no gripper or amazing_hand joints seen)\n";
+  }
+}
+
+}  // namespace
+
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
@@ -25,8 +93,8 @@ int main(int argc, char ** argv)
   bool has_right_ee = false;
   geometry_msgs::msg::TransformStamped left_ee_tf;
   geometry_msgs::msg::TransformStamped right_ee_tf;
-  double left_gripper = 0.0;
-  double right_gripper = 0.0;
+  EndEffectorState left_hand;
+  EndEffectorState right_hand;
 
   rclcpp::WallRate rate(10);
   while (rclcpp::ok()) {
@@ -64,15 +132,9 @@ int main(int argc, char ** argv)
         right_arm_joints = ra_vals;
       }
 
-      // Grippers
-      auto it_l = std::find(names.begin(), names.end(), "openarm_left_finger_joint1");
-      if (it_l != names.end()) {
-        left_gripper = positions[std::distance(names.begin(), it_l)];
-      }
-      auto it_r = std::find(names.begin(), names.end(), "openarm_right_finger_joint1");
-      if (it_r != names.end()) {
-        right_gripper = positions[std::distance(names.begin(), it_r)];
-      }
+      // End effector (gripper or amazing_hand, auto-detected)
+      left_hand = detectEndEffector("openarm_left_", names, positions);
+      right_hand = detectEndEffector("openarm_right_", names, positions);
     }
 
     // TF lookup
@@ -147,7 +209,8 @@ int main(int argc, char ** argv)
   } else {
     std::cout << "  laJoint: # Not found in TF transforms\n";
   }
-  std::cout << "  lhGrasp: " << std::setprecision(4) << left_gripper << "\n\n";
+  printHandState("lh", left_hand);
+  std::cout << "\n";
 
   // ── Right Arm ──
   std::cout << "# Right Arm State:\n";
@@ -182,7 +245,8 @@ int main(int argc, char ** argv)
   } else {
     std::cout << "  raJoint: # Not found in TF transforms\n";
   }
-  std::cout << "  rhGrasp: " << std::setprecision(4) << right_gripper << "\n\n";
+  printHandState("rh", right_hand);
+  std::cout << "\n";
 
   std::cout << "==================================================\n" << std::endl;
 

@@ -37,7 +37,20 @@ if(EXISTS "/usr/lib/x86_64-linux-gnu/libcurl.so.4")
   target_link_libraries(generate_waypoint_sequence /usr/lib/x86_64-linux-gnu/libcurl.so.4)
 endif()
 
-install(TARGETS generate_waypoint_sequence
+add_executable(check_bimanual_collision src/check_bimanual_collision.cpp)
+target_compile_features(check_bimanual_collision PRIVATE cxx_std_17)
+ament_target_dependencies(check_bimanual_collision
+  rclcpp
+  moveit_core
+  moveit_ros_planning
+  ament_index_cpp
+  waypoint_recorder
+)
+if(EXISTS "/usr/lib/x86_64-linux-gnu/libcurl.so.4")
+  target_link_libraries(check_bimanual_collision /usr/lib/x86_64-linux-gnu/libcurl.so.4)
+endif()
+
+install(TARGETS generate_waypoint_sequence check_bimanual_collision
   DESTINATION lib/${PROJECT_NAME}
 )
 

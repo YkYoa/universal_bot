@@ -455,5 +455,228 @@ void convertSequenceToBt(const std::string& yaml_path,
     out_file.close();
 }
 
+namespace {
+
+// Every entry of a section, in file order, as flat value tokens (planner
+// tokens like "_PTP"/"_Lin" stripped if present - both-arms sequences don't
+// use them, the profile is an explicit argument instead).
+std::vector<std::pair<std::string, std::vector<std::string>>> collectSectionWaypoints(
+    const YAML::Node& section_data, const std::string& section_name) {
+    std::vector<std::pair<std::string, std::vector<std::string>>> waypoints;
+    for (auto it = section_data.begin(); it != section_data.end(); ++it) {
+        std::string key = it->first.as<std::string>();
+        std::vector<std::string> tokens = parseValue(getYamlValueAsString(it->second));
+        if (tokens.empty()) {
+            continue;
+        }
+        auto planner_res = plannerFromValues(tokens);
+        if (planner_res.second.empty()) {
+            continue;
+        }
+        waypoints.emplace_back(key, planner_res.second);
+    }
+    if (waypoints.empty()) {
+        throw std::runtime_error("Section '" + section_name + "' has no waypoint values.");
+    }
+    return waypoints;
+}
+
+// Empty if the key isn't present in the section - callers decide whether
+// that's optional (hand keys) or an error (arm keys).
+std::vector<std::string> readOptionalKeyTokens(const YAML::Node& section, const std::string& key) {
+    if (!section[key]) {
+        return {};
+    }
+    return parseValue(getYamlValueAsString(section[key]));
+}
+
+std::string joinSemicolon(const std::vector<std::string>& tokens) {
+    std::string out;
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        if (i > 0) out += ";";
+        out += tokens[i];
+    }
+    return out;
+}
+
+} // namespace
+
+void convertBothArmsSequenceToBt(const std::string& yaml_path,
+                                  const std::string& out_path,
+                                  const std::string& left_section,
+                                  const std::string& right_section,
+                                  const std::string& profile,
+                                  const std::string& tree_name,
+                                  const std::string& home_section,
+                                  int repeat_cycles,
+                                  const std::vector<int>& exclude_points) {
+    std::ifstream yaml_file(yaml_path);
+    if (!yaml_file.good()) {
+        throw std::runtime_error("YAML file not found: " + yaml_path);
+    }
+    yaml_file.close();
+
+    YAML::Node data;
+    try {
+        data = YAML::LoadFile(yaml_path);
+    } catch (const std::exception& e) {
+        throw std::runtime_error("Failed to parse YAML file: " + std::string(e.what()));
+    }
+    if (data.IsNull() || !data.IsMap()) {
+        throw std::runtime_error("YAML file is empty or invalid format: " + yaml_path);
+    }
+    if (!data[left_section] || !data[left_section].IsMap()) {
+        throw std::runtime_error("Section '" + left_section + "' not found in YAML.");
+    }
+    if (!data[right_section] || !data[right_section].IsMap()) {
+        throw std::runtime_error("Section '" + right_section + "' not found in YAML.");
+    }
+
+    auto left_waypoints = collectSectionWaypoints(data[left_section], left_section);
+    auto right_waypoints = collectSectionWaypoints(data[right_section], right_section);
+
+    if (left_waypoints.size() != right_waypoints.size()) {
+        throw std::runtime_error(
+            "'" + left_section + "' has " + std::to_string(left_waypoints.size()) +
+            " waypoints but '" + right_section + "' has " + std::to_string(right_waypoints.size()) +
+            " - both sections must have the same waypoint count to interleave.");
+    }
+
+    std::map<std::string, std::string> speed_dict;
+    if (data["speed"] && data["speed"].IsMap()) {
+        for (auto it = data["speed"].begin(); it != data["speed"].end(); ++it) {
+            speed_dict[it->first.as<std::string>()] = getYamlValueAsString(it->second);
+        }
+    }
+    SectionSpeed section_speed = speedForSection(speed_dict, left_section);
+
+    // Interleave [left_i(DOF), right_i(DOF)] per waypoint, per both_arms'
+    // SRDF-declared joint order (left_arm subgroup, then right_arm) -
+    // skipping any 1-indexed point in exclude_points (e.g. a known
+    // self-collision between the two arms' combined state at that point).
+    std::string flat_tokens;
+    size_t emitted_points = 0;
+    for (size_t i = 0; i < left_waypoints.size(); ++i) {
+        const int point_number = static_cast<int>(i) + 1;
+        if (std::find(exclude_points.begin(), exclude_points.end(), point_number) != exclude_points.end()) {
+            continue;
+        }
+        const auto& left_tokens = left_waypoints[i].second;
+        const auto& right_tokens = right_waypoints[i].second;
+        for (size_t v = 0; v < left_tokens.size(); ++v) {
+            if (!flat_tokens.empty()) flat_tokens += ";";
+            flat_tokens += left_tokens[v];
+        }
+        for (size_t v = 0; v < right_tokens.size(); ++v) {
+            flat_tokens += ";";
+            flat_tokens += right_tokens[v];
+        }
+        ++emitted_points;
+    }
+
+    // Optional fixed starting pose: a PlanToJointTarget("both_arms") to a
+    // known joint state, plus (if amazing_hand keys are present) a held hand
+    // pose set once via SetHandYaw/SetHandFlex - so the wave always starts
+    // from the same place instead of wherever the arm happened to be.
+    std::string home_xml;
+    if (!home_section.empty()) {
+        if (!data[home_section] || !data[home_section].IsMap()) {
+            throw std::runtime_error("home_section '" + home_section + "' not found in YAML.");
+        }
+        const YAML::Node& home = data[home_section];
+        auto la_home = readOptionalKeyTokens(home, "laHomeAngle");
+        auto ra_home = readOptionalKeyTokens(home, "raHomeAngle");
+        if (la_home.empty() || ra_home.empty()) {
+            throw std::runtime_error(
+                "home_section '" + home_section + "' must define both laHomeAngle and raHomeAngle.");
+        }
+
+        std::stringstream home_ss;
+        home_ss << "      <!-- fixed starting pose from '" << home_section << "' -->\n";
+        home_ss << "      <PlanToJointTarget arm=\"both_arms\" joint_targets=\""
+                << joinSemicolon(la_home) << ";" << joinSemicolon(ra_home)
+                << "\" output_trajectory=\"{plan_trajectory}\"/>\n";
+
+        auto lh_yaw = readOptionalKeyTokens(home, "lhHomeYaw");
+        auto lh_flex = readOptionalKeyTokens(home, "lhHomeFlex");
+        auto rh_yaw = readOptionalKeyTokens(home, "rhHomeYaw");
+        auto rh_flex = readOptionalKeyTokens(home, "rhHomeFlex");
+        bool left_hand = !lh_yaw.empty() || !lh_flex.empty();
+        bool right_hand = !rh_yaw.empty() || !rh_flex.empty();
+        if (left_hand && (lh_yaw.empty() || lh_flex.empty())) {
+            throw std::runtime_error(
+                "home_section '" + home_section + "': lhHomeYaw and lhHomeFlex must both be set.");
+        }
+        if (right_hand && (rh_yaw.empty() || rh_flex.empty())) {
+            throw std::runtime_error(
+                "home_section '" + home_section + "': rhHomeYaw and rhHomeFlex must both be set.");
+        }
+        if (left_hand || right_hand) {
+            home_ss << "      <!-- hold this hand pose for the whole sequence -->\n";
+            home_ss << "      <Parallel>\n";
+            if (left_hand) {
+                home_ss << "        <SetHandYaw arm=\"left_arm\" positions=\"" << joinSemicolon(lh_yaw) << "\"/>\n";
+                home_ss << "        <SetHandFlex arm=\"left_arm\" positions=\"" << joinSemicolon(lh_flex) << "\"/>\n";
+            }
+            if (right_hand) {
+                home_ss << "        <SetHandYaw arm=\"right_arm\" positions=\"" << joinSemicolon(rh_yaw) << "\"/>\n";
+                home_ss << "        <SetHandFlex arm=\"right_arm\" positions=\"" << joinSemicolon(rh_flex) << "\"/>\n";
+            }
+            home_ss << "      </Parallel>\n";
+        }
+        home_xml = home_ss.str();
+    }
+
+    std::stringstream xml;
+    xml << "<?xml version=\"1.0\" ?>\n";
+    xml << "<!-- Auto-generated from " << left_section << " + " << right_section
+        << " by sequence_to_bt --both-arms. DO NOT edit manually - regenerate from the YAML instead.\n"
+        << "     ONE PlanToJointSequence targeting \"both_arms\" (left_arm's DOF then right_arm's DOF\n"
+        << "     per waypoint, per both_arms' SRDF-declared joint order) so both arms plan and execute\n"
+        << "     as a single trajectory - true simultaneous motion, not two independently-timed goals.\n"
+        << "     Profile must stay an OMPL profile: Pilz refuses to plan for any group without a\n"
+        << "     kinematics.yaml IK-solver entry, which both_arms structurally can't have. -->\n";
+    const bool repeat = (repeat_cycles != 1);
+    const std::string wave_indent = repeat ? "        " : "      ";
+
+    std::stringstream wave_ss;
+    wave_ss << wave_indent << "<SetPlannerConfig profile=\"" << profile << "\"/>\n";
+    wave_ss << wave_indent << "<!-- " << emitted_points << " waypoints, blended into one trajectory"
+            << (exclude_points.empty() ? "" : " (some points excluded, see exclude_points)") << " -->\n";
+    wave_ss << wave_indent << "<PlanToJointSequence arm=\"both_arms\" joint_sequence=\"" << flat_tokens << "\"";
+    if (section_speed.velocity >= 0.0) {
+        wave_ss << " velocity_scaling=\"" << formatScale(section_speed.velocity) << "\"";
+    }
+    if (section_speed.acceleration >= 0.0) {
+        wave_ss << " acceleration_scaling=\"" << formatScale(section_speed.acceleration) << "\"";
+    }
+    wave_ss << " output_trajectory=\"{plan_trajectory}\"/>\n";
+
+    xml << "<root BTCPP_format=\"4\" main_tree_to_execute=\"" << tree_name << "\">\n";
+    xml << "  <BehaviorTree ID=\"" << tree_name << "\">\n";
+    xml << "    <Sequence name=\"" << left_section << "_" << right_section << "\">\n";
+    xml << home_xml;
+    if (repeat) {
+        xml << "      <!-- home (above) runs once; only the wave repeats -->\n";
+        xml << "      <Repeat num_cycles=\"" << repeat_cycles << "\">\n";
+        xml << "        <Sequence name=\"" << left_section << "_" << right_section << "_cycle\">\n";
+        xml << wave_ss.str();
+        xml << "        </Sequence>\n";
+        xml << "      </Repeat>\n";
+    } else {
+        xml << wave_ss.str();
+    }
+    xml << "    </Sequence>\n";
+    xml << "  </BehaviorTree>\n";
+    xml << "</root>\n";
+
+    std::ofstream out_file(out_path);
+    if (!out_file.good()) {
+        throw std::runtime_error("Failed to open output file: " + out_path);
+    }
+    out_file << xml.str();
+    out_file.close();
+}
+
 } // namespace computation
 } // namespace utilities

@@ -51,7 +51,7 @@ void printUsage(const char* prog)
 {
   std::cerr
     << "Usage: " << prog
-    << " --arm <la|ra> --section <name> --shape <line|ellipse|circle|square> --file <path/to/sequence.yaml>"
+    << " --arm <la|ra> --section <name> --shape <line|ellipse|circle|square|mirror> --file <path/to/sequence.yaml>"
        " [shape-specific args] [--num-points N] [--timeout SEC]\n\n"
     << "  line/ellipse (need --start/--end):\n"
     << "    --start <live|key:NAME> --end <live|key:NAME> [--height-ratio R]  (ellipse only, default 0.5)\n"
@@ -60,7 +60,16 @@ void printUsage(const char* prog)
     << "    [--start-angle-deg D] [--end-angle-deg D]  (default 0..360, full circle)\n"
     << "  square (needs --center/--side-length):\n"
     << "    --center <live|key:NAME> --side-length L [--normal x,y,z]  (default normal 0,0,1)\n"
-    << "    NOTE: --num-points means points PER SIDE for square, not a total.\n\n"
+    << "    NOTE: --num-points means points PER SIDE for square, not a total.\n"
+    << "  mirror (needs --source-section): mirrors an EXISTING numbered joint-angle run recorded\n"
+    << "    on the OTHER arm (e.g. wavePoses on la) point-by-point - FK each source waypoint,\n"
+    << "    reflect the pose across the model-root Y=0 plane (see mirrorAcrossY()), IK-solve it for\n"
+    << "    --arm. Unlike line/ellipse/circle/square this isn't a parametric shape: it reproduces\n"
+    << "    whatever the source run actually is, one point per source point. --num-points/--start/\n"
+    << "    --end/--center/--height-ratio/etc. are not used with this shape.\n"
+    << "    --source-section <name>: section holding the source run (e.g. 'wavePoses'); its keys\n"
+    << "    must follow the usual '<otherArmPrefix><PascalSection><N>Angle' numbering starting at 1,\n"
+    << "    contiguous (stops at the first missing N).\n\n"
     << "  --start/--end/--center: 'live' - capture the arm's current /joint_states now (FK'd to a\n"
     << "    pose) - or 'key:NAME' - read an existing waypoint straight out of --file, no live robot\n"
     << "    needed. Same 'Angle' vs 'Joint' convention as sequence.yaml itself: a '*Angle' key is 7\n"
@@ -210,6 +219,7 @@ std::optional<Eigen::Vector3d> parseVector3(const std::string& spec)
 int main(int argc, char** argv)
 {
   std::string arm_prefix, section, shape, start_spec, end_spec, center_spec, normal_spec, file_path;
+  std::string source_section;
   int num_points = 20;
   double height_ratio = 0.5;
   double radius = 0.0;
@@ -236,6 +246,7 @@ int main(int argc, char** argv)
     else if (arg == "--center") center_spec = next("--center");
     else if (arg == "--normal") normal_spec = next("--normal");
     else if (arg == "--file") file_path = next("--file");
+    else if (arg == "--source-section") source_section = next("--source-section");
     else if (arg == "--num-points") num_points = std::stoi(next("--num-points"));
     else if (arg == "--height-ratio") height_ratio = std::stod(next("--height-ratio"));
     else if (arg == "--radius") { radius = std::stod(next("--radius")); have_radius = true; }
@@ -263,8 +274,9 @@ int main(int argc, char** argv)
 
   const bool is_start_end_shape = (shape == "line" || shape == "ellipse");
   const bool is_center_shape = (shape == "circle" || shape == "square");
-  if (!is_start_end_shape && !is_center_shape) {
-    std::cerr << "[ERROR] --shape must be one of: line, ellipse, circle, square\n";
+  const bool is_mirror_shape = (shape == "mirror");
+  if (!is_start_end_shape && !is_center_shape && !is_mirror_shape) {
+    std::cerr << "[ERROR] --shape must be one of: line, ellipse, circle, square, mirror\n";
     return 1;
   }
   if (is_start_end_shape && (start_spec.empty() || end_spec.empty())) {
@@ -297,6 +309,18 @@ int main(int argc, char** argv)
   }
   if (shape != "square" && have_side_length) {
     std::cerr << "[ERROR] --side-length is only used by --shape square\n";
+    return 1;
+  }
+  if (is_mirror_shape && source_section.empty()) {
+    std::cerr << "[ERROR] --shape mirror requires --source-section\n";
+    return 1;
+  }
+  if (!is_mirror_shape && !source_section.empty()) {
+    std::cerr << "[ERROR] --source-section is only used by --shape mirror\n";
+    return 1;
+  }
+  if (is_mirror_shape && (!start_spec.empty() || !end_spec.empty() || !center_spec.empty())) {
+    std::cerr << "[ERROR] --start/--end/--center are not used by --shape mirror\n";
     return 1;
   }
 
@@ -458,9 +482,10 @@ int main(int argc, char** argv)
     return source.mirror ? mirrorAcrossY(*resolved) : *resolved;
   };
 
-  // --- Resolve reference pose(s) and build the position path via trajectory_shapes ---
-  std::vector<Eigen::Vector3d> positions;
-  Eigen::Quaterniond q_start, q_end;  // orientation endpoints to slerp between
+  // --- Resolve reference pose(s) and build the full per-point target list.
+  // Every shape ends up with one Isometry3d (position + orientation) per
+  // point, so the IK loop below is shape-agnostic. ---
+  std::vector<Eigen::Isometry3d> targets;
 
   if (is_start_end_shape) {
     const auto start_pose = resolvePose(start_source, "start");
@@ -469,13 +494,14 @@ int main(int argc, char** argv)
       rclcpp::shutdown();
       return 1;
     }
-    q_start = Eigen::Quaterniond(start_pose->linear());
-    q_end = Eigen::Quaterniond(end_pose->linear());
+    const Eigen::Quaterniond q_start(start_pose->linear());
+    const Eigen::Quaterniond q_end(end_pose->linear());
     std::cout << "[INFO] --start resolved to: " << start_pose->translation().transpose() << " | qxyzw "
               << q_start.x() << " " << q_start.y() << " " << q_start.z() << " " << q_start.w() << "\n";
     std::cout << "[INFO] --end resolved to:   " << end_pose->translation().transpose() << " | qxyzw " << q_end.x()
               << " " << q_end.y() << " " << q_end.z() << " " << q_end.w() << "\n";
 
+    std::vector<Eigen::Vector3d> positions;
     if (shape == "line") {
       positions = trajectory_shapes::line(start_pose->translation(), end_pose->translation(), num_points);
     } else {
@@ -487,14 +513,22 @@ int main(int argc, char** argv)
       rclcpp::shutdown();
       return 1;
     }
-  } else {
+    for (size_t i = 0; i < positions.size(); ++i) {
+      const double t = (positions.size() > 1) ? static_cast<double>(i) / static_cast<double>(positions.size() - 1) : 0.0;
+      Eigen::Isometry3d target = Eigen::Isometry3d::Identity();
+      target.translation() = positions[i];
+      target.linear() = trajectory_shapes::slerp(q_start, q_end, t).toRotationMatrix();
+      targets.push_back(target);
+    }
+  } else if (is_center_shape) {
     const auto center_pose = resolvePose(center_source, "center");
     if (!center_pose) {
       rclcpp::shutdown();
       return 1;
     }
-    q_start = q_end = Eigen::Quaterniond(center_pose->linear());  // orientation held constant
+    const Eigen::Quaterniond q = Eigen::Quaterniond(center_pose->linear());  // orientation held constant
 
+    std::vector<Eigen::Vector3d> positions;
     if (shape == "circle") {
       positions = trajectory_shapes::circle(
         center_pose->translation(), radius, normal, num_points, start_angle_deg * M_PI / 180.0,
@@ -502,9 +536,50 @@ int main(int argc, char** argv)
     } else {
       positions = trajectory_shapes::square(center_pose->translation(), side_length, normal, num_points);
     }
+    for (const auto& p : positions) {
+      Eigen::Isometry3d target = Eigen::Isometry3d::Identity();
+      target.translation() = p;
+      target.linear() = q.toRotationMatrix();
+      targets.push_back(target);
+    }
+  } else {
+    // mirror: read an existing numbered joint-angle run off the OTHER arm,
+    // FK + mirror each point - no parametric curve, reproduces exactly
+    // whatever the source run is, point for point.
+    const std::string source_side = (side == "left") ? "right" : "left";
+    const std::string source_arm_prefix = (source_side == "left") ? "la" : "ra";
+    const std::string source_group = source_side + "_arm";
+    const std::string source_ee_link = "openarm_" + source_side + "_hand_tcp";
+
+    for (int n = 1; ; ++n) {
+      const std::string source_key =
+        source_arm_prefix + waypoint_recorder::toPascalCase(source_section) + std::to_string(n) + "Angle";
+      auto raw = readYamlKey(file_path, source_key);
+      if (!raw) {
+        break;  // contiguous numbering ends here
+      }
+      if (raw->size() != 7) {
+        std::cerr << "[ERROR] '" << source_key << "' does not have 7 values\n";
+        rclcpp::shutdown();
+        return 1;
+      }
+      state.setJointGroupPositions(source_group, *raw);
+      state.update();
+      const Eigen::Isometry3d source_pose = state.getGlobalLinkTransform(source_ee_link);
+      targets.push_back(mirrorAcrossY(source_pose));
+    }
+    if (targets.empty()) {
+      std::cerr << "[ERROR] No waypoints found under source-section '" << source_section << "' for prefix '"
+                << source_arm_prefix << "' (expected keys like '" << source_arm_prefix
+                << waypoint_recorder::toPascalCase(source_section) << "1Angle')\n";
+      rclcpp::shutdown();
+      return 1;
+    }
+    std::cout << "[INFO] Mirroring " << targets.size() << " waypoint(s) from '" << source_side << "_arm' ("
+              << source_section << ")\n";
   }
 
-  std::cout << "[INFO] Generating " << positions.size() << " " << shape << " waypoints for '" << arm_prefix
+  std::cout << "[INFO] Generating " << targets.size() << " " << shape << " waypoints for '" << arm_prefix
             << "'\n";
 
   // --- IK-solve each point in order, seeded from the previous solution to
@@ -516,14 +591,9 @@ int main(int argc, char** argv)
   seed_state.update();
 
   int written = 0;
-  const size_t total = positions.size();
+  const size_t total = targets.size();
   for (size_t i = 0; i < total; ++i) {
-    const double t = (total > 1) ? static_cast<double>(i) / static_cast<double>(total - 1) : 0.0;
-    const Eigen::Quaterniond q = trajectory_shapes::slerp(q_start, q_end, t);
-
-    Eigen::Isometry3d target = Eigen::Isometry3d::Identity();
-    target.translation() = positions[i];
-    target.linear() = q.toRotationMatrix();
+    const Eigen::Isometry3d& target = targets[i];
 
     moveit::core::RobotState candidate(seed_state);
     // setFromIK() reports numerical convergence, not joint-limit compliance

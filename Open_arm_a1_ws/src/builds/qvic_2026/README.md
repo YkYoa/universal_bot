@@ -13,7 +13,9 @@ qvic_2026/
 │   ├── sequence.yaml           # this project's waypoints/poses (source of truth)
 │   └── qvic_2026*_bt.xml       # generated BT trees (regenerate from sequence.yaml, don't hand-edit)
 ├── launch/
-│   └── qvic_2026.launch.py     # launches bt_executor_node against a given bt_xml_path
+│   └── qvic_2026.launch.py     # launches bt_executor_node; auto-regenerates bt_xml_path
+│                                # from sequence.yaml on every launch for arm:=left/right/both
+│                                # (see ARM_REGEN_ARGS) - explicit bt_xml_path:=... skips this
 ├── src/                        # project-specific C++ (empty so far - see "Adding project code" below)
 ├── include/
 ├── CMakeLists.txt
@@ -64,16 +66,46 @@ blended trajectory) instead of N separate `PlanToJointTarget` nodes (N
 independent stop-start moves) — this happens automatically based on the
 `<N>` numbering, no extra flag needed.
 
+**2b. Both arms at once** (true simultaneous motion, not two racing
+single-arm goals): use `--both-arms` with a matching left/right section
+pair (same waypoint count, e.g. `waveEllipse` + `waveEllipseR`) to emit
+ONE `PlanToJointSequence` targeting the SRDF `both_arms` group instead of
+two separate BT trees:
+```
+ros2 run openarm_demo sequence_to_bt --yaml /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/sequence.yaml --out /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/qvic_2026_ellipse_bimanual_bt.xml --both-arms --left-section waveEllipse --right-section waveEllipseR --profile realtime_rrt --tree-name Both
+```
+`--profile` must be an OMPL profile (default `realtime_rrt`), not a Pilz
+one — Pilz refuses to plan for any group without a `kinematics.yaml`
+IK-solver entry, and `both_arms` (two independent chains) structurally
+can't have one. Regenerate this file instead of hand-editing it whenever
+`waveEllipse`/`waveEllipseR` change.
+
+Add `--home-section <name>` to also prepend a fixed starting pose (a
+`PlanToJointTarget("both_arms")`) before the wave, plus — if the section
+defines `lhHomeYaw`/`lhHomeFlex`/`rhHomeYaw`/`rhHomeFlex` (amazing_hand's
+8 alias joints, 4 each) — a `SetHandYaw`/`SetHandFlex` pair per side that
+sets the hand once and holds it for the whole sequence (the wave itself
+never touches the hand). See `sequence.yaml`'s `waveHome` section for the
+expected key shape (`laHomeAngle`/`raHomeAngle`, 7 values each, required).
+`qvic_2026.launch.py`'s `arm:=both` defaults `ee_type` to `amazing_hand`
+for this reason (pass `ee_type:=openarm_hand` to override).
+
 **3. Rebuild** so the installed `share/` copy picks up the new files:
 ```
 colcon build --packages-select qvic_2026
 ```
-(run from `~/universal_bot/Open_arm_a1_ws`)
+(run from `~/universal_bot/Open_arm_a1_ws`) — only needed for `wavepose_bimanual`
+or any other manually-generated file. For `arm:=left/right/both`,
+`qvic_2026.launch.py` regenerates the XML straight from `sequence.yaml` on
+every launch (see `ARM_REGEN_ARGS` in the launch file) - edit the YAML,
+relaunch, done. No separate `sequence_to_bt` or `colcon build` step.
 
 **4. Replay — fake hardware first, always:**
 ```
-ros2 launch bt_executor bt_executor.launch.py bt_xml_path:=/home/hans/universal_bot/Open_arm_a1_ws/install/qvic_2026/share/qvic_2026/config/qvic_2026_<name>_bt.xml use_rviz:=true
+ros2 launch qvic_2026 qvic_2026.launch.py arm:=left use_rviz:=true
 ```
+(`arm:=` is `left`/`right`/`both`; pass `bt_xml_path:=...` directly for a
+manually-generated file like `wavepose_bimanual`, which skips auto-regen.)
 This is a fully self-contained fake-hardware stack (robot_state_publisher,
 fake ros2_control, move_group, robot_skills_node, bt_executor, RViz) — one
 command, no other terminals needed. Confirm the motion looks right in RViz

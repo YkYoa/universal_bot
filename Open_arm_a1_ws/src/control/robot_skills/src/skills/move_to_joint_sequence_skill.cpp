@@ -26,13 +26,24 @@ SkillResult MoveToJointSequenceSkill::execute(
 
     RCLCPP_INFO(node_->get_logger(), "[MoveToJointSequenceSkill] Planning joint sequence for arm: %s", req.arm.c_str());
 
-    if (req.joint_sequence.empty() || req.joint_sequence.size() % 7 != 0) {
+    const auto* jmg = planner_->getMoveItCpp()->getRobotModel()->getJointModelGroup(req.arm);
+    if (!jmg) {
         result.success = false;
-        result.error_message = "joint_sequence must be a non-empty, flat array with a multiple-of-7 length.";
+        result.error_message = "Unknown planning group: " + req.arm;
         RCLCPP_ERROR(node_->get_logger(), "[MoveToJointSequenceSkill] %s", result.error_message.c_str());
         return result;
     }
-    if (req.joint_sequence.size() < 14) {
+    const size_t dof = jmg->getVariableCount();
+
+    if (req.joint_sequence.empty() || req.joint_sequence.size() % dof != 0) {
+        result.success = false;
+        result.error_message = "joint_sequence must be a non-empty, flat array with a multiple-of-" +
+                                std::to_string(dof) + " length (group '" + req.arm + "' has " +
+                                std::to_string(dof) + " DOF).";
+        RCLCPP_ERROR(node_->get_logger(), "[MoveToJointSequenceSkill] %s", result.error_message.c_str());
+        return result;
+    }
+    if (req.joint_sequence.size() < dof * 2) {
         result.success = false;
         result.error_message = "joint_sequence needs at least 2 waypoints (use move_to_joint for a single target).";
         RCLCPP_ERROR(node_->get_logger(), "[MoveToJointSequenceSkill] %s", result.error_message.c_str());
@@ -40,9 +51,9 @@ SkillResult MoveToJointSequenceSkill::execute(
     }
 
     std::vector<std::vector<double>> waypoints;
-    waypoints.reserve(req.joint_sequence.size() / 7);
-    for (size_t i = 0; i < req.joint_sequence.size(); i += 7) {
-        waypoints.emplace_back(req.joint_sequence.begin() + static_cast<long>(i), req.joint_sequence.begin() + static_cast<long>(i + 7));
+    waypoints.reserve(req.joint_sequence.size() / dof);
+    for (size_t i = 0; i < req.joint_sequence.size(); i += dof) {
+        waypoints.emplace_back(req.joint_sequence.begin() + static_cast<long>(i), req.joint_sequence.begin() + static_cast<long>(i + dof));
     }
 
     // 1. Build planning request

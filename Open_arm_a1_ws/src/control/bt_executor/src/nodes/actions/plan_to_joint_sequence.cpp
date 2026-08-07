@@ -15,9 +15,8 @@ bool PlanToJointSequence::setGoal(Goal & goal)
     RCLCPP_ERROR(logger(), "[PlanToJointSequence] joint_sequence port not set");
     return false;
   }
-  if (joint_sequence.empty() || joint_sequence.size() % 7 != 0) {
-    RCLCPP_ERROR(logger(), "[PlanToJointSequence] joint_sequence must be a non-empty, flat, multiple-of-7 length "
-                            "(got %zu values)", joint_sequence.size());
+  if (joint_sequence.empty()) {
+    RCLCPP_ERROR(logger(), "[PlanToJointSequence] joint_sequence must not be empty");
     return false;
   }
 
@@ -45,9 +44,9 @@ bool PlanToJointSequence::setGoal(Goal & goal)
 
   RCLCPP_INFO(logger(),
     "[PlanToJointSequence] ExecuteSkill: %s | arm: %s | profile: %s | mode: %s | velocity_scaling: %.2f | "
-    "acceleration_scaling: %.2f | waypoints: %zu",
+    "acceleration_scaling: %.2f | joint_sequence values: %zu",
     goal.skill_name.c_str(), goal.arm.c_str(), goal.planner_profile.c_str(),
-    goal.planning_mode.c_str(), velocity_scaling, acceleration_scaling, joint_sequence.size() / 7);
+    goal.planning_mode.c_str(), velocity_scaling, acceleration_scaling, joint_sequence.size());
 
   return true;
 }

@@ -6,14 +6,24 @@
   by the standalone control_amazing_hand.launch.py:
     ${prefix}j11..j14 = yaw/abduction of fingers 1..4 (4 = thumb)
     ${prefix}j21..j24 = proximal flexion of fingers 1..4
-  hand_kinematics_node (with matching link_prefix/alias_prefix/topic params)
-  solves the closed-loop linkage and republishes the full joint state.
+  robot_hardware_interface/AmazingHandHW (control/robot_hardware_interface)
+  solves the closed-loop linkage in-process and reports the full joint state
+  as ros2_control state interfaces - no topics, no separate node (replaces
+  the old topic_based_ros2_control + hand_kinematics_node.py bridge).
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
   <xacro:property name="ahand_yaw_lower" value="-0.349066"/>
   <xacro:property name="ahand_yaw_upper" value="0.349066"/>
   <xacro:property name="ahand_flex_lower" value="-0.0924772"/>
-  <xacro:property name="ahand_flex_upper" value="1.35615"/>
+  <!-- 1.31 confirmed reachable on real hardware at yaw~=0 (the servo actuator
+       joints' declared limits were asymmetric/too tight and the solver's
+       internal q2/q_knu safety bound was too tight - both fixed in
+       amazing_hand_kinematics; see its solveFingerServo/Knuckle comments).
+       At q1=0 this mechanism now reaches >=1.36 rad; the full +-0.349 rad
+       yaw range narrows worst-case reach to ~1.2 rad, so yaw+flex both at
+       their extreme simultaneously can still clip slightly - a real coupled
+       kinematic limit, not a modeling bug. -->
+  <xacro:property name="ahand_flex_upper" value="1.35"/>
 
   <xacro:macro name="amazing_hand_alias_joint" params="prefix link_prefix name lower upper">
     <link name="${prefix}${name}_ref"/>
@@ -28,9 +38,18 @@
 
   <xacro:macro name="amazing_hand_command_joint" params="prefix name lower upper initial:=0.0">
     <joint name="${prefix}${name}">
+      <!-- initial_value on BOTH interfaces: topic_based_ros2_control's
+           TopicBasedSystem continuously echoes the COMMAND interface's
+           current value out to joint_commands_topic at full control rate
+           (not just once at startup) - if only the state interface got an
+           initial_value, that echo would overwrite hand_kinematics_node's
+           solved home pose with 0.0 within milliseconds of activation,
+           every time, regardless of what hand_kinematics_node itself does
+           at startup. Both must agree or the command interface wins. -->
       <command_interface name="position">
         <param name="min">${lower}</param>
         <param name="max">${upper}</param>
+        <param name="initial_value">${initial}</param>
       </command_interface>
       <state_interface name="position">
         <param name="initial_value">${initial}</param>
@@ -39,7 +58,7 @@
   </xacro:macro>
 
   <xacro:macro name="amazing_hand_ros2_control"
-               params="prefix link_prefix joint_commands_topic joint_states_topic">
+               params="prefix link_prefix">
     <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j11" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
     <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j12" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
     <xacro:amazing_hand_alias_joint prefix="${prefix}" link_prefix="${link_prefix}" name="j13" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
@@ -51,9 +70,10 @@
 
     <ros2_control name="${prefix}AmazingHandSystem" type="system">
       <hardware>
-        <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
-        <param name="joint_commands_topic">${joint_commands_topic}</param>
-        <param name="joint_states_topic">${joint_states_topic}</param>
+        <plugin>robot_hardware_interface/AmazingHandHW</plugin>
+        <param name="link_prefix">${link_prefix}</param>
+        <param name="alias_prefix">${prefix}</param>
+        <param name="command_space">knuckle</param>
       </hardware>
       <xacro:amazing_hand_command_joint prefix="${prefix}" name="j11" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
       <xacro:amazing_hand_command_joint prefix="${prefix}" name="j12" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
@@ -61,7 +81,10 @@
       <xacro:amazing_hand_command_joint prefix="${prefix}" name="j14" lower="${ahand_yaw_lower}" upper="${ahand_yaw_upper}"/>
       <xacro:amazing_hand_command_joint prefix="${prefix}" name="j21" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
       <xacro:amazing_hand_command_joint prefix="${prefix}" name="j22" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
-      <xacro:amazing_hand_command_joint prefix="${prefix}" name="j23" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
+      <!-- Pre-flexed so the hand doesn't rest flat against the torso -
+           matches the SRDF's "home" group_state for {left,right}_hand_fingers
+           (see openarm_bimanual.srdf) and the standalone amazing_hand.srdf. -->
+      <xacro:amazing_hand_command_joint prefix="${prefix}" name="j23" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}" initial="1.31"/>
       <xacro:amazing_hand_command_joint prefix="${prefix}" name="j24" lower="${ahand_flex_lower}" upper="${ahand_flex_upper}"/>
     </ros2_control>
   </xacro:macro>

@@ -1,6 +1,3 @@
 [submodule "Open_arm_a1_ws/src/third_party/BehaviorTree.ROS2"]
 	path = Open_arm_a1_ws/src/third_party/BehaviorTree.ROS2
 	url = https://github.com/BehaviorTree/BehaviorTree.ROS2.git
-[submodule "Open_arm_a1_ws/src/third_party/topic_based_ros2_control"]
-	path = Open_arm_a1_ws/src/third_party/topic_based_ros2_control
-	url = https://github.com/PickNikRobotics/topic_based_ros2_control.git

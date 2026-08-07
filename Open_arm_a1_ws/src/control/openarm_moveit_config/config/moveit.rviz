@@ -42,8 +42,8 @@ Visualization Manager:
       Planning Request:
         Planning Group: left_arm
         Interactive Marker Size: 0.2
-        Query Goal State: true  
-        Query Start State: false
+        Query Goal State: true
+        Query Start State: true
       Scene Geometry:
         Scene Alpha: 0.9
         Scene Color: 50; 230; 50
@@ -84,7 +84,7 @@ Visualization Manager:
 
     - Class: rviz_default_plugins/Marker
       Name: Planned Trajectory
-      Enabled: true
+      Enabled: false
       Topic:
         Value: /motion_planner/planned_trajectory_markers
 

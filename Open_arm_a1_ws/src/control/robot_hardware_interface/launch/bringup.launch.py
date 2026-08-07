@@ -1,5 +1,4 @@
 import os
-import re
 import subprocess
 
 import yaml
@@ -12,6 +11,7 @@ from launch.substitutions import Command, FindExecutable, LaunchConfiguration, P
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+from openarm_moveit_config.srdf_utils import load_srdf_for_ee_type
 
 # CycloneDDS: large URDF / many joints
 if "CYCLONEDDS_URI" not in os.environ:
@@ -198,40 +198,12 @@ def launch_setup(context, *args, **kwargs):
     robot_description = {"robot_description": ParameterValue(robot_description_content, value_type=str)}
 
     # ── Semantic Robot Description (SRDF) ──
-    # Same ee_type/body_type patching as moveit_bimanual.launch.py - kept in
-    # sync there since both read the same source SRDF from openarm_moveit_config.
+    # openarm_bimanual.srdf contains groups for both end-effector types; only
+    # one set is valid for the URDF actually being built here. See
+    # openarm_moveit_config/srdf_utils.py for why and what it strips.
     srdf_path = os.path.join(moveit_config_pkg, "srdf", "openarm_bimanual.srdf")
-    with open(srdf_path, "r") as f:
-        robot_description_semantic_content = f.read()
-
-    if ee_type.perform(context) == "amazing_hand":
-        robot_description_semantic_content = (
-            robot_description_semantic_content
-            .replace('group="left_gripper" parent_group="left_arm"',
-                      'group="left_hand_fingers" parent_group="left_arm"')
-            .replace('group="right_gripper" parent_group="right_arm"',
-                      'group="right_hand_fingers" parent_group="right_arm"')
-        )
-        robot_description_semantic_content = re.sub(
-            r'  <group name="(?:left|right)_gripper">.*?</group>\n\n',
-            '', robot_description_semantic_content, flags=re.DOTALL)
-        robot_description_semantic_content = re.sub(
-            r'  <group_state name="(?:open|close)" group="(?:left|right)_gripper">.*?</group_state>\n\n',
-            '', robot_description_semantic_content, flags=re.DOTALL)
-        robot_description_semantic_content = '\n'.join(
-            line for line in robot_description_semantic_content.split('\n')
-            if not re.search(r'openarm_(?:left|right)_(?:hand"|left_finger|right_finger)', line)
-        )
-
-    if body_type.perform(context) == "v2":
-        robot_description_semantic_content = robot_description_semantic_content.replace(
-            "  <!-- Virtual joints -->",
-            '  <group name="head">\n'
-            '    <joint name="openarm_body_neck_joint"/>\n'
-            '    <joint name="openarm_body_head_joint"/>\n'
-            '  </group>\n\n'
-            "  <!-- Virtual joints -->"
-        )
+    robot_description_semantic_content = load_srdf_for_ee_type(
+        srdf_path, ee_type.perform(context), body_type.perform(context))
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_content}
 
     # ── Config, all local to this package ──
@@ -340,30 +312,10 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # amazing_hand's closed-loop finger linkage (ball/cylindrical/revolute
-    # loop-closure joints) has no other state source - without this,
-    # planning_scene_monitor never learns their state and re-warns "complete
-    # state of the robot is not yet known" on every scene update, which is
-    # both log spam and a real per-cycle cost (this is what caused the lag).
-    hand_kinematics_nodes = [
-        Node(
-            package="openarm_description",
-            executable="hand_kinematics_node.py",
-            name=f"hand_kinematics_node_{side}",
-            parameters=[
-                robot_description,
-                {
-                    "command_space": "knuckle",
-                    "link_prefix": f"openarm_{side}_ahand_",
-                    "alias_prefix": f"openarm_{side}_",
-                    "joint_commands_topic": f"/{side}_ahand/joint_commands",
-                    "joint_states_topic": f"/{side}_ahand/joint_states",
-                    "use_sim_time": False,
-                },
-            ],
-            condition=is_amazing_hand,
-        )
-        for side in ("left", "right")
-    ]
+    # loop-closure joints, no other state source) is solved in-process by
+    # robot_hardware_interface/AmazingHandHW (see ahand.ros2_control.xacro)
+    # and reported as normal ros2_control state interfaces, published by
+    # joint_state_broadcaster like everything else - no separate node here.
     base_controller_spawner = Node(
         package="controller_manager", executable="spawner",
         arguments=["base_controller", "-c", "/controller_manager"],
@@ -454,7 +406,6 @@ def launch_setup(context, *args, **kwargs):
         left_gripper_controller_spawner,
         right_gripper_controller_spawner,
         *hand_controller_spawners,
-        *hand_kinematics_nodes,
         head_controller_spawner,
         base_controller_spawner,
         *gravity_comp_spawners,

@@ -31,7 +31,7 @@
     <joint name="j14" value="0.0"/>
     <joint name="j21" value="0.0"/>
     <joint name="j22" value="0.0"/>
-    <joint name="j23" value="0.0"/>
+    <joint name="j23" value="1.31"/>
     <joint name="j24" value="0.0"/>
   </group_state>
 
@@ -40,10 +40,10 @@
     <joint name="j12" value="0.0"/>
     <joint name="j13" value="0.0"/>
     <joint name="j14" value="0.0"/>
-    <joint name="j21" value="1.0"/>
-    <joint name="j22" value="1.0"/>
-    <joint name="j23" value="1.0"/>
-    <joint name="j24" value="1.0"/>
+    <joint name="j21" value="0.0"/>
+    <joint name="j22" value="0.0"/>
+    <joint name="j23" value="1.3"/>
+    <joint name="j24" value="0.0"/>
   </group_state>
 
   <virtual_joint name="virtual_joint" type="fixed" parent_frame="world" child_link="root"/>

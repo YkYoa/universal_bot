@@ -10,6 +10,7 @@ find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(amazing_hand_kinematics REQUIRED)
 
 # Optional: OpenArmCAN (openarm_can library). We keep this optional so
 # the workspace can build on machines without the hardware stack installed.
@@ -17,6 +18,7 @@ find_package(OpenArmCAN QUIET)
 
 add_library(${PROJECT_NAME} SHARED
   src/v10/hardware_interface.cpp
+  src/amazing_hand/amazing_hand_hw.cpp
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE OPENARM_HARDWARE_BUILDING_DLL)
@@ -32,6 +34,7 @@ ament_target_dependencies(${PROJECT_NAME}
   pluginlib
   rclcpp
   rclcpp_lifecycle
+  amazing_hand_kinematics
 )
 
 if(OpenArmCAN_FOUND)
@@ -63,6 +66,6 @@ install(DIRECTORY config/
 
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
-ament_export_dependencies(hardware_interface pluginlib rclcpp rclcpp_lifecycle)
+ament_export_dependencies(hardware_interface pluginlib rclcpp rclcpp_lifecycle amazing_hand_kinematics)
 
 ament_package()

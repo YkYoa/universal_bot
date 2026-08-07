@@ -10,6 +10,9 @@ Launches the full VLA-BT stack:
   5. bt_executor_node  ← the BT engine
   6. (optional) RViz  via use_rviz:=true
   7. (optional) REST API via use_api:=true  (Android team telemetry + control)
+  8. (ee_type:=amazing_hand only) hand_j1/j2 controller spawners - the closed-
+     loop linkage solve itself runs in-process inside
+     robot_hardware_interface/AmazingHandHW (see ahand.ros2_control.xacro).
 
 Typical usage:
   ros2 launch bt_executor bt_executor.launch.py use_rviz:=true
@@ -19,18 +22,19 @@ import os
 import yaml
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import (
-    Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
+    Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 )
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
+from openarm_moveit_config.srdf_utils import load_srdf_for_ee_type
 
 
-def generate_launch_description():
+def launch_setup(context, *args, **kwargs):
     moveit_cfg = get_package_share_directory("openarm_moveit_config")
     bt_cfg     = get_package_share_directory("bt_executor")
     motion_planner_cfg = get_package_share_directory("motion_planner")
@@ -43,6 +47,7 @@ def generate_launch_description():
     isaacsim    = LaunchConfiguration("isaacsim")
     instruction = LaunchConfiguration("instruction")
     use_sim_time = LaunchConfiguration("use_sim_time")
+    ee_type      = LaunchConfiguration("ee_type")
 
     # ── Robot description ────────────────────────────────────────────────────
     robot_description_content = Command([
@@ -54,6 +59,7 @@ def generate_launch_description():
         " mobile_base:=true",
         " mobile_base_xyz:='0 0 0.31'",
         " mobile_base_body_xyz:='0 0 0'",
+        " ee_type:=", ee_type,
     ])
     robot_description = {
         "robot_description": ParameterValue(robot_description_content,
@@ -61,9 +67,13 @@ def generate_launch_description():
     }
 
     # ── SRDF ─────────────────────────────────────────────────────────────────
+    # openarm_bimanual.srdf contains groups for both end-effector types; only
+    # one set is valid for the URDF actually being built here. See
+    # openarm_moveit_config/srdf_utils.py for why and what it strips.
     srdf_path = os.path.join(moveit_cfg, "srdf", "openarm_bimanual.srdf")
-    with open(srdf_path) as f:
-        robot_description_semantic = {"robot_description_semantic": f.read()}
+    robot_description_semantic = {
+        "robot_description_semantic": load_srdf_for_ee_type(srdf_path, ee_type.perform(context))
+    }
 
     # ── MoveIt config ────────────────────────────────────────────────────────
     kinematics_yaml = os.path.join(moveit_cfg, "config", "kinematics.yaml")
@@ -130,6 +140,21 @@ def generate_launch_description():
         for c in ["joint_state_broadcaster",
                   "left_arm_controller",  "right_arm_controller",
                   "left_gripper_controller", "right_gripper_controller"]
+    ]
+
+    # amazing_hand's 8 alias joints per side are split across two
+    # JointTrajectoryControllers (yaw j11-j14, flex j21-j24 - see
+    # robot_control/config/bimanual_controllers.yaml); these only exist in
+    # the URDF/ros2_control under ee_type:=amazing_hand.
+    is_amazing_hand_not_isaacsim = IfCondition(PythonExpression(
+        ["'", ee_type, "' == 'amazing_hand' and '", isaacsim, "' == 'false'"]))
+    hand_spawners = [
+        Node(package="controller_manager", executable="spawner",
+             arguments=[c, "-c", "/controller_manager"],
+             parameters=[{"use_sim_time": use_sim_time}],
+             condition=is_amazing_hand_not_isaacsim)
+        for c in ["left_hand_j1_controller", "left_hand_j2_controller",
+                  "right_hand_j1_controller", "right_hand_j2_controller"]
     ]
 
     move_group = Node(
@@ -219,11 +244,37 @@ def generate_launch_description():
         condition=IfCondition(use_rviz),
     )
 
+    # amazing_hand's ball/cylindrical/revolute loop-closure joints (no other
+    # state source) are now reported by robot_hardware_interface/AmazingHandHW
+    # (see ahand.ros2_control.xacro) as normal ros2_control state interfaces,
+    # published by joint_state_broadcaster like everything else - no separate
+    # node needed here anymore.
+
+    return [
+        rsp,
+        ros2_ctrl,
+        *spawners,
+        *hand_spawners,
+        move_group,
+        robot_skills,
+        bt_executor,
+        bt_viewer,
+        rviz,
+    ]
+
+
+def generate_launch_description():
+    bt_cfg = get_package_share_directory("bt_executor")
+
     return LaunchDescription([
         DeclareLaunchArgument("use_rviz",    default_value="false"),
         DeclareLaunchArgument("use_api",     default_value="false"),
         DeclareLaunchArgument("tick_rate_hz", default_value="50.0"),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
+        DeclareLaunchArgument(
+            "ee_type", default_value="openarm_hand",
+            description="End-effector type: openarm_hand or amazing_hand (fake either way here)."
+        ),
         DeclareLaunchArgument(
             "isaacsim",
             default_value="false",
@@ -240,12 +291,5 @@ def generate_launch_description():
             description="Path to the BT XML file to load"
         ),
 
-        rsp,
-        ros2_ctrl,
-        *spawners,
-        move_group,
-        robot_skills,
-        bt_executor,
-        bt_viewer,
-        rviz,
+        OpaqueFunction(function=launch_setup),
     ])
