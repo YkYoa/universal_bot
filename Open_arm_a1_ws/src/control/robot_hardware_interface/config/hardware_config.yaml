@@ -29,7 +29,7 @@ head_board:
   port: 9877       # SERVO/STATUS/RELEASE/STEPPER (head_motor_driver_node)
   led_port: 9878   # RGB/MODE/BRIGHTNESS (head_led_node)
 
-control_mode: torque
+control_mode: position
 position_mode_velocity: 1.0
 
 shutdown:

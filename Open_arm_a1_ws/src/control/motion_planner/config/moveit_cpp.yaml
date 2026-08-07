@@ -7,7 +7,13 @@
       attached_collision_object_topic: "/planning_scene_monitor"
       publish_planning_scene_topic: "/planning_scene"
       monitored_planning_scene_topic: "/monitored_planning_scene"
-      wait_for_initial_state_timeout: 10.0
+      # ros2_control spawner Node actions in launch files aren't serialized
+      # (they race for the controller_manager service), so joint_state_broadcaster
+      # can take well past 10s to actually activate under load - this crashed
+      # robot_skills_node ("Unable to configure planning scene monitor") on a
+      # slow bring-up even though it usually finishes in time. 25s gives real
+      # headroom without meaningfully lengthening the normal case.
+      wait_for_initial_state_timeout: 25.0
 
     planning_pipelines:
       # Load all 4 planning pipelines

@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>trajectory_waypoint_generator</name>
+  <version>0.0.0</version>
+  <description>
+    Robot-specific glue over control/trajectory_shapes: picks a shape (line,
+    ellipse, circle, square), FK/IK-solves it against the real robot model,
+    and writes the result as a numbered joint-angle waypoint run into a
+    sequence.yaml - so it replays through the existing PlanToJointSequence
+    pipeline. Formula-driven alternative to hand-recording every waypoint
+    with waypoint_recorder --loop.
+  </description>
+  <maintainer email="hans@todo.todo">hans</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>moveit_core</depend>
+  <depend>moveit_ros_planning</depend>
+  <depend>ament_index_cpp</depend>
+  <depend>waypoint_recorder</depend>
+  <depend>trajectory_shapes</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

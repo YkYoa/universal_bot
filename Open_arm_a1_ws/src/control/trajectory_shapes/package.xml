@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>trajectory_shapes</name>
+  <version>0.0.0</version>
+  <description>
+    Pure Cartesian-path geometry (line, ellipse arc, circle, square) - Eigen
+    only, no ROS/MoveIt dependency. Produces position lists (and a shared
+    orientation-slerp helper) for a caller to pair with FK/IK/execution;
+    see control/trajectory_waypoint_generator for that robot-specific glue.
+  </description>
+  <maintainer email="hans@todo.todo">hans</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>eigen</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
