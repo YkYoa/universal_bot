@@ -1,5 +1,7 @@
 #include "sequence_executor/skill_client.hpp"
 
+#include <algorithm>
+
 namespace sequence_executor {
 
 SkillClient::SkillClient(const rclcpp::Node::SharedPtr& node, const std::string& action_name)
@@ -40,6 +42,39 @@ void SkillClient::moveToJointSequence(
   sendGoal(std::move(goal), std::move(callback));
 }
 
+void SkillClient::moveToPose(
+  const std::string& arm, const geometry_msgs::msg::PoseStamped& target, const std::string& planner_profile,
+  double velocity_scaling, double acceleration_scaling, bool position_only, ResultCallback callback)
+{
+  ExecuteSkill::Goal goal;
+  goal.skill_name = "move_to_pose";
+  goal.arm = arm;
+  goal.planner_profile = planner_profile;
+  goal.planning_mode = "normal";
+  goal.target_pose = target;
+  goal.velocity_override = velocity_scaling;
+  goal.acceleration_override = acceleration_scaling;
+  goal.position_only = position_only;
+  sendGoal(std::move(goal), std::move(callback));
+}
+
+void SkillClient::cartesianMove(
+  const std::string& arm, const std::vector<geometry_msgs::msg::PoseStamped>& waypoints,
+  const std::string& planner_profile, double velocity_scaling, double acceleration_scaling,
+  bool position_only, ResultCallback callback)
+{
+  ExecuteSkill::Goal goal;
+  goal.skill_name = "cartesian_move";
+  goal.arm = arm;
+  goal.planner_profile = planner_profile;
+  goal.planning_mode = "normal";
+  goal.waypoints = waypoints;
+  goal.velocity_override = velocity_scaling;
+  goal.acceleration_override = acceleration_scaling;
+  goal.position_only = position_only;
+  sendGoal(std::move(goal), std::move(callback));
+}
+
 void SkillClient::sendGoal(ExecuteSkill::Goal goal, ResultCallback callback)
 {
   // robot_skills_node hosts this server behind a MoveItCpp stack (planning
@@ -60,7 +95,7 @@ void SkillClient::sendGoal(ExecuteSkill::Goal goal, ResultCallback callback)
 
   rclcpp_action::Client<ExecuteSkill>::SendGoalOptions options;
   options.result_callback = [this, callback](const rclcpp_action::ClientGoalHandle<ExecuteSkill>::WrappedResult& result) {
-    active_goal_.reset();
+    forgetGoal(result.goal_id);
     if (result.code == rclcpp_action::ResultCode::SUCCEEDED && result.result->success) {
       callback(true, "");
       return;
@@ -80,7 +115,7 @@ void SkillClient::sendGoal(ExecuteSkill::Goal goal, ResultCallback callback)
         callback(false, "goal rejected");
         return;
       }
-      active_goal_ = handle;
+      active_goals_.push_back(handle);
     };
 
   client_->async_send_goal(goal, options);
@@ -88,12 +123,27 @@ void SkillClient::sendGoal(ExecuteSkill::Goal goal, ResultCallback callback)
 
 bool SkillClient::cancelActiveGoal()
 {
-  if (!active_goal_) {
+  if (active_goals_.empty()) {
     return false;
   }
-  RCLCPP_INFO(logger_, "Cancelling active ExecuteSkill goal");
-  client_->async_cancel_goal(active_goal_);
+  RCLCPP_INFO(logger_, "Cancelling %zu active ExecuteSkill goal(s)", active_goals_.size());
+  // Copy first: async_cancel_goal can complete synchronously and reach back
+  // into forgetGoal(), which mutates the vector being iterated.
+  const auto goals = active_goals_;
+  for (const auto& goal : goals) {
+    client_->async_cancel_goal(goal);
+  }
   return true;
+}
+
+void SkillClient::forgetGoal(const rclcpp_action::GoalUUID& goal_id)
+{
+  active_goals_.erase(
+    std::remove_if(active_goals_.begin(), active_goals_.end(),
+                   [&goal_id](const auto& handle) {
+                     return !handle || handle->get_goal_id() == goal_id;
+                   }),
+    active_goals_.end());
 }
 
 }  // namespace sequence_executor

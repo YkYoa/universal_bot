@@ -132,6 +132,11 @@ Step parseStep(const std::string& sequence_name, int index, const std::string& n
   step.duration = num(params, "duration", 1.0);
 
   step.side = str(params, "side");
+  step.fingers = doubles(params, "fingers");
+  step.head = doubles(params, "head");
+  step.left_fingers = doubles(params, "left_fingers");
+  step.right_fingers = doubles(params, "right_fingers");
+  step.home_first = flag(params, "home_first", false);
   step.action = str(params, "action");
   step.seconds = num(params, "seconds", 0.0);
 
@@ -169,6 +174,26 @@ Step parseStep(const std::string& sequence_name, int index, const std::string& n
     if (step.left_yaw.empty() && step.left_flex.empty() &&
         step.right_yaw.empty() && step.right_flex.empty()) {
       throw std::runtime_error(where + ": needs at least one of left/right yaw/flex");
+    }
+  } else if (type == "hand_fingers") {
+    if (step.fingers.empty() && !step.home_first) {
+      throw std::runtime_error(where + ": needs 'fingers' (8 values) or 'home_first'");
+    }
+    requireLength(step.fingers, 8, where, "fingers");
+  } else if (type == "move_groups") {
+    requireLength(step.head, 2, where, "head");
+    requireLength(step.fingers, 8, where, "fingers");
+    const bool has_arm = !step.waypoint.empty() || !step.positions.empty() ||
+                         !step.section.empty();
+    const bool has_hand_pose = !step.left_yaw.empty() || !step.left_flex.empty() ||
+                               !step.right_yaw.empty() || !step.right_flex.empty();
+    if (!has_arm && !has_hand_pose && step.fingers.empty() && step.head.empty()) {
+      throw std::runtime_error(
+        where + ": needs at least one group - an arm target (waypoint/positions/section), "
+                "'fingers', a hand_pose vector, or 'head'");
+    }
+    if (has_arm && step.arm.empty()) {
+      throw std::runtime_error(where + ": an arm target needs 'arm'");
     }
   } else if (type == "gripper") {
     requireNonEmpty(step.side, where, "side");

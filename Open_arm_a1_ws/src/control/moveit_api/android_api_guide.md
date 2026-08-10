@@ -163,6 +163,8 @@ The types available today:
 | `move_joint_sequence` | replay a whole waypoint section as one blended motion |
 | `move_pose` / `named_pose` | Cartesian target / SRDF named pose |
 | `hand_pose` | amazing_hand yaw/flex, both hands together |
+| `hand_fingers` | the 4-finger hand board, over its own REST API (see below) |
+| `move_groups` | **arms + head + hands together, in any combination** (see below) |
 | `gripper` | open/close the parallel gripper |
 | `wait` | hold for N seconds |
 | `add_object` / `remove_object` | put an obstacle in the planning scene |
@@ -186,6 +188,58 @@ The types available today:
 `400` with a precise `message` on a bad step
 (`"move_joint: set exactly one of 'waypoint' or 'positions'"`). Surface it —
 the validator is the same one the robot uses.
+
+### Two hands, two different things
+
+`hand_pose` drives the **amazing_hand** through ros2_control.
+`hand_fingers` drives the **CH32V307 4-finger board** through its own REST API
+on port 5051. They are different hardware on different transports — one does
+nothing to the other. `GET /api/capabilities` on the gateway says which is
+actually present.
+
+`hand_fingers` takes 8 angles in degrees, `F1m1, F1m2, F2m1 … F4m2`:
+
+```json
+{"type": "hand_fingers", "params": {"fingers": [90,45, 90,45, 90,45, 90,45]}}
+```
+
+`{"home_first": true}` homes every finger first; on its own it just homes.
+The board clamps each motor to its own safe range, so the applied value can
+differ from the requested one.
+
+A sequence containing `hand_fingers` is refused at `VALIDATING` when the board
+is not reachable, with the reason — nothing moves.
+
+### Moving several groups at once
+
+`move_groups` is one step that fires **every subsystem you name, at the same
+time**. Which fields you fill in decides which groups take part, so the single
+type covers arms+hands, arms+head, hands+head, all three, and any other
+combination — there is no separate step type per pairing.
+
+```json
+{"type": "move_groups", "params": {
+  "arm": "both_arms",
+  "waypoint": "homePoses/laHomeAngle",
+  "right_waypoint": "homePoses/raHomeAngle",
+  "head": [0.0, -0.2],
+  "fingers": [90,45, 90,45, 90,45, 90,45],
+  "duration": 1.5
+}}
+```
+
+| field group | drives |
+|---|---|
+| `arm` + `waypoint`/`right_waypoint`/`positions` | one arm goal |
+| `arm` + `section`/`right_section` | replay a whole section instead |
+| `head` | `[pan, tilt]` in radians, through `head_controller` |
+| `fingers` | the 4-finger board (8 values) |
+| `left_yaw`/`left_flex`/`right_yaw`/`right_flex` | amazing_hand |
+
+The step finishes when the slowest group finishes; the first failure is what
+gets reported. Both arms always move through a single `both_arms` goal — MoveIt
+plans one trajectory per group, so two separate arm goals would be serialised
+by the skill server rather than overlapping.
 
 ### Waypoints
 

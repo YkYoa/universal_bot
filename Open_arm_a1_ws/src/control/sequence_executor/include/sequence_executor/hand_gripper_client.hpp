@@ -39,6 +39,18 @@ public:
   void openGripper(const std::string& arm, double open_position, double duration, ResultCallback callback);
   void closeGripper(const std::string& arm, double close_position, double duration, ResultCallback callback);
 
+  // Neck pan and head tilt, in radians, through head_controller. Separate from
+  // the hands only by which controller it targets - the trajectory shape is
+  // the same, so it shares the machinery below.
+  void setHead(double pan, double tilt, double duration, ResultCallback callback);
+
+  // Any joint list on any FollowJointTrajectory controller. The composite
+  // "move several groups at once" step needs this because the group it drives
+  // is chosen at runtime, not at compile time.
+  void sendTrajectory(
+    const std::string& action_name, const std::vector<std::string>& joint_names,
+    const std::vector<double>& positions, double duration, ResultCallback callback);
+
 private:
   rclcpp_action::Client<FJT>::SharedPtr clientFor(const std::string& action_name);
   void sendSingleJointGoal(

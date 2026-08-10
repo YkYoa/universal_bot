@@ -66,6 +66,20 @@ struct Step
   std::string side;                        // left | right
   std::string action;                      // open | close
 
+  // hand_fingers - the CH32V307 4-finger board, driven over its REST API
+  // rather than ros2_control. 8 values: F1m1, F1m2, F2m1, ... F4m2, in
+  // degrees. Empty entries are left where they are.
+  std::vector<double> fingers;
+  bool home_first = false;
+
+  // move_groups - one step, every subsystem that has a target in it moving at
+  // the same time. Which fields are set decides which groups take part, so a
+  // single step type covers arms alone, arms+hands, arms+head, hands+head,
+  // all three, and every other combination.
+  std::vector<double> head;                // pan, tilt (radians)
+  std::vector<double> left_fingers;        // 8: m1,m2 per finger F1..F4
+  std::vector<double> right_fingers;       // reserved: one board today
+
   // wait, teach_hold
   double seconds = 0.0;
 

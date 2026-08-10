@@ -69,6 +69,58 @@ void HandGripperClient::sendFourJointGoal(
   client->async_send_goal(goal, options);
 }
 
+void HandGripperClient::setHead(double pan, double tilt, double duration, ResultCallback callback)
+{
+  sendTrajectory("/head_controller/follow_joint_trajectory",
+                 {"openarm_body_neck_joint", "openarm_body_head_joint"}, {pan, tilt}, duration,
+                 std::move(callback));
+}
+
+void HandGripperClient::sendTrajectory(
+  const std::string& action_name, const std::vector<std::string>& joint_names,
+  const std::vector<double>& positions, double duration, ResultCallback callback)
+{
+  if (joint_names.size() != positions.size()) {
+    callback(false, action_name + ": " + std::to_string(joint_names.size()) + " joints but " +
+                    std::to_string(positions.size()) + " positions");
+    return;
+  }
+
+  auto client = clientFor(action_name);
+  if (!client->wait_for_action_server(std::chrono::seconds(5))) {
+    RCLCPP_ERROR(logger_, "%s not available", action_name.c_str());
+    callback(false, action_name + " not available - is that controller spawned?");
+    return;
+  }
+
+  FJT::Goal goal;
+  goal.trajectory.joint_names = joint_names;
+  trajectory_msgs::msg::JointTrajectoryPoint point;
+  point.positions = positions;
+  point.time_from_start = rclcpp::Duration::from_seconds(duration);
+  goal.trajectory.points.push_back(point);
+
+  rclcpp_action::Client<FJT>::SendGoalOptions options;
+  options.result_callback =
+    [this, action_name, callback](const rclcpp_action::ClientGoalHandle<FJT>::WrappedResult& result) {
+      if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
+        callback(true, "");
+        return;
+      }
+      RCLCPP_WARN(logger_, "%s failed error_code=%d", action_name.c_str(),
+                  result.result ? result.result->error_code : -1);
+      callback(false, action_name + " failed");
+    };
+  options.goal_response_callback =
+    [action_name, callback](const rclcpp_action::ClientGoalHandle<FJT>::SharedPtr& handle) {
+      if (!handle) {
+        callback(false, action_name + " rejected the goal");
+      }
+    };
+
+  client->async_send_goal(goal, options);
+}
+
 void HandGripperClient::sendSingleJointGoal(
   const std::string& action_name, const std::string& joint_name, double position, double duration,
   ResultCallback callback)

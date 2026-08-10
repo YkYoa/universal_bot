@@ -35,6 +35,7 @@
 
 #include "sequence_executor/builtin_actions.hpp"
 #include "sequence_executor/control_mode_probe.hpp"
+#include "sequence_executor/hand_api_client.hpp"
 #include "sequence_executor/hand_gripper_client.hpp"
 #include "sequence_executor/scene_client.hpp"
 #include "sequence_executor/sequence_source.hpp"
@@ -89,6 +90,9 @@ public:
     std::shared_ptr<SkillClient> skill;
     std::shared_ptr<HandGripperClient> hand;
     std::shared_ptr<SceneClient> scene;
+    // Null when this robot has no REST-driven hand; hand_fingers steps then
+    // fail validation instead of silently doing nothing.
+    std::shared_ptr<HandApiClient> hand_api;
   };
 
   SequenceFsm(rclcpp::Node::SharedPtr node, std::shared_ptr<SequenceSource> source,
@@ -138,10 +142,22 @@ private:
   // One dispatch branch per step type. Each ends by calling onStepFinished,
   // either directly or from a ROS callback.
   void dispatch(const Step& step);
+
+  // Each mover comes in two forms. The `...Into` form takes the completion
+  // callback, so move_groups can run several of them at once and join them;
+  // the plain form is the same thing wired to this step's own completion.
+  using Done = std::function<void(bool, const std::string&)>;
   void dispatchMoveJoint(const Step& step);
+  void dispatchMoveJointInto(const Step& step, Done done);
   void dispatchMoveJointSequence(const Step& step);
+  void dispatchMoveJointSequenceInto(const Step& step, Done done);
   void dispatchHandPose(const Step& step);
+  void dispatchHandPoseInto(const Step& step, Done done);
   void dispatchGripper(const Step& step);
+  void dispatchHandFingers(const Step& step);
+
+  // Every subsystem named in the step, fired together and joined once.
+  void dispatchMoveGroups(const Step& step);
   void dispatchWait(const Step& step);
   void dispatchScene(const Step& step);
 
