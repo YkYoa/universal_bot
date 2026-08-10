@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenArm State Machine</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1b1e24; --line: rgba(255,255,255,0.12);
+    --text: #e8e8e8; --dim: #9aa3ad;
+    --idle: #4a5058; --active: #3a7bd5; --ok: #2ecc71;
+    --warn: #e2b93b; --error: #d9534f; --special: #9b6dd6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; }
+  a { color: var(--active); }
+
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .badge { padding: 3px 9px; border-radius: 999px; font-size: 12px;
+    border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
+  .badge.live { color: var(--ok); border-color: var(--ok); }
+  .badge.dead { color: var(--error); border-color: var(--error); }
+  .spacer { flex: 1; }
+
+  main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr);
+    gap: 16px; padding: 16px; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  section { background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px; }
+  section h2 { font-size: 13px; margin: 0 0 2px; font-weight: 600; }
+  section p.hint { margin: 0 0 10px; color: var(--dim); font-size: 12px; }
+  .diagram { overflow-x: auto; }
+  svg { display: block; max-width: 100%; height: auto; }
+
+  #fault { display: none; margin: 0 16px; padding: 10px 14px; border-radius: 8px;
+    background: rgba(217,83,79,0.15); border: 1px solid var(--error); color: #ffb3b0; }
+  #fault.show { display: block; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { background: #23262c; color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  button:hover:not(:disabled) { background: #2c3038; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.danger { border-color: var(--error); background: #3a1f1f; }
+  button.primary { border-color: var(--active); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: var(--dim); font-weight: 500; padding: 4px 6px; }
+  td { padding: 5px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+  tr.current td { background: rgba(58,123,213,0.16); }
+  tr.done td { color: var(--dim); }
+  td.idx { color: var(--dim); width: 2em; }
+  .type { color: var(--dim); font-size: 11px; }
+
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 12px; }
+  dt { color: var(--dim); }
+  dd { margin: 0; word-break: break-word; }
+
+  .bar { height: 5px; border-radius: 3px; background: #23262c; overflow: hidden; margin-top: 10px; }
+  .bar > div { height: 100%; background: var(--active); width: 0; transition: width .25s; }
+  .stack { display: grid; gap: 16px; }
+  .node-label { font-size: 11px; fill: var(--text); pointer-events: none; }
+  .edge-label { font-size: 9px; fill: var(--dim); pointer-events: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>OpenArm State Machine</h1>
+  <span class="badge" id="conn">connecting…</span>
+  <span class="badge" id="mode">control mode: ?</span>
+  <span class="badge" id="seq">no sequence</span>
+  <span class="spacer"></span>
+  <a href="/dashboard/">3D dashboard</a>
+</header>
+
+<div id="fault"></div>
+
+<main>
+  <div class="stack">
+    <section>
+      <h2>Robot</h2>
+      <p class="hint">What the robot as a whole is doing.</p>
+      <div class="diagram"><svg id="robotSvg" viewBox="0 0 720 380"></svg></div>
+    </section>
+    <section>
+      <h2>Sequence</h2>
+      <p class="hint">How the current sequence walks its step list.</p>
+      <div class="diagram"><svg id="sequenceSvg" viewBox="0 0 720 380"></svg></div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section>
+      <h2>Control</h2>
+      <p class="hint">Pause takes effect at the next step boundary; cancel stops now.</p>
+      <div class="controls">
+        <button id="btnPause">Pause</button>
+        <button id="btnResume">Resume</button>
+        <button id="btnStep">Step</button>
+        <button id="btnCancel">Cancel</button>
+        <button id="btnClear">Clear fault</button>
+        <button id="btnEstop" class="danger">E-stop</button>
+      </div>
+      <div class="bar"><div id="progressBar"></div></div>
+    </section>
+
+    <section>
+      <h2>Run a sequence</h2>
+      <p class="hint">Starts immediately; watch the diagram for progress.</p>
+      <div class="controls">
+        <select id="seqPicker" style="flex:1; min-width:0; background:#23262c; color:var(--text);
+          border:1px solid var(--line); border-radius:6px; padding:8px;"></select>
+        <button id="btnRun" class="primary">Run</button>
+        <button id="btnDry">Dry run</button>
+      </div>
+      <p class="hint" id="runMsg" style="margin-top:8px"></p>
+    </section>
+
+    <section>
+      <h2>Steps</h2>
+      <table><tbody id="steps"><tr><td class="idx">—</td><td>nothing running</td></tr></tbody></table>
+    </section>
+
+    <section>
+      <h2>Detail</h2>
+      <dl id="detail"></dl>
+    </section>
+  </div>
+</main>
+
+<script src="./vendor/socket.io/socket.io.min.js"></script>
+<script src="./fsm.js"></script>
+</body>
+</html>

@@ -8,10 +8,16 @@
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
-  <exec_depend>sequence_executor</exec_depend>
+  <depend>rclcpp</depend>
+  <depend>sequence_executor</depend>
+  <depend>yaml-cpp</depend>
+  <depend>libsqlite3-dev</depend>
+
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

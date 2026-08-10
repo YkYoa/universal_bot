@@ -30,6 +30,8 @@ def launch_setup(context, *args, **kwargs):
     arm = LaunchConfiguration("arm").perform(context)
     sequence = LaunchConfiguration("sequence").perform(context)
     ee_type = LaunchConfiguration("ee_type").perform(context)
+    use_db = LaunchConfiguration("use_db").perform(context).lower() in ("true", "1")
+    autostart = LaunchConfiguration("autostart").perform(context).lower() in ("true", "1")
 
     if sequence:
         sequence_name = sequence
@@ -52,8 +54,16 @@ def launch_setup(context, *args, **kwargs):
             os.path.join(sequence_executor_pkg, "launch", "sequence_executor.launch.py")
         ),
         launch_arguments={
+            # use_db:=true (the default) runs qvic_fsm_node, which reads the
+            # sequence store the Android app edits and registers this project's
+            # hardcoded actions. use_db:=false falls back to the plain executor
+            # reading sequence.yaml, for comparing the two.
+            "executor_package": "qvic_2026" if use_db else "sequence_executor",
+            "executor_executable": "qvic_fsm_node" if use_db else "sequence_executor_node",
             "sequence_yaml_path": SRC_SEQUENCE_YAML,
-            "sequence_name": sequence_name,
+            # Empty leaves the FSM idle, waiting for the app or the web page to
+            # pick something - which is the point of having an API at all.
+            "sequence_name": sequence_name if autostart else "",
             "use_sim_time": LaunchConfiguration("use_sim_time"),
             "use_rviz": LaunchConfiguration("use_rviz"),
             "use_api": LaunchConfiguration("use_api"),
@@ -78,7 +88,22 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("use_rviz", default_value="false"),
-        DeclareLaunchArgument("use_api", default_value="false"),
+        DeclareLaunchArgument(
+            "use_api", default_value="false",
+            description="Also launch the REST/WebSocket API and web dashboard on port 5050 "
+                        "(FSM viewer at /dashboard/fsm.html).",
+        ),
+        DeclareLaunchArgument(
+            "use_db", default_value="true",
+            description="true: run qvic_fsm_node against the sequence store (and this "
+                        "project's hardcoded actions). false: plain sequence_executor_node "
+                        "reading config/sequence.yaml.",
+        ),
+        DeclareLaunchArgument(
+            "autostart", default_value="true",
+            description="true: start the selected sequence immediately. false: sit in IDLE "
+                        "and wait for a RunSequence goal from the app or the web page.",
+        ),
         DeclareLaunchArgument(
             "ee_type", default_value="",
             description="openarm_hand or amazing_hand. Leave empty to auto-select "

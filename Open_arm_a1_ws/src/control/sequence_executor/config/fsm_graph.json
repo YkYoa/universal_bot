@@ -1,0 +1,75 @@
+{
+  "_comment": [
+    "The FSM's shape, as data. The Flask API serves this verbatim at",
+    "GET /api/fsm/graph; the web page and the Android app both lay out their",
+    "diagram from it, so neither hardcodes a state list that could drift.",
+    "State names here must match the strings robot_supervisor.cpp's",
+    "toString(RobotState) and sequence_fsm.cpp's toString(SeqState) emit -",
+    "that is what the live FsmState message carries."
+  ],
+  "layers": [
+    {
+      "id": "robot",
+      "label": "Robot",
+      "description": "What the robot as a whole is doing.",
+      "field": "robot_state",
+      "nodes": [
+        {"id": "BOOTING",  "label": "Booting",  "kind": "start",    "description": "Waiting for joint_state_broadcaster and the arm controllers to activate."},
+        {"id": "IDLE",     "label": "Idle",     "kind": "normal",   "description": "Ready. Accepts a RunSequence goal."},
+        {"id": "RUNNING",  "label": "Running",  "kind": "active",   "description": "A sequence is executing."},
+        {"id": "PAUSED",   "label": "Paused",   "kind": "warning",  "description": "Held at a step boundary. Resume, single-step, or cancel."},
+        {"id": "FAULT",    "label": "Fault",    "kind": "error",    "description": "A sequence failed. Needs clear_fault before anything else runs."},
+        {"id": "ESTOP",    "label": "E-stop",   "kind": "error",    "description": "Operator stopped everything. Needs clear_fault."},
+        {"id": "TEACHING", "label": "Teaching", "kind": "special",  "description": "Hand-guiding under gravity compensation. Torque mode only."}
+      ],
+      "edges": [
+        {"from": "BOOTING",  "to": "IDLE",     "label": "controllers active"},
+        {"from": "IDLE",     "to": "RUNNING",  "label": "run_sequence"},
+        {"from": "RUNNING",  "to": "PAUSED",   "label": "pause"},
+        {"from": "PAUSED",   "to": "RUNNING",  "label": "resume / step"},
+        {"from": "RUNNING",  "to": "IDLE",     "label": "completed / cancel"},
+        {"from": "PAUSED",   "to": "IDLE",     "label": "cancel"},
+        {"from": "RUNNING",  "to": "FAULT",    "label": "step failed"},
+        {"from": "FAULT",    "to": "IDLE",     "label": "clear_fault"},
+        {"from": "RUNNING",  "to": "ESTOP",    "label": "estop"},
+        {"from": "PAUSED",   "to": "ESTOP",    "label": "estop"},
+        {"from": "IDLE",     "to": "ESTOP",    "label": "estop"},
+        {"from": "ESTOP",    "to": "IDLE",     "label": "clear_fault"},
+        {"from": "IDLE",     "to": "TEACHING", "label": "enter_teach"},
+        {"from": "TEACHING", "to": "IDLE",     "label": "exit_teach"}
+      ]
+    },
+    {
+      "id": "sequence",
+      "label": "Sequence",
+      "description": "How one sequence walks its step list.",
+      "field": "sequence_state",
+      "nodes": [
+        {"id": "LOADING",        "label": "Loading",   "kind": "start",   "description": "Fetching the sequence from the store or the YAML."},
+        {"id": "VALIDATING",     "label": "Validating","kind": "normal",  "description": "Resolving every waypoint reference and checking control modes. Nothing has moved yet."},
+        {"id": "STEP_PLANNING",  "label": "Planning",  "kind": "active",  "description": "Goal sent, waiting for MoveIt to plan."},
+        {"id": "STEP_EXECUTING", "label": "Executing", "kind": "active",  "description": "Trajectory running on the hardware."},
+        {"id": "STEP_DONE",      "label": "Step done", "kind": "normal",  "description": "Step finished. Pause, if requested, takes effect here."},
+        {"id": "LOOP_CHECK",     "label": "Loop",      "kind": "normal",  "description": "End of an iteration; repeat or finish."},
+        {"id": "COMPLETED",      "label": "Completed", "kind": "success", "description": "Every iteration finished."},
+        {"id": "FAILED",         "label": "Failed",    "kind": "error",   "description": "A step failed, or validation refused the run."},
+        {"id": "CANCELLED",      "label": "Cancelled", "kind": "warning", "description": "Stopped by the operator."}
+      ],
+      "edges": [
+        {"from": "LOADING",        "to": "VALIDATING",     "label": "loaded"},
+        {"from": "LOADING",        "to": "FAILED",         "label": "not found"},
+        {"from": "VALIDATING",     "to": "STEP_PLANNING",  "label": "ok"},
+        {"from": "VALIDATING",     "to": "FAILED",         "label": "bad reference / wrong mode"},
+        {"from": "STEP_PLANNING",  "to": "STEP_EXECUTING", "label": "plan ok"},
+        {"from": "STEP_PLANNING",  "to": "FAILED",         "label": "no plan"},
+        {"from": "STEP_EXECUTING", "to": "STEP_DONE",      "label": "done"},
+        {"from": "STEP_EXECUTING", "to": "FAILED",         "label": "execution failed"},
+        {"from": "STEP_EXECUTING", "to": "CANCELLED",      "label": "cancel"},
+        {"from": "STEP_DONE",      "to": "STEP_PLANNING",  "label": "next step"},
+        {"from": "STEP_DONE",      "to": "LOOP_CHECK",     "label": "last step"},
+        {"from": "LOOP_CHECK",     "to": "STEP_PLANNING",  "label": "repeat"},
+        {"from": "LOOP_CHECK",     "to": "COMPLETED",      "label": "no repeats left"}
+      ]
+    }
+  ]
+}

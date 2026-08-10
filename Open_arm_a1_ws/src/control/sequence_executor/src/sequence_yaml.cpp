@@ -126,6 +126,34 @@ SequenceDef SequenceYaml::sequence(const std::string& name) const
   return def;
 }
 
+std::vector<std::string> SequenceYaml::sequenceNames() const
+{
+  YAML::Node root = loadRoot(yaml_path_);
+  std::vector<std::string> names;
+  if (!root["sequences"] || !root["sequences"].IsMap()) {
+    return names;
+  }
+  for (auto it = root["sequences"].begin(); it != root["sequences"].end(); ++it) {
+    names.push_back(it->first.as<std::string>());
+  }
+  return names;
+}
+
+std::vector<double> SequenceYaml::value(const std::string& section, const std::string& key) const
+{
+  YAML::Node root = loadRoot(yaml_path_);
+  if (!root[section] || !root[section].IsMap() || !root[section][key]) {
+    return {};
+  }
+  return parseDoubles(toStringValue(root[section][key]));
+}
+
+bool SequenceYaml::hasSection(const std::string& section) const
+{
+  YAML::Node root = loadRoot(yaml_path_);
+  return root[section] && root[section].IsMap();
+}
+
 std::vector<double> SequenceYaml::armAngle(const std::string& section, const std::string& side_prefix) const
 {
   YAML::Node root = loadRoot(yaml_path_);

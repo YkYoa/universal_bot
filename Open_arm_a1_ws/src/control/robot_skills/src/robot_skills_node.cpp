@@ -7,6 +7,7 @@
 #include "robot_skills/skills/move_to_joint_sequence_skill.hpp"
 #include "robot_skills/skills/cartesian_move_skill.hpp"
 #include "robot_skills/skills/gripper_skill.hpp"
+#include "robot_skills/scene_manager.hpp"
 
 int main(int argc, char** argv)
 {
@@ -43,12 +44,19 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // Planning-scene edits (collision objects, grasp attach/detach, ACM) live
+    // here because this process owns the PlanningSceneMonitor. Not fatal if it
+    // fails to start - motion skills still work without scene editing.
+    auto scene_manager = std::make_shared<robot_skills::SceneManager>(node, planner);
+    scene_manager->start();
+
     // Use multi-threaded executor to support concurrent action goals and planning tasks
     rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(node);
     executor.spin();
 
     // Reset shared pointers before shutdown to ensure correct destruction order while ROS is still active
+    scene_manager.reset();
     server.reset();
     planner.reset();
     node.reset();

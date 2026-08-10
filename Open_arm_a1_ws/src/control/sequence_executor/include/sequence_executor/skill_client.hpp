@@ -36,12 +36,22 @@ public:
     const std::string& arm, const std::vector<double>& joint_sequence, const std::string& planner_profile,
     double velocity_scaling, double acceleration_scaling, ResultCallback callback);
 
+  // Cancels whatever goal is in flight, if any. robot_skills' handle_cancel
+  // calls TrajectoryExecutionManager::stopExecution, so this is what actually
+  // brings a moving arm to a halt. The goal's result callback still fires,
+  // with a non-SUCCEEDED code - the caller finds out through the same path as
+  // any other failure. Returns false when there was nothing to cancel.
+  bool cancelActiveGoal();
+
 private:
   void sendGoal(ExecuteSkill::Goal goal, ResultCallback callback);
 
   rclcpp::Node::SharedPtr node_;
   rclcpp_action::Client<ExecuteSkill>::SharedPtr client_;
   rclcpp::Logger logger_;
+
+  // Only ever one goal in flight: the FSM runs one step at a time.
+  rclcpp_action::ClientGoalHandle<ExecuteSkill>::SharedPtr active_goal_;
 };
 
 }  // namespace sequence_executor

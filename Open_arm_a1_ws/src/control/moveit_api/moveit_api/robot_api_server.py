@@ -54,6 +54,7 @@ from flask_compress import Compress
 
 # Import our ROS 2 node
 from moveit_api.moveit_ee_controller import MoveItEEController
+from moveit_api.fsm_bridge import FsmBridge
 
 
 # ─────────────────────────────────────────────
@@ -75,6 +76,10 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Global reference to the ROS 2 controller node
 controller: MoveItEEController = None
+
+# Bridge to sequence_executor's state machine. Everything sequence- and
+# scene-related goes through it; None until main() builds it.
+fsm: FsmBridge = None
 
 
 # ─────────────────────────────────────────────
@@ -700,20 +705,21 @@ def control_hand():
 # Stop / Emergency Cancel Motion
 # ─────────────────────────────────────────────
 
-_stop_requested = False
-
 @app.route('/api/stop', methods=['POST'])
 def stop_motion():
+    """Stop everything now.
+
+    Goes to the FSM's estop command, which cancels the in-flight motion goal
+    and parks the robot in ESTOP until clear_fault. The old implementation set
+    a module-level flag that only the (now removed) in-request sequence loop
+    ever read, so it could not stop a sequence run by anything else.
     """
-    Emergency stop. Cancels active sequence loop execution.
-    """
-    global _stop_requested
-    _stop_requested = True
-    app.logger.info("Emergency Stop triggered by user!")
-    return jsonify({
-        'success': True,
-        'message': 'Stop requested. Current sequences will abort immediately.'
-    })
+    ok, message = _require_fsm()
+    if not ok:
+        return jsonify({'success': False, 'message': message}), 503
+    ok, message = fsm.send_command('estop')
+    app.logger.info(f'Emergency stop: {message}')
+    return jsonify({'success': ok, 'message': message}), (200 if ok else 409)
 
 
 # ─────────────────────────────────────────────
@@ -780,260 +786,190 @@ def move_both_arms():
 
 
 # ─────────────────────────────────────────────
-# Hardcoded Pose Sequences (Android team)
+# Finite state machine: status, control, and running sequences
 # ─────────────────────────────────────────────
+#
+# Everything sequence-related now goes through sequence_executor's two-layer
+# FSM over ROS. What used to live here was a second, parallel sequence engine:
+# a while-loop inside the Flask request thread driving MoveGroup directly,
+# guarded by a module-level stop flag. Two engines meant two different code
+# paths to the same hardware, and `loop_count: -1` pinned a worker until the
+# process was killed. There is one engine now, and this is a client of it.
+#
+# Progress does not come back in the HTTP response - a run can last minutes.
+# It arrives as `fsm_state` WebSocket events, one per transition.
 
-SEQUENCES = {}
+FSM_UNAVAILABLE = (
+    'the robot state machine is not reachable - is sequence_executor_node running?'
+)
 
-def load_sequences():
-    global SEQUENCES
+
+def _require_fsm():
+    if fsm is None:
+        return False, 'the ROS bridge did not start'
+    if not fsm.is_connected():
+        return False, FSM_UNAVAILABLE
+    return True, ''
+
+
+def _fsm_graph():
+    """The FSM's shape, read from the executor's own config file so the diagram
+    can never drift from the states the C++ actually emits."""
+    global _FSM_GRAPH_CACHE
+    if _FSM_GRAPH_CACHE is not None:
+        return _FSM_GRAPH_CACHE
     try:
-        share_dir = get_package_share_directory('moveit_api')
-        yaml_path = os.path.join(share_dir, 'config', 'sequences.yaml')
-        if os.path.exists(yaml_path):
-            with open(yaml_path, 'r') as f:
-                data = yaml.safe_load(f)
-                if data and 'speed' in data:
-                    SEQUENCES.clear()
-                    # Parse the new compact format
-                    for seq_name, speeds in data['speed'].items():
-                        pose_key = None
-                        if f"{seq_name}Poses" in data:
-                            pose_key = f"{seq_name}Poses"
-                        elif f"{seq_name}Joints" in data:
-                            pose_key = f"{seq_name}Joints"
-                            
-                        if pose_key is not None:
-                            steps = []
-                            poses_dict = data[pose_key]
-                            # Maintain order by iterating dict (Python 3.7+ preserves order)
-                            for step_idx, (step_name, value) in enumerate(poses_dict.items()):
-                                # Determine group from prefix
-                                group = 'both_arms'
-                                side = 'left'
-                                if step_name.startswith('la'):
-                                    group = 'left_arm'
-                                    side = 'left'
-                                elif step_name.startswith('ra'):
-                                    group = 'right_arm'
-                                    side = 'right'
-                                elif step_name.startswith('ba'):
-                                    group = 'both_arms'
-                                elif step_name.startswith('grip'):
-                                    group = 'grippers'
-                                    side = 'left' if 'Left' in step_name else 'right'
-                                    
-                                vel = speeds[step_idx] if step_idx < len(speeds) else 0.3
-                                
-                                step_dict = {'group': group, 'velocity': vel, 'name': step_name}
-                                
-                                if group == 'grippers':
-                                    step_dict['type'] = 'gripper'
-                                    step_dict['side'] = side
-                                    if isinstance(value, str):
-                                        step_dict['action'] = value
-                                    else:
-                                        step_dict['position'] = value[0] if isinstance(value, list) else value
-                                elif isinstance(value, str):
-                                    step_dict['type'] = 'named'
-                                    step_dict['pose'] = value
-                                elif isinstance(value, list):
-                                    if len(value) == 7:
-                                        # Auto-detect pose vs joints
-                                        # If the last 4 elements form a valid quaternion, treat as pose
-                                        qx, qy, qz, qw = value[3:]
-                                        norm = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
-                                        if 0.95 < norm < 1.05 and any(q != 0 for q in [qx, qy, qz]):
-                                            step_dict['type'] = 'pose'
-                                            step_dict['position'] = {'x': value[0], 'y': value[1], 'z': value[2]}
-                                            step_dict['orientation'] = {'x': qx, 'y': qy, 'z': qz, 'w': qw}
-                                        else:
-                                            step_dict['type'] = 'joints'
-                                            # AUTO-CONVERT degrees to radians
-                                            # We assume if the absolute value of any angle is > 2*PI, it's degrees.
-                                            # But safely, let's just always assume degrees based on user request "auto convert degree to radian"
-                                            step_dict['positions'] = [math.radians(p) for p in value]
-                                    elif len(value) == 14:
-                                        step_dict['type'] = 'joints'
-                                        step_dict['positions'] = [math.radians(p) for p in value]
-                                    else:
-                                        app.logger.warning(f"Invalid array length for {step_name}: {len(value)}")
-                                        continue
-                                
-                                steps.append(step_dict)
-                                
-                            SEQUENCES[seq_name] = {
-                                'description': f"Sequence {seq_name}",
-                                'group': "mixed",
-                                'steps': steps
-                            }
-                    app.logger.info(f"Loaded {len(SEQUENCES)} sequences from {yaml_path}")
-        else:
-            app.logger.warning(f"Sequences file not found: {yaml_path}")
-    except Exception as e:
-        app.logger.error(f"Failed to load sequences: {e}")
-
-# Call immediately
-load_sequences()
-
-@app.route('/api/sequences', methods=['GET'])
-def list_sequences():
-    """List all available named sequences."""
-    load_sequences()
-    result = {}
-    for name, seq in SEQUENCES.items():
-        result[name] = {
-            'description': seq.get('description', ''),
-            'group': seq.get('group', ''),
-            'num_steps': len(seq.get('steps', [])),
-        }
-    return jsonify({'success': True, 'sequences': result})
+        path = os.path.join(
+            get_package_share_directory('sequence_executor'), 'config', 'fsm_graph.json'
+        )
+        with open(path, 'r') as handle:
+            _FSM_GRAPH_CACHE = json.load(handle)
+    except (PackageNotFoundError, OSError, ValueError) as exc:
+        app.logger.warning(f'could not read fsm_graph.json: {exc}')
+        _FSM_GRAPH_CACHE = {'layers': []}
+    return _FSM_GRAPH_CACHE
 
 
-@app.route('/api/sequence', methods=['POST'])
+_FSM_GRAPH_CACHE = None
+
+
+@app.route('/api/fsm/graph', methods=['GET'])
+def fsm_graph():
+    """Static: nodes and edges of both layers. The web page and the Android app
+    lay out their diagram from this instead of hardcoding a state list."""
+    return jsonify({'success': True, 'graph': _fsm_graph()})
+
+
+@app.route('/api/fsm/state', methods=['GET'])
+def fsm_state():
+    """The latest snapshot. Prefer the `fsm_state` socket event for live use -
+    this is for a cold page load."""
+    if fsm is None:
+        return jsonify({'success': False, 'message': 'the ROS bridge did not start'}), 503
+    state = fsm.latest_state()
+    if state is None:
+        return jsonify({'success': False, 'message': FSM_UNAVAILABLE}), 503
+    return jsonify({'success': True, 'state': state})
+
+
+@app.route('/api/fsm/command', methods=['POST'])
+def fsm_command():
+    """pause | resume | step | cancel | estop | clear_fault | enter_teach |
+    exit_teach."""
+    ok, message = _require_fsm()
+    if not ok:
+        return jsonify({'success': False, 'message': message}), 503
+
+    data = request.get_json(silent=True) or {}
+    command = data.get('command')
+    if not command:
+        return jsonify({'success': False, 'message': "'command' is required"}), 400
+
+    ok, message = fsm.send_command(command)
+    # A refused command is a legitimate answer ("not paused", "no fault to
+    # clear"), not a server error - 409 so a client can show the message.
+    return jsonify({'success': ok, 'message': message}), (200 if ok else 409)
+
+
+@app.route('/api/sequence/run', methods=['POST'])
 def run_sequence():
+    """Start a sequence and return immediately.
+
+    Body: {name, repeat, velocity, dry_run}
+      repeat   0 uses the sequence's own setting, -1 loops forever
+      velocity 0 uses the sequence's own setting
+      dry_run  walk and validate every step without sending a motion goal
     """
-    Run a named pose sequence.
+    ok, message = _require_fsm()
+    if not ok:
+        return jsonify({'success': False, 'message': message}), 503
 
-    Request body:
-    {
-        "name": "wave",              // sequence name
-        "velocity_scaling": 0.5,     // optional override
-        "loop_count": 1              // optional, number of loops (use -1 or 0 for infinite)
-    }
-    """
-    global _stop_requested
-    _stop_requested = False
+    data = request.get_json(silent=True) or {}
+    name = data.get('name')
+    if not name:
+        return jsonify({'success': False, 'message': "'name' is required"}), 400
 
-    load_sequences()
-    data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'message': 'JSON body required'}), 400
+    ok, message = fsm.run_sequence(
+        name,
+        repeat=data.get('repeat', 0),
+        velocity=data.get('velocity', 0.0),
+        dry_run=bool(data.get('dry_run', False)),
+    )
+    return jsonify({'success': ok, 'message': message}), (200 if ok else 409)
 
-    seq_name = data.get('name')
-    if seq_name not in SEQUENCES:
-        return jsonify({
-            'success': False,
-            'message': f'Unknown sequence: {seq_name}',
-            'available': list(SEQUENCES.keys()),
-        }), 400
 
-    vel_override = data.get('velocity_scaling')
-    seq = SEQUENCES[seq_name]
-    
-    # Extract loop configurations
-    loop_val = data.get('loop_count', 1)
-    infinite = False
-    if isinstance(loop_val, str):
-        if loop_val.lower() == 'infinite':
-            infinite = True
-            loop_count = 1
-        else:
-            try:
-                loop_count = int(loop_val)
-            except ValueError:
-                loop_count = 1
-    else:
-        try:
-            loop_count = int(loop_val)
-        except (ValueError, TypeError):
-            loop_count = 1
-
-    if loop_count <= 0:
-        infinite = True
-
-    results = []
-    iteration = 0
-
-    while infinite or iteration < loop_count:
-        if _stop_requested:
-            app.logger.info("Sequence aborted by user request before starting iteration.")
-            break
-            
-        iter_suffix = f" (Iteration {iteration + 1})" if not infinite else f" (Infinite Iteration {iteration + 1})"
-        app.logger.info(f"Executing sequence: {seq_name}{iter_suffix}")
-
-        for i, step in enumerate(seq.get('steps', [])):
-            if _stop_requested:
-                break
-                
-            try:
-                vel = float(vel_override) if vel_override else float(step.get('velocity', 0.3))
-                
-                if step['type'] == 'named':
-                    r = controller.move_to_named_pose(
-                        group_name=step['group'],
-                        pose_name=step['pose'],
-                        velocity_scaling=vel,
-                    )
-                elif step['type'] == 'joints':
-                    r = controller.move_to_joint_positions(
-                        group_name=step['group'],
-                        positions=step['positions'],
-                        duration=float(step.get('duration', 3.0)),
-                        velocity_scaling=vel,
-                    )
-                elif step['type'] == 'pose':
-                    target = {'position': step['position']}
-                    if 'orientation' in step:
-                        target['orientation'] = step['orientation']
-                    else:
-                        target['orientation'] = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0}
-                        
-                    position_only = step.get('position_only', False)
-                    if 'orientation' not in step:
-                        position_only = True
-                        
-                    r = controller.move_to_pose(
-                        group_name=step['group'], 
-                        target_pose=target,
-                        velocity_scaling=vel, 
-                        position_only=position_only,
-                    )
-                elif step['type'] == 'gripper':
-                    if 'action' in step:
-                        pos = 0.044 if step['action'] == 'open' else 0.0
-                    else:
-                        pos = step['position']
-                    r = controller.move_gripper(step['side'], pos)
-                else:
-                    r = {'success': False, 'message': f'Unknown step type: {step["type"]}'}
-
-                results.append({
-                    'iteration': iteration + 1,
-                    'step': i,
-                    'name': step.get('name'),
-                    'success': r.get('success', False)
-                })
-
-                if not r.get('success', False):
-                    return jsonify({
-                        'success': False,
-                        'message': f'Sequence failed at iteration {iteration + 1}, step {i}',
-                        'step_results': results,
-                    }), 422
-            except Exception as e:
-                return jsonify({
-                    'success': False,
-                    'message': f'Iteration {iteration + 1}, Step {i} error: {str(e)}',
-                    'step_results': results,
-                }), 500
-        
-        iteration += 1
-
-    if _stop_requested:
-        _stop_requested = False # Reset flag for future runs
-        return jsonify({
-            'success': True,
-            'message': f'Sequence "{seq_name}" aborted by user stop request.',
-            'step_results': results
-        })
-
+@app.route('/api/actions', methods=['GET'])
+def list_actions():
+    """The project's hardcoded actions. They run through the same endpoint as
+    stored sequences - the name is just prefixed with `builtin:`."""
+    ok, message = _require_fsm()
+    if not ok:
+        return jsonify({'success': False, 'message': message}), 503
+    # The registry lives in the executor; there is no service to enumerate it,
+    # so the names are what the client needs and the executor validates.
     return jsonify({
         'success': True,
-        'message': f'Sequence "{seq_name}" completed successfully for {iteration} loop(s).',
-        'step_results': results
+        'hint': 'run one with POST /api/sequence/run {"name": "builtin:<id>"}',
+        'actions': [
+            {'id': f'action_{i:02d}', 'name': f'builtin:action_{i:02d}'}
+            for i in range(1, 11)
+        ],
     })
+
+
+@app.route('/api/control-mode', methods=['GET'])
+def control_mode():
+    """Which hardware control mode the arm came up in.
+
+    Fixed at startup - the damiao register is written once during init - so a
+    UI should use this to grey out steps the robot cannot run rather than
+    offering a switch that does not exist.
+    """
+    if fsm is None:
+        return jsonify({'success': False, 'message': 'the ROS bridge did not start'}), 503
+    state = fsm.latest_state()
+    if state is None:
+        return jsonify({'success': False, 'message': FSM_UNAVAILABLE}), 503
+    mode = state['control_mode_active']
+    return jsonify({
+        'success': True,
+        'control_mode': mode,
+        'runnable_step_modes': ['any'] + (['torque'] if mode == 'torque' else ['position|mit']),
+        'switchable': False,
+        'note': 'Set control_mode in robot_hardware_interface/config/hardware_config.yaml '
+                'and restart the hardware to change this.',
+    })
+
+
+# ─────────────────────────────────────────────
+# Planning scene: obstacles and grasping
+# ─────────────────────────────────────────────
+
+@app.route('/api/scene/<action>', methods=['POST'])
+def scene_command(action):
+    """add | remove | attach | detach | allow | disallow | clear.
+
+    `attach` is the grasp: it makes MoveIt carry the object with the arm and
+    stop flagging it against the hand's links, which is what "allow collision
+    while grasping" means in practice.
+    """
+    if fsm is None:
+        return jsonify({'success': False, 'message': 'the ROS bridge did not start'}), 503
+
+    data = request.get_json(silent=True) or {}
+    ok, message = fsm.scene_command(
+        action,
+        object_id=data.get('object_id', ''),
+        link=data.get('link', ''),
+        touch_links=data.get('touch_links'),
+        primitive=data.get('primitive', ''),
+        dimensions=data.get('dimensions'),
+        position=data.get('position'),
+        orientation=data.get('orientation'),
+        frame_id=data.get('frame_id', 'openarm_body_link0'),
+    )
+    return jsonify({'success': ok, 'message': message}), (200 if ok else 400)
+
 
 
 @app.route('/api/move/workspace', methods=['POST'])
@@ -1202,6 +1138,46 @@ def api_docs():
 
 
 # ─────────────────────────────────────────────
+# Project blueprint (optional)
+# ─────────────────────────────────────────────
+
+def _register_project_blueprint():
+    """Attach the sequence-store CRUD, if this workspace has a project that
+    provides it.
+
+    The store belongs to builds/qvic_2026, not here: it holds that project's
+    waypoints and its idea of what a step is. This server stays generic and
+    talks to the robot only over ROS, so a workspace without qvic_2026 still
+    gets everything except the CRUD routes.
+    """
+    try:
+        from qvic_2026 import sequence_api
+    except ImportError:
+        app.logger.info(
+            'qvic_2026 not importable - sequence CRUD endpoints are not available. '
+            'Everything else (FSM control, scene, direct joint moves) still works.'
+        )
+        return
+
+    def read_live_joints(arm):
+        """Current joint positions for one arm, so a waypoint can be recorded
+        from the browser the way `record_waypoint` does from a terminal."""
+        state = controller.get_current_joint_state() if controller else None
+        if state is None:
+            return None
+        # A sensor_msgs/JointState carries parallel name/position arrays in
+        # whatever order the broadcaster publishes; a waypoint needs the
+        # group's own joint order.
+        by_name = dict(zip(state.name, state.position))
+        names = controller.GROUP_JOINTS.get(arm, [])
+        values = [by_name[name] for name in names if name in by_name]
+        return values if len(values) == len(names) else None
+
+    sequence_api.register(app, joint_state_reader=read_live_joints)
+    app.logger.info('Registered qvic_2026 sequence store endpoints')
+
+
+# ─────────────────────────────────────────────
 # Main Entry Point
 # ─────────────────────────────────────────────
 
@@ -1210,12 +1186,20 @@ def main():
     # Initialize ROS 2 without signal handlers to avoid conflict with Flask
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     
-    global controller
+    global controller, fsm
     controller = MoveItEEController()
-    
+
+    # Every FSM transition is pushed straight out to connected clients. The
+    # executor only publishes when something actually changes, so an idle robot
+    # generates no socket traffic - unlike the 10 Hz joint_states stream.
+    fsm = FsmBridge(on_state=lambda state: socketio.emit('fsm_state', state))
+
     # Run ROS 2 executor in a background thread
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(controller)
+    executor.add_node(fsm)
+
+    _register_project_blueprint()
     
     ros_thread = threading.Thread(target=executor.spin, daemon=True)
     ros_thread.start()
@@ -1250,6 +1234,8 @@ def main():
             # Stop the executor and join the ROS thread
             executor.shutdown()
             controller.destroy_node()
+        if fsm:
+            fsm.destroy_node()
         
         # Shutdown ROS 2 context
         if rclpy.ok():

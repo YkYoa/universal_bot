@@ -1,0 +1,5 @@
+# The store is generated - seed it with:
+#   ros2 run qvic_2026 sequence_store_cli.py import --file <pkg>/config/sequence.yaml
+*.db
+*.db-wal
+*.db-shm

@@ -1,0 +1,28 @@
+# MoveIt planning-scene edits: collision objects, grasp attach/detach, and
+# direct AllowedCollisionMatrix entries. Served by robot_skills_node, which
+# already owns the PlanningSceneMonitor.
+
+string action
+# "add"       add/replace a primitive collision object at `pose`
+# "remove"    remove object `object_id` from the scene
+# "attach"    attach `object_id` to `link` with `touch_links` allowed to
+#             collide with it - the normal way to grasp something
+# "detach"    detach `object_id`, leaving it in the scene where it is
+# "allow"     ACM: allow collision between `object_id` and every `touch_links`
+#             entry (or everything, if touch_links is empty)
+# "disallow"  the inverse of "allow"
+# "clear"     drop every object and reset the ACM to the robot model default
+
+string object_id
+string link                        # attach/detach: link to attach to
+string[] touch_links               # attach/allow: links allowed to touch it
+
+geometry_msgs/PoseStamped pose     # add: where it goes; header.frame_id required
+string primitive                   # add: "box" | "sphere" | "cylinder"
+float64[] dimensions
+# box:      [x, y, z]
+# sphere:   [radius]
+# cylinder: [height, radius]
+---
+bool success
+string message

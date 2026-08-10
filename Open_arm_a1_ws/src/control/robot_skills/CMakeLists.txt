@@ -26,6 +26,7 @@ add_library(robot_skills SHARED
   src/skills/cartesian_move_skill.cpp
   src/skills/gripper_skill.cpp
   src/skill_server.cpp
+  src/scene_manager.cpp
 )
 
 target_include_directories(robot_skills PUBLIC

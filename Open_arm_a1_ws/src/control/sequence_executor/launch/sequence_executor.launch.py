@@ -48,6 +48,9 @@ def launch_setup(context, *args, **kwargs):
     isaacsim    = LaunchConfiguration("isaacsim")
     use_sim_time = LaunchConfiguration("use_sim_time")
     ee_type      = LaunchConfiguration("ee_type")
+    db_path      = LaunchConfiguration("db_path")
+    executor_package    = LaunchConfiguration("executor_package")
+    executor_executable = LaunchConfiguration("executor_executable")
 
     # ── Robot description ────────────────────────────────────────────────────
     robot_description_content = Command([
@@ -196,30 +199,35 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ── Sequence executor ────────────────────────────────────────────────────
+    # The executable is swappable so a project can run its own build of the
+    # state machine - qvic_2026's qvic_fsm_node adds a SQLite store and ten
+    # hardcoded actions on top of exactly this node. The node *name* stays
+    # fixed either way, because it is what ~/state, ~/run_sequence, and
+    # ~/fsm_command resolve against.
     sequence_executor = Node(
-        package="sequence_executor",
-        executable="sequence_executor_node",
-        name="sequence_executor",
+        package=executor_package,
+        executable=executor_executable,
+        name="sequence_executor_node",
         output="screen",
         parameters=[{
             "sequence_yaml_path": sequence_yaml_path,
             "sequence_name": sequence_name,
+            "db_path": db_path,
             "use_sim_time": use_sim_time,
         }],
     )
 
-    # ── Optional Web UI Telemetry ─────────────────────────────────────────────
-    bt_viewer = Node(
-        package="bt_viewer",
-        executable="bt_viewer_node",
-        name="bt_viewer",
+    # ── Optional REST + WebSocket API and web dashboard ──────────────────────
+    # Serves the FSM viewer, the sequence CRUD the Android app uses, and the
+    # live fsm_state stream on port 5050. (This replaced bt_viewer, whose
+    # package was deleted in 4dd39d7 while this launch file still referenced
+    # it - use_api:=true used to fail outright.)
+    robot_api = Node(
+        package="moveit_api",
+        executable="robot_api_server",
+        name="robot_api_server",
         output="screen",
-        parameters=[{
-            "sequence_yaml_path": sequence_yaml_path,
-            "sequence_name": sequence_name,
-            "port": 5000,
-            "use_sim_time": use_sim_time,
-        }],
+        parameters=[{"use_sim_time": use_sim_time}],
         condition=IfCondition(use_api),
     )
 
@@ -251,7 +259,7 @@ def launch_setup(context, *args, **kwargs):
         move_group,
         robot_skills,
         sequence_executor,
-        bt_viewer,
+        robot_api,
         rviz,
     ]
 
@@ -271,12 +279,28 @@ def generate_launch_description():
             description="launch"
         ),
         DeclareLaunchArgument(
-            "sequence_yaml_path",
-            description="Path to the sequence.yaml file to read (required)"
+            "sequence_yaml_path", default_value="",
+            description="sequence.yaml to read. Only used when the executor has no store "
+                        "of its own (i.e. plain sequence_executor_node)."
         ),
         DeclareLaunchArgument(
-            "sequence_name",
-            description="Name of the sequences: entry in sequence_yaml_path to run (required)"
+            "sequence_name", default_value="",
+            description="Sequence to run at startup. Empty leaves the FSM in IDLE, "
+                        "waiting for a RunSequence goal."
+        ),
+        DeclareLaunchArgument(
+            "db_path", default_value="",
+            description="Sequence store to read. Empty uses QVIC_DB_PATH, then the "
+                        "project default. Ignored by sequence_executor_node."
+        ),
+        DeclareLaunchArgument(
+            "executor_package", default_value="sequence_executor",
+            description="Package holding the executor to run."
+        ),
+        DeclareLaunchArgument(
+            "executor_executable", default_value="sequence_executor_node",
+            description="Executor executable. qvic_2026 passes qvic_fsm_node to get its "
+                        "sequence store and hardcoded actions."
         ),
 
         OpaqueFunction(function=launch_setup),

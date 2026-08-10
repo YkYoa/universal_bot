@@ -4,15 +4,18 @@
   <name>sequence_executor</name>
   <version>0.1.0</version>
   <description>
-    Reads sequence.yaml directly and replays its sequences: entries as a
-    plain event-driven state machine (home step once, then a looped body) -
-    replaces bt_executor/BehaviorTree.CPP for this workspace.
+    Two-layer robot state machine: a supervisory layer (idle/running/paused/
+    fault/estop/teaching) over a sequence layer that walks an ordered step
+    list. Serves RunSequence, FsmCommand, and a latched FsmState topic.
+    Sequences come from a pluggable SequenceSource - a sequence.yaml here, or
+    a project's own store.
   </description>
   <maintainer email="hans@openarm.dev">hans</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>ament_index_cpp</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
 

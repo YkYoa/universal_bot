@@ -60,8 +60,13 @@ void SkillClient::sendGoal(ExecuteSkill::Goal goal, ResultCallback callback)
 
   rclcpp_action::Client<ExecuteSkill>::SendGoalOptions options;
   options.result_callback = [this, callback](const rclcpp_action::ClientGoalHandle<ExecuteSkill>::WrappedResult& result) {
+    active_goal_.reset();
     if (result.code == rclcpp_action::ResultCode::SUCCEEDED && result.result->success) {
       callback(true, "");
+      return;
+    }
+    if (result.code == rclcpp_action::ResultCode::CANCELED) {
+      callback(false, "cancelled");
       return;
     }
     const std::string msg = result.result ? result.result->error_message : "action did not succeed";
@@ -73,10 +78,22 @@ void SkillClient::sendGoal(ExecuteSkill::Goal goal, ResultCallback callback)
       if (!handle) {
         RCLCPP_ERROR(logger_, "ExecuteSkill goal rejected");
         callback(false, "goal rejected");
+        return;
       }
+      active_goal_ = handle;
     };
 
   client_->async_send_goal(goal, options);
+}
+
+bool SkillClient::cancelActiveGoal()
+{
+  if (!active_goal_) {
+    return false;
+  }
+  RCLCPP_INFO(logger_, "Cancelling active ExecuteSkill goal");
+  client_->async_cancel_goal(active_goal_);
+  return true;
 }
 
 }  // namespace sequence_executor

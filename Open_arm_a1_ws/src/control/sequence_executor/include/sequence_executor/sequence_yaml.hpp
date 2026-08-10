@@ -62,6 +62,16 @@ public:
   // Throws std::runtime_error if `name` isn't in the `sequences:` block.
   SequenceDef sequence(const std::string& name) const;
 
+  // Every entry under `sequences:`, in file order.
+  std::vector<std::string> sequenceNames() const;
+
+  // One key's parsed values, looked up section-first because names repeat
+  // across sections (laHomeAngle exists in both homePoses and waveHome).
+  // Empty if the section or key is absent.
+  std::vector<double> value(const std::string& section, const std::string& key) const;
+
+  bool hasSection(const std::string& section) const;
+
   // Literal "laHomeAngle"/"raHomeAngle"-style lookup (side_prefix "la" or
   // "ra") - used only for home_section's fixed arm pose, matching
   // --home-section's exact-key-name convention. Empty if not present.

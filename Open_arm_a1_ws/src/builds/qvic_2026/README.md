@@ -1,145 +1,123 @@
 # qvic_2026
 
 Project home for the QVIC 2026 (Qualcomm) competition entry. Holds this
-project's own `sequence.yaml` and launch setup. Reuses generic tooling
-from `control/` rather than duplicating it — this package should stay
-thin.
+project's sequence store, its ten hardcoded actions, and its launch setup.
+Reuses the generic state machine from `control/sequence_executor` rather than
+duplicating it.
 
-## Directory layout
+## What runs
 
 ```
-qvic_2026/
-├── config/
-│   └── sequence.yaml           # waypoints/poses AND the sequences: entries (source of truth)
-├── launch/
-│   └── qvic_2026.launch.py     # picks a sequences: entry (arm:= or sequence:=), launches sequence_executor
-├── src/                        # project-specific C++ (empty so far - see "Adding project code" below)
-├── include/
-├── CMakeLists.txt
-└── package.xml
+Android app / web page
+        │  HTTP + Socket.IO :5050        (moveit_api/robot_api_server)
+        ▼
+   FSM bridge  ──ROS──▶  qvic_fsm_node   ──action──▶  robot_skills  ──▶ MoveIt
+                          │                            │
+                          ├─ SQLite store              └─ scene_command
+                          │  (data/sequences.db)          (collision, grasp)
+                          └─ 10 builtin actions
 ```
 
-## The pipeline, end to end
+`qvic_fsm_node` is `sequence_executor`'s state machine with two things added:
+a SQLite `SequenceSource` reading the store the Android app edits, and this
+project's `BuiltinActionRegistry` entries. Everything else - the supervisory
+FSM, the step walker, validation, pause/resume/cancel - is the shared package.
 
-Every sequence this project runs goes through three stages — no
-generation/build step in between: `sequence_executor_node` reads
-`config/sequence.yaml` directly off disk at launch time.
+## The store
 
-**1. Get waypoints into `config/sequence.yaml`** — two ways:
+`data/sequences.db` is the runtime source of truth. `config/sequence.yaml`
+still exists because `waypoint_recorder` and `trajectory_waypoint_generator`
+write it, and because it is what git diffs - but the executor reads the store.
 
-- **Hand-guide + record** (`control/waypoint_recorder`): put the arm in
-  `control_mode: torque` (gravity compensation active), physically move it,
-  and record positions live.
-  ```
-  ros2 run waypoint_recorder record_waypoint --loop --file /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/sequence.yaml
-  ```
-  Interactive: pick arm (`la`/`ra`/`both`), pick/create a section, then
-  press Enter per waypoint (auto-numbered `<arm><Section><N>Angle`), `s` to
-  switch section, `q` to finish.
+Seed or re-sync it:
 
-- **Formula-generated** (`control/trajectory_waypoint_generator`): compute
-  a shape (line, ellipse arc, circle, square) between reference poses
-  instead of hand-recording every point.
-  ```
-  ros2 run trajectory_waypoint_generator generate_waypoint_sequence --arm la --section waveEllipse --shape ellipse --start key:laPreWaveJoint --end key:laEndWaveJoint --file /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/sequence.yaml --num-points 20 --height-ratio 0.3
-  ```
-  `--start`/`--end` (or `--center` for circle/square) each accept `live`
-  (capture the arm's current position now) or `key:NAME` (read an existing
-  waypoint out of `--file`, no live robot needed). See
-  `control/trajectory_waypoint_generator/src/generate_waypoint_sequence.cpp`'s
-  header comment and `--help` for full shape-specific options.
-
-Both tools write the same key format:
-`<arm_prefix><PascalCase(section)><N>Angle` (e.g. `laWaveEllipse1Angle`).
-**`--section` must not end in a digit** — the trailing section digit and
-the point-number digits would concatenate ambiguously.
-
-**2. Define (or reuse) a `sequences:` entry.** Each entry is a flat dict
-under the top-level `sequences:` key in `sequence.yaml`:
-
-| field | meaning |
-|---|---|
-| `arm` | `left_arm` \| `right_arm` \| `both_arms` |
-| `planner_profile` | planner profile name (e.g. `fast_ptp`, `realtime_rrt`) |
-| `home_section` | *(optional)* section run once before the loop — arm target plus, if present, `lh`/`rhHomeYaw`/`Flex` hand hold |
-| `body_section` | a section replayed as the sequence body (`PlanToJointSequence`) |
-| `body_right_section` | *(optional)* paired right-arm section, interleaved 1:1 with `body_section` |
-| `body_sections` | *(optional, comma-list, alternative to `body_section`)* section names cycled through in order — used for hand-pose-only sequences |
-| `repeat` | `-1` = infinite, default `1` |
-| `exclude_points` | *(optional, comma-list, 1-indexed)* waypoints to skip (workaround for a known-bad point) |
-
-Example (arm wave with a home step, looping forever):
-```yaml
-sequences:
-  qvic_2026_both:
-    arm: both_arms
-    planner_profile: realtime_rrt
-    home_section: homePoses
-    body_section: waveEllipse
-    body_right_section: waveEllipseR
-    repeat: -1
 ```
-Example (hand-only animation, arm holds still):
-```yaml
-sequences:
-  hand_open_close:
-    arm: both_arms
-    home_section: homePoses
-    body_sections: handOpen, homePoses
-    repeat: -1
+ros2 run qvic_2026 sequence_store_cli.py import --file src/builds/qvic_2026/config/sequence.yaml
+ros2 run qvic_2026 sequence_store_cli.py list
+ros2 run qvic_2026 sequence_store_cli.py export --file /tmp/roundtrip.yaml
 ```
-`velocity`/`acceleration` scaling is still looked up from the existing
-top-level `speed:` dict by section name — not a `sequences:` field.
 
-**3. Replay — fake hardware first, always:**
+Import is lossless in both directions for everything the flat YAML schema can
+express. Steps it cannot express (waits, scene edits, per-step speed changes)
+are dropped on export, and the CLI says so.
+
+A **sequence** is an ordered list of **steps**. That is the change from the old
+schema, which had one fixed shape - a home step, then a body looped N times.
+The YAML importer unrolls that shape into steps, so old entries keep working.
+
+Waypoint names repeat across sections (`laHomeAngle` is in both `homePoses`
+and `waveHome`), so a step always refers to one as **`section/name`**.
+
+## Control mode
+
+The arm's control mode is fixed when the hardware boots - `hardware_config.yaml`
+is read once and written to the motor register during init. There is no runtime
+switch.
+
+Every step declares the mode it needs (`any`, `position|mit`, or `torque`), and
+the FSM checks all of them in `VALIDATING` before anything moves. A mismatch
+fails with a message naming the step, instead of `torque` mode silently
+ignoring position commands the way it used to.
+
+The store refuses to put `torque` and `position|mit` steps in one sequence at
+edit time, since no single boot can satisfy both.
+
+## Running it
+
 ```
 ros2 launch qvic_2026 qvic_2026.launch.py arm:=left use_rviz:=true
 ```
-`arm:=left|right|both` maps to `qvic_2026_left`/`_right`/`_both` in
-`sequences:`. For any other entry (e.g. `hand_open_close`), pass it
-directly and skip `arm:=`:
-```
-ros2 launch qvic_2026 qvic_2026.launch.py sequence:=hand_open_close use_rviz:=true
-```
-This is a fully self-contained fake-hardware stack (robot_state_publisher,
-fake ros2_control, move_group, robot_skills_node, sequence_executor, RViz)
-— one command, no other terminals needed. Add `use_api:=true` to also
-launch `bt_viewer`'s web UI (http://127.0.0.1:5000) for live sequence
-status. Confirm the motion looks right in RViz *before* touching real
-hardware. Editing `sequence.yaml` and relaunching is enough to see a
-change — no `colcon build` needed unless you touched C++.
 
-**Real hardware** (only after the fake-hardware dry run looks right), 3
-terminals:
-```
-ros2 launch robot_hardware_interface bringup.launch.py arms:=true ee_type:=amazing_hand
-ros2 launch openarm_test run_skills_only.launch.py
-ros2 launch qvic_2026 qvic_2026.launch.py arm:=both
-```
-Check `config/hardware_config.yaml`'s (in `robot_hardware_interface`)
-`control_mode` first: must be `position` (or `mit`) for trajectory replay
-to actually move the arm — `torque` mode (used for hand-guiding / gravity
-comp) ignores position commands entirely.
+| argument | meaning |
+|---|---|
+| `arm:=left\|right\|both` | picks `qvic_2026_left/_right/_both` |
+| `sequence:=<name>` | any other sequence by name |
+| `autostart:=false` | sit in IDLE and wait for the app or the web page |
+| `use_api:=true` | also launch the REST/WebSocket API on :5050 |
+| `use_db:=false` | read `config/sequence.yaml` instead of the store |
+| `use_rviz:=true` | RViz |
 
-## `sequence.yaml` conventions
+With `use_api:=true`: the state-machine viewer is at
+`http://<robot-ip>:5050/dashboard/fsm.html`, the 3D dashboard at
+`/dashboard/`. The Android contract is
+`control/moveit_api/android_api_guide.md`.
 
-```yaml
-# Planning group indicator (key prefix): la/ra = arm, lh/rh = hand, head = head goal
-# Key contains "Angle"  -> 7 joint values, replayed via joint_target/joint_sequence
-# Key contains "Joint" (or anything else) -> pose data: 3 position + 4 quaternion
-speed:
-  <section>: <velocity>[, <acceleration>]   # MoveIt scaling factors [0-1], optional acceleration
+Driving it by hand:
+
+```
+ros2 topic echo /sequence_executor_node/state
+ros2 action send_goal /sequence_executor_node/run_sequence openarm_messages/action/RunSequence "{sequence_name: qvic_2026_left, repeat_override: 1}"
+ros2 service call /sequence_executor_node/fsm_command openarm_messages/srv/FsmCommand "{command: pause}"
 ```
 
-- `*Angle` keys are joint-space (7 raw joint values) — this is what
-  actually gets replayed.
-- `*Joint` keys (or any non-`Angle` key) are Cartesian reference poses
-  (x, y, z, qx, qy, qz, qw) — used as `--start`/`--end`/`--center`
-  references by `trajectory_waypoint_generator`, not replayed directly.
-- `speed:` entries scale velocity/acceleration per-section; missing or 0 =
-  the skill's default profile speed.
-- `sequences:` (see above) is additive to all of this — it never changes
-  how existing data sections are written or read.
+`dry_run: true` on the goal walks and validates every step without sending a
+single motion goal - the cheapest way to check a sequence the app just built.
+
+## The ten hardcoded actions
+
+`src/qvic_actions.cpp` holds `action_01` .. `action_10`. `action_01` is
+implemented as a worked example; the rest fail with "has no body yet" until
+filled in. They appear alongside stored sequences as `builtin:<id>` and run
+through the same path.
+
+The file's header comment covers the three rules that matter: call `done`
+exactly once on every path, check `ctx.cancelled()` between async hops, and
+declare the control mode honestly.
+
+## Recording waypoints
+
+Unchanged - both tools still write `config/sequence.yaml`, then you import:
+
+```
+ros2 run waypoint_recorder record_waypoint --loop --file src/builds/qvic_2026/config/sequence.yaml
+ros2 run trajectory_waypoint_generator generate_waypoint_sequence --arm la --section waveEllipse --shape ellipse --start key:laPreWaveJoint --end key:laEndWaveJoint --file src/builds/qvic_2026/config/sequence.yaml --num-points 20 --height-ratio 0.3
+```
+
+`--section` must not end in a digit - the section digit and the point number
+would concatenate ambiguously.
+
+The API can also record from the tablet: `POST /api/waypoints` with
+`{"source": "live"}` captures the arm's current position.
 
 ## Collision safety
 

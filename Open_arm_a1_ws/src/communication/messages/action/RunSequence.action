@@ -1,0 +1,18 @@
+# ── Request ───────────────────────────────────────────────────
+string sequence_name
+# A sequence in the store, or "builtin:<id>" for a hardcoded action
+# registered through BuiltinActionRegistry.
+
+int32 repeat_override       # 0 = use the sequence's own repeat; -1 = forever
+float64 velocity_override   # 0 = use the sequence's own velocity
+bool dry_run                # validate only: never sends a motion goal
+---
+# ── Result ────────────────────────────────────────────────────
+bool success
+string error_message
+int32 steps_completed
+---
+# ── Feedback ──────────────────────────────────────────────────
+# Same snapshot published on ~/state, mirrored onto the goal so an action
+# client gets transitions without a separate subscription.
+FsmState state

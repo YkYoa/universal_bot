@@ -64,6 +64,9 @@
 
 <div id="panel">
   <h1>OpenArm Dashboard</h1>
+  <!-- The state machine viewer is a separate page: this one's app.js is a
+       minified bundle, so new UI goes in fsm.html/fsm.js instead. -->
+  <a href="./fsm.html" style="color:#6aa9f0; font-size:12px;">State machine →</a>
   <div id="status"><span class="dot" id="statusDot"></span><span id="statusText">connecting...</span></div>
 
   <select id="sequenceSelect"><option>loading sequences...</option></select>

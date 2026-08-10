@@ -1,0 +1,17 @@
+# Out-of-band control of the running FSM. Separate from the RunSequence
+# action so a client that did not own the goal (the web dashboard, the
+# Android app) can still pause or stop.
+
+string command
+# "pause"       RUNNING -> PAUSED, at the next step boundary (does not cut a
+#               trajectory mid-flight)
+# "resume"      PAUSED -> RUNNING
+# "step"        PAUSED only: run exactly one step, then hold in PAUSED
+# "cancel"      stop now - cancels the in-flight ExecuteSkill goal
+# "clear_fault" FAULT|ESTOP -> IDLE
+# "estop"       any -> ESTOP, cancels everything
+# "enter_teach" IDLE -> TEACHING (rejected unless control mode is torque)
+# "exit_teach"  TEACHING -> IDLE
+---
+bool success
+string message
