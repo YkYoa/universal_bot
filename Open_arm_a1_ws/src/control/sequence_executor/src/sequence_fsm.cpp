@@ -380,6 +380,11 @@ void SequenceFsm::dispatch(const Step& step)
 
 void SequenceFsm::dispatchMoveJoint(const Step& step)
 {
+  dispatchMoveJointInto(step, stepDone());
+}
+
+void SequenceFsm::dispatchMoveJointInto(const Step& step, Done done)
+{
   std::vector<double> targets;
   try {
     if (!step.positions.empty()) {
@@ -392,17 +397,22 @@ void SequenceFsm::dispatchMoveJoint(const Step& step)
       }
     }
   } catch (const std::exception& e) {
-    onStepFinished(run_id_, false, e.what());
+    done(false, e.what());
     return;
   }
 
   transition(SeqState::STEP_EXECUTING);
   clients_.skill->moveToJoint(
     step.arm, targets, spec_.planner_profile, velocityFor(step), accelerationFor(step),
-    stepDone());
+    std::move(done));
 }
 
 void SequenceFsm::dispatchMoveJointSequence(const Step& step)
+{
+  dispatchMoveJointSequenceInto(step, stepDone());
+}
+
+void SequenceFsm::dispatchMoveJointSequenceInto(const Step& step, Done done)
 {
   std::vector<std::vector<double>> left;
   std::vector<std::vector<double>> right;
@@ -412,7 +422,7 @@ void SequenceFsm::dispatchMoveJointSequence(const Step& step)
       right = source_->loadSection(step.right_section);
     }
   } catch (const std::exception& e) {
-    onStepFinished(run_id_, false, e.what());
+    done(false, e.what());
     return;
   }
 
@@ -436,17 +446,22 @@ void SequenceFsm::dispatchMoveJointSequence(const Step& step)
   }
 
   if (flat.empty()) {
-    onStepFinished(run_id_, false, "every waypoint in '" + step.section + "' was excluded");
+    done(false, "every waypoint in '" + step.section + "' was excluded");
     return;
   }
 
   transition(SeqState::STEP_EXECUTING);
   clients_.skill->moveToJointSequence(
     step.arm, flat, spec_.planner_profile, velocityFor(step), accelerationFor(step),
-    stepDone());
+    std::move(done));
 }
 
 void SequenceFsm::dispatchHandPose(const Step& step)
+{
+  dispatchHandPoseInto(step, stepDone());
+}
+
+void SequenceFsm::dispatchHandPoseInto(const Step& step, Done done)
 {
   struct Goal
   {
@@ -468,7 +483,7 @@ void SequenceFsm::dispatchHandPose(const Step& step)
     }
   }
   if (pending_hand_goals_ == 0) {
-    onStepFinished(run_id_, true, "");
+    done(true, "");
     return;
   }
 
@@ -479,8 +494,7 @@ void SequenceFsm::dispatchHandPose(const Step& step)
   // Yaw and flex, left and right, all fire together so one step is one
   // simultaneous posture rather than four sequential twitches. The counter
   // makes sure the step completes exactly once, after the last one lands;
-  // stepDone() then drops the whole thing if the run ended in the meantime.
-  auto done = stepDone();
+  // the tagged callback then drops the whole thing if the run ended meanwhile.
   auto onOne = [this, done](bool ok, const std::string& error) {
     if (!ok && !hand_failed_) {
       hand_failed_ = true;
@@ -513,6 +527,94 @@ void SequenceFsm::dispatchGripper(const Step& step)
     clients_.hand->openGripper(arm, kGripperOpenPosition, kGripperDurationS, done);
   } else {
     clients_.hand->closeGripper(arm, kGripperClosePosition, kGripperDurationS, done);
+  }
+}
+
+void SequenceFsm::dispatchMoveGroups(const Step& step)
+{
+  // One step, every subsystem it names, all moving at once.
+  //
+  // The combinations the operator can ask for - arms alone, arms+hands,
+  // arms+head, hands+head, all three - are not enumerated anywhere. Which
+  // fields are populated decides which groups take part, so the set of
+  // supported combinations is every subset, and adding a subsystem later means
+  // adding one branch here rather than a new step type per combination.
+  //
+  // They genuinely overlap in time: each subsystem has its own controller (or
+  // its own board), so the goals are independent and a counter joins them.
+  // The one thing that cannot overlap with itself is the arm - MoveIt plans
+  // one trajectory per group - which is why both arms move through a single
+  // both_arms goal rather than two.
+  transition(SeqState::STEP_EXECUTING);
+
+  struct Launch
+  {
+    const char* what;
+    std::function<void(std::function<void(bool, const std::string&)>)> run;
+  };
+  std::vector<Launch> launches;
+
+  const bool has_arm =
+    !step.waypoint.empty() || !step.positions.empty() || !step.section.empty();
+
+  if (has_arm) {
+    launches.push_back({"arm", [this, &step](auto done) {
+      if (!step.section.empty()) {
+        dispatchMoveJointSequenceInto(step, done);
+      } else {
+        dispatchMoveJointInto(step, done);
+      }
+    }});
+  }
+
+  if (!step.head.empty()) {
+    launches.push_back({"head", [this, &step](auto done) {
+      clients_.hand->setHead(step.head[0], step.head[1], step.duration, done);
+    }});
+  }
+
+  if (!step.fingers.empty()) {
+    launches.push_back({"hand board", [this, &step](auto done) {
+      if (!clients_.hand_api) {
+        done(false, "no hand API client configured");
+        return;
+      }
+      std::vector<FingerTarget> targets;
+      for (std::size_t i = 0; i < step.fingers.size(); ++i) {
+        targets.push_back({static_cast<int>(i / 2) + 1, static_cast<int>(i % 2) + 1,
+                           step.fingers[i]});
+      }
+      clients_.hand_api->moveFingers(targets, done);
+    }});
+  }
+
+  const bool has_hand_pose = !step.left_yaw.empty() || !step.left_flex.empty() ||
+                             !step.right_yaw.empty() || !step.right_flex.empty();
+  if (has_hand_pose) {
+    launches.push_back({"amazing_hand", [this, &step](auto done) {
+      dispatchHandPoseInto(step, done);
+    }});
+  }
+
+  if (launches.empty()) {
+    onStepFinished(run_id_, true, "");
+    return;
+  }
+
+  auto pending = std::make_shared<int>(static_cast<int>(launches.size()));
+  auto failure = std::make_shared<std::string>();
+  auto done = stepDone();
+  auto onOne = [pending, failure, done](bool ok, const std::string& error) {
+    if (!ok && failure->empty()) {
+      *failure = error;
+    }
+    if (--(*pending) == 0) {
+      done(failure->empty(), *failure);
+    }
+  };
+
+  for (auto& launch : launches) {
+    launch.run(onOne);
   }
 }
 

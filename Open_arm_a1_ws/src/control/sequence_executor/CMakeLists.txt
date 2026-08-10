@@ -44,6 +44,7 @@ add_library(sequence_executor SHARED
   src/yaml_sequence_source.cpp
   src/skill_client.cpp
   src/hand_gripper_client.cpp
+  src/hand_api_client.cpp
   src/scene_client.cpp
   src/control_mode_probe.cpp
   src/builtin_actions.cpp

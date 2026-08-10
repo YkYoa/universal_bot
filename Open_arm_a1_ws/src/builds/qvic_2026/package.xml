@@ -12,6 +12,9 @@
 
   <depend>rclcpp</depend>
   <depend>sequence_executor</depend>
+  <depend>trajectory_shapes</depend>
+  <depend>geometry_msgs</depend>
+  <depend>eigen</depend>
   <depend>yaml-cpp</depend>
   <depend>libsqlite3-dev</depend>
 

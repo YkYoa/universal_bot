@@ -41,8 +41,22 @@ homePoses:
 # builds/openarm_demo/config/sequence.yaml - used directly (no FK) as
 # --start/--end for trajectory_waypoint_generator.
 waveRefs:
+  # Original hand-picked references. Kept for trajectory_waypoint_generator,
+  # which used them to generate the waveEllipse/waveEllipseR sections. Do NOT
+  # use them as Cartesian goals: their orientations are right but their
+  # positions are ~8cm from where the arm actually ends up.
   laPreWaveJoint: 0.34236, 0.32436, 1.33896, 0.00304, 0.07106, 0.99352, -0.08869
   laEndWaveJoint: 0.34085, 0.13239, 1.31470, 0.02744, -0.12550, 0.98132, 0.14323
+
+  # Where the arms actually go: forward kinematics of the first and last
+  # waypoints of waveEllipse / waveEllipseR, in the openarm_base_link frame.
+  # These are what builtin action_02 sweeps its ellipse between, so the arc
+  # starts and ends exactly where the joint data already proves reachable.
+  # Regenerate after re-recording an arc section - see the qvic_2026 README.
+  laWaveStartPose: 0.316780, 0.285397, 1.269007, 0.003040, 0.071060, 0.993517, -0.088690
+  laWaveEndPose: 0.303303, 0.137889, 1.239694, 0.027440, -0.125500, 0.981317, 0.143230
+  raWaveStartPose: 0.316781, -0.285397, 1.269007, 0.071060, 0.003036, -0.088636, 0.993521
+  raWaveEndPose: 0.307944, -0.136692, 1.239663, -0.115797, 0.026269, 0.131825, 0.984136
 
 wavePoses:
   laWavePoses1Angle: 0.126841, 0.018883, -0.0791562, 0.745212, 0.0104906, -0.179484, -0.210002

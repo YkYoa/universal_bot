@@ -134,6 +134,60 @@ STEP_TYPES = {
                     "YAML export rebuild a body_sections list."),
         ],
     },
+    "hand_fingers": {
+        "label": "4-finger hand",
+        "description": (
+            "Drive the CH32V307 4-finger hand over its own REST API (port 5051). "
+            "This is a separate board on its own network, not a ros2_control "
+            "joint - `hand_pose` does nothing on it, and this does nothing to "
+            "an amazing_hand."
+        ),
+        "control_mode": MODE_ANY,
+        "fields": [
+            _f("fingers", "float[]",
+               desc="8 angles in degrees: F1m1, F1m2, F2m1, F2m2, F3m1, F3m2, F4m1, F4m2. "
+                    "The board clamps each motor to its own safe range.",
+               length=[8], required=False),
+            _f("home_first", "bool", required=False, default=False,
+               desc="Home every finger before applying `fingers`. On its own, just homes."),
+        ],
+    },
+    "move_groups": {
+        "label": "Move several groups together",
+        "description": (
+            "One step, every subsystem it names, all moving at the same time: "
+            "arms, head, the 4-finger hand, the amazing_hand - in any "
+            "combination. Which fields you fill in decides which groups take "
+            "part, so this one type covers arms+hands, arms+head, hands+head, "
+            "all three, and so on."
+        ),
+        "control_mode": MODE_MOTION,
+        "fields": [
+            _f("arm", "enum", required=False, desc="Which arm group moves.", options=list(ARMS)),
+            _f("waypoint", "waypoint_ref", required=False,
+               desc="Arm target as 'section/name'."),
+            _f("right_waypoint", "waypoint_ref", required=False,
+               desc="For arm=both_arms: the right-arm 'section/name'."),
+            _f("positions", "float[]", required=False,
+               desc="Raw joint values instead of a waypoint. 7, or 14 for both_arms.",
+               length=[7, 14]),
+            _f("section", "section_ref", required=False,
+               desc="Replay a whole section for the arm instead of a single target."),
+            _f("right_section", "section_ref", required=False,
+               desc="For both_arms: the right-arm section, interleaved with `section`."),
+            _f("head", "float[]", required=False,
+               desc="Neck pan and head tilt, in radians.", length=[2]),
+            _f("fingers", "float[]", required=False,
+               desc="4-finger hand: 8 angles in degrees, F1m1 .. F4m2.", length=[8]),
+            _f("left_yaw", "float[]", required=False, desc="amazing_hand left yaw.", length=[4]),
+            _f("left_flex", "float[]", required=False, desc="amazing_hand left flex.", length=[4]),
+            _f("right_yaw", "float[]", required=False, desc="amazing_hand right yaw.", length=[4]),
+            _f("right_flex", "float[]", required=False, desc="amazing_hand right flex.", length=[4]),
+            _f("duration", "float", required=False, default=1.0,
+               desc="Move time for the head and hand parts, in seconds."),
+            *_SPEED_FIELDS,
+        ],
+    },
     "gripper": {
         "label": "Gripper",
         "description": "Open or close the parallel gripper (openarm_hand end effector).",
@@ -337,6 +391,23 @@ def _check_pairs(step_type, params):
             raise StepValidationError(
                 "move_pose: needs 'orientation', or 'position_only': true"
             )
+    if step_type == "hand_fingers":
+        if not params.get("fingers") and not params.get("home_first"):
+            raise StepValidationError(
+                "hand_fingers: set 'fingers' (8 values), or 'home_first' to just home"
+            )
+    if step_type == "move_groups":
+        arm_target = any(params.get(k) for k in ("waypoint", "positions", "section"))
+        groups = arm_target or any(
+            params.get(k) for k in
+            ("head", "fingers", "left_yaw", "left_flex", "right_yaw", "right_flex"))
+        if not groups:
+            raise StepValidationError(
+                "move_groups: name at least one group - an arm target "
+                "(waypoint/positions/section), 'head', 'fingers', or a hand_pose vector"
+            )
+        if arm_target and not params.get("arm"):
+            raise StepValidationError("move_groups: an arm target needs 'arm'")
     if step_type == "hand_pose":
         if not any(k in params for k in ("left_yaw", "left_flex", "right_yaw", "right_flex")):
             raise StepValidationError(
