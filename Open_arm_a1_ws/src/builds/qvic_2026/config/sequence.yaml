@@ -22,6 +22,7 @@
 speed:
   home: 1.0, 1.0
   wavePoses: 1.0, 1.0
+  talkingPoses: 1.0, 1.0
 
 # Record waypoints here with, e.g.:
 #   ros2 run openarm_demo record_waypoint --arm la --section homePoses --name Home \
@@ -134,3 +135,66 @@ wavePosesR:
   raWavePosesR15Angle: 0.334660593831, 0.770859003926, -0.604353987601, 1.41897823208, 0.408603422256, -0.136520445305, 0.00130444296228
   raWavePosesR16Angle: -0.264175557177, 0.453032288029, -0.583786280805, 1.42988380383, 0.717313041288, -0.303445355646, -0.12698138607
   raWavePosesR17Angle: -0.00778145824953, 0.0460285542214, -0.767295189711, 0.131215470508, 0.77423994042, 0.00442630050992, -0.198353037094
+
+greet:
+  laGreet1Angle: -0.435836, -0.1112, 0.0833524, 0.982109, 1.20565, -0.78, 0.042916
+  laGreet2Angle: -0.120356, -0.0532158, 0.0711452, 0.981346, 1.56806, 0.403792, 0.050164
+
+greetR:
+  raGreetR1Angle: 0.481881193815, 0.296610990919, -0.425368608483, 0.978174177857, -0.735279566063, 0.698955152209, -0.226912449719
+  raGreetR2Angle: 0.183526862683, 0.280761553318, -0.502062443362, 0.980074442558, -1.23146901739, -0.445955666667, -0.280380187353
+
+# Fully-open amazing_hand flex pose (fingers extended) - paired with
+# homePoses' lh/rhHomeFlex (curled) by the hand_open_close sequence below to
+# cycle open<->close. No yaw keys here on purpose: only flex changes during
+# the cycle, yaw stays wherever homePoses' home step left it.
+handOpen:
+  lhOpenFlex: 0, 0, 0, 0
+  rhOpenFlex: 0, 0, 0, 0
+
+# sequences: - sequence_executor reads this directly (no XML generation
+# step). Each entry is a flat set of fields, same style as every other
+# section here - see sequence_executor/include/sequence_executor/
+# sequence_yaml.hpp for the exact field meanings.
+sequences:
+  qvic_2026_left:
+    arm: left_arm
+    planner_profile: fast_ptp
+    body_section: waveEllipse
+
+  qvic_2026_right:
+    arm: right_arm
+    planner_profile: fast_ptp
+    body_section: waveEllipseR
+
+  qvic_2026_both:
+    arm: both_arms
+    planner_profile: realtime_rrt
+    home_section: homePoses
+    body_section: waveEllipse
+    body_right_section: waveEllipseR
+    repeat: -1
+
+  qvic_2026_wavepose_bimanual:
+    arm: both_arms
+    planner_profile: realtime_rrt
+    home_section: waveHome
+    body_section: wavePoses
+    body_right_section: wavePosesR
+    repeat: -1
+    # KNOWN ISSUE (pre-existing, not caused by the sequence_executor migration):
+    # wavePoses/wavePosesR interleaved has more than one problematic point
+    # (planning failed at point 7, then point 6 after excluding 7) - needs a
+    # proper pass with check_bimanual_collision before this sequence is
+    # trustworthy end-to-end. exclude_points: <N>[, <N>...] is supported
+    # (1-indexed) once the actual offending point(s) are identified.
+
+  hand_open_close:
+    arm: both_arms
+    home_section: homePoses
+    body_sections: handOpen, homePoses
+    repeat: -1
+
+waveLoop:
+  laWaveLoop1Angle: -0.88934482908, -0.689693629461, 0.579449130525, 1.5025233283, -0.862071703722, 0.608709969917, -1.15260185699
+  laWaveLoop2Angle: -1.03922606049, -0.446831091895, 0.982720808149, 1.52272311082, -0.636825673196, 0.444260305215, -1.03485503942

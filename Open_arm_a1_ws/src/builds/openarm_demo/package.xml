@@ -3,7 +3,7 @@
 <package format="3">
   <name>openarm_demo</name>
   <version>0.0.0</version>
-  <description>Test package for bimanual robot realtime preemption using Behavior Trees</description>
+  <description>Test package for bimanual robot realtime preemption</description>
   <maintainer email="hans@todo.todo">hans</maintainer>
   <license>TODO: License declaration</license>
 
@@ -13,7 +13,6 @@
   <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
-  <depend>bt_executor</depend>
   <depend>computation</depend>
   <depend>common</depend>
   <depend>openarm_messages</depend>

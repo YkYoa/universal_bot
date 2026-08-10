@@ -22,6 +22,8 @@
   <depend>kdl_parser</depend>
   <depend>orocos_kdl_vendor</depend>
   <depend>std_srvs</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
   <depend>urdf</depend>
 
   <export>

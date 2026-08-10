@@ -7,7 +7,6 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <sstream>
 #include <string>
 
 #include <rclcpp/rclcpp.hpp>
@@ -30,20 +29,16 @@ void printUsage(const char* prog)
             << "    pose: Enter records the next auto-numbered '<arm><Section><N>Angle', a typed name\n"
             << "    overrides it, 'a' switches arm, 's' switches section, 'q' quits. One session can\n"
             << "    cover both arms and several sections. --arm/--section become optional and just\n"
-            << "    skip their respective first prompt.\n"
-            << "  --auto-convert: after --loop quits, run sequence_to_bt over the whole file (both\n"
-            << "    arms, every section) - requires --bt-out.\n"
-            << "  --bt-out <path>: output XML path for --auto-convert.\n";
+            << "    skip their respective first prompt.\n";
 }
 
 }  // namespace
 
 int main(int argc, char** argv)
 {
-  std::string arm_prefix, section, name, file_path, bt_out;
+  std::string arm_prefix, section, name, file_path;
   double timeout_sec = 5.0;
   bool loop_mode = false;
-  bool auto_convert = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -66,10 +61,6 @@ int main(int argc, char** argv)
       timeout_sec = std::stod(next("--timeout"));
     } else if (arg == "--loop") {
       loop_mode = true;
-    } else if (arg == "--auto-convert") {
-      auto_convert = true;
-    } else if (arg == "--bt-out") {
-      bt_out = next("--bt-out");
     } else if (arg == "--help" || arg == "-h") {
       printUsage(argv[0]);
       return 0;
@@ -94,11 +85,6 @@ int main(int argc, char** argv)
     std::cerr << "[ERROR] --name and --loop are mutually exclusive (loop prompts for a name per waypoint)\n";
     return 1;
   }
-  if (auto_convert && bt_out.empty()) {
-    std::cerr << "[ERROR] --auto-convert requires --bt-out <path/to/output.xml>\n";
-    return 1;
-  }
-
   if (!arm_prefix.empty()) {
     const auto side_it = waypoint_recorder::kArmPrefixToSide.find(arm_prefix);
     if (side_it == waypoint_recorder::kArmPrefixToSide.end() || side_it->second == "left_gripper" ||
@@ -129,30 +115,5 @@ int main(int argc, char** argv)
 
   rclcpp::shutdown();
 
-  if (!ok) {
-    return 1;
-  }
-
-  if (auto_convert) {
-    // Loop mode may have touched either/both arms and several sections -
-    // convert the whole file (empty --section/--arm filters let
-    // sequence_to_bt auto-derive both per key) rather than just what this
-    // process started with.
-    const std::string section_filter = loop_mode ? "" : section;
-    const std::string arm_filter = loop_mode ? "" : waypoint_recorder::kArmPrefixToSide.at(arm_prefix) + "_arm";
-    std::ostringstream cmd;
-    cmd << "ros2 run openarm_demo sequence_to_bt"
-        << " --yaml " << waypoint_recorder::shellQuote(file_path)
-        << " --out " << waypoint_recorder::shellQuote(bt_out)
-        << " --section " << waypoint_recorder::shellQuote(section_filter)
-        << " --arm " << waypoint_recorder::shellQuote(arm_filter);
-    std::cout << "[INFO] Auto-converting: " << cmd.str() << "\n";
-    int rc = std::system(cmd.str().c_str());
-    if (rc != 0) {
-      std::cerr << "[ERROR] sequence_to_bt failed (exit " << rc << ")\n";
-      return 1;
-    }
-  }
-
-  return 0;
+  return ok ? 0 : 1;
 }

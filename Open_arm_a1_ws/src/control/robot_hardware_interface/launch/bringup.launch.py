@@ -152,48 +152,56 @@ def launch_setup(context, *args, **kwargs):
     head_use_fake_hardware = "false" if head_real else "true"
 
     # ── Robot Description (URDF) ──
-    robot_description_content = Command(
-        [
-            PathJoinSubstitution([FindExecutable(name="xacro")]),
-            " ",
-            PathJoinSubstitution([FindPackageShare("openarm_description"), "urdf", "robot", "v10.urdf.xacro"]),
-            " ",
-            "bimanual:=true",
-            " ",
-            "ros2_control:=true",
-            " ",
-            "use_fake_hardware:=", use_fake_hardware,
-            " ",
-            "head_use_fake_hardware:=", head_use_fake_hardware,
-            " ",
-            "left_can_interface:=", left_can_interface,
-            " ",
-            "right_can_interface:=", right_can_interface,
-            " ",
-            "shutdown_disable_retries:=", shutdown_disable_retries,
-            " ",
-            "shutdown_retry_delay_ms:=", shutdown_retry_delay_ms,
-            " ",
-            "shutdown_home_timeout_ms:=", shutdown_home_timeout_ms,
-            " ",
-            "shutdown_home_tolerance:=", shutdown_home_tolerance,
-            " ",
-            "control_mode:=", control_mode,
-            " ",
-            "position_mode_velocity:=", position_mode_velocity,
-            " ",
-            "gazebo:=false",
-            " ",
-            "ee_type:=", ee_type,
-            " ",
-            "body_type:=", body_type,
-            " ",
-            "mobile_base:=true",
-            " ",
-            "mobile_base_xyz:='0 0 0.31'",
-            " ",
-            "mobile_base_body_xyz:='0 0 0'",
-        ]
+    robot_description_args = [
+        PathJoinSubstitution([FindExecutable(name="xacro")]),
+        " ",
+        PathJoinSubstitution([FindPackageShare("openarm_description"), "urdf", "robot", "v10.urdf.xacro"]),
+        " ",
+        "bimanual:=true",
+        " ",
+        "ros2_control:=true",
+        " ",
+        "use_fake_hardware:=", use_fake_hardware,
+        " ",
+        "head_use_fake_hardware:=", head_use_fake_hardware,
+        " ",
+        "left_can_interface:=", left_can_interface,
+        " ",
+        "right_can_interface:=", right_can_interface,
+        " ",
+        "shutdown_disable_retries:=", shutdown_disable_retries,
+        " ",
+        "shutdown_retry_delay_ms:=", shutdown_retry_delay_ms,
+        " ",
+        "shutdown_home_timeout_ms:=", shutdown_home_timeout_ms,
+        " ",
+        "shutdown_home_tolerance:=", shutdown_home_tolerance,
+        " ",
+        "control_mode:=", control_mode,
+        " ",
+        "position_mode_velocity:=", position_mode_velocity,
+        " ",
+        "gazebo:=false",
+        " ",
+        "ee_type:=", ee_type,
+        " ",
+        "body_type:=", body_type,
+        " ",
+        "mobile_base:=true",
+        " ",
+        "mobile_base_xyz:='0 0 0.31'",
+        " ",
+        "mobile_base_body_xyz:='0 0 0'",
+    ]
+    _debug_parts = [a.perform(context) if hasattr(a, "perform") else str(a) for a in robot_description_args]
+    print(f"[bringup] DEBUG resolved xacro command: {''.join(_debug_parts)!r}")
+    robot_description_content = Command(robot_description_args).perform(context)
+    with open("/tmp/bringup_debug_urdf.xml", "w") as f:
+        f.write(robot_description_content)
+    print(
+        f"[bringup] DEBUG xacro output written to /tmp/bringup_debug_urdf.xml "
+        f"({len(robot_description_content)} bytes, "
+        f"{robot_description_content.count('ahand_connector')} ahand_connector matches)"
     )
     robot_description = {"robot_description": ParameterValue(robot_description_content, value_type=str)}
 

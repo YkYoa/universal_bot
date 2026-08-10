@@ -3,14 +3,13 @@
 <package format="3">
   <name>qvic_2026</name>
   <version>0.0.0</version>
-  <description>QVIC 2026 (Qualcomm) project - hand-guided waypoint sequences replayed via bt_executor.</description>
+  <description>QVIC 2026 (Qualcomm) project - hand-guided waypoint sequences replayed via sequence_executor.</description>
   <maintainer email="hans@todo.todo">hans</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <exec_depend>bt_executor</exec_depend>
-  <exec_depend>openarm_demo</exec_depend>
+  <exec_depend>sequence_executor</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 

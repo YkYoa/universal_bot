@@ -51,20 +51,6 @@ std::string trim(const std::string& s)
   return s.substr(b, e - b + 1);
 }
 
-std::string shellQuote(const std::string& s)
-{
-  std::string out = "'";
-  for (char c : s) {
-    if (c == '\'') {
-      out += "'\\''";
-    } else {
-      out += c;
-    }
-  }
-  out += "'";
-  return out;
-}
-
 namespace
 {
 

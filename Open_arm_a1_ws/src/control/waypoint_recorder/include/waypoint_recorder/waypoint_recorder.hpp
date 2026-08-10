@@ -18,10 +18,6 @@ extern const std::map<std::string, std::string> kArmPrefixToSide;
 std::string toPascalCase(const std::string& s);
 std::string trim(const std::string& s);
 
-// Single-quotes a string for safe use as one argv-equivalent token in a
-// std::system() shell command line.
-std::string shellQuote(const std::string& s);
-
 // Inserts or updates `  key: value` under `section:` in the yaml file at
 // file_path. Does NOT round-trip through a yaml parser/emitter - that would
 // discard every comment (no ROS/common C++ yaml library preserves comments

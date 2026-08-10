@@ -1,3 +1,0 @@
-[submodule "Open_arm_a1_ws/src/third_party/BehaviorTree.ROS2"]
-	path = Open_arm_a1_ws/src/third_party/BehaviorTree.ROS2
-	url = https://github.com/BehaviorTree/BehaviorTree.ROS2.git

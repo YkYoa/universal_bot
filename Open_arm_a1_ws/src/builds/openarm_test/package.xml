@@ -3,17 +3,11 @@
 <package format="3">
   <name>openarm_test</name>
   <version>0.0.0</version>
-  <description>Test package for bimanual robot realtime preemption using Behavior Trees</description>
+  <description>Launch files for bimanual robot testing (run_skills_only)</description>
   <maintainer email="hans@todo.todo">hans</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-
-  <depend>rclcpp</depend>
-  <depend>geometry_msgs</depend>
-  <depend>std_msgs</depend>
-  <depend>std_srvs</depend>
-  <depend>bt_executor</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

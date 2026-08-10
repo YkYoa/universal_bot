@@ -439,15 +439,17 @@ hardware_interface::return_type OpenArm_v10HW::write(
       impl_->openarm->get_gripper().posvel_control_all({{gripper_motor_cmd, position_mode_velocity_}});
     }
   } else if (control_mode_ == "velocity") {
-    std::vector<openarm::damiao_motor::VelParam> arm_params;
-    arm_params.reserve(ARM_DOF);
-    for (std::size_t i = 0; i < ARM_DOF; ++i) {
-      arm_params.push_back({vel_commands_[i]});
-    }
-    impl_->openarm->get_arm().vel_control_all(arm_params);
-    if (has_gripper) {
-      impl_->openarm->get_gripper().vel_control_all({{vel_commands_[ARM_DOF]}});
-    }
+    // The installed libopenarm-can does not expose a dedicated velocity
+    // control API (only mit/posvel/posforce_control_all) - this mode was
+    // never actually exercised on real hardware (stub-mode builds skipped
+    // this whole #ifdef block, so the mismatch never surfaced at compile
+    // time until real CAN support was linked in). Sending nothing is safer
+    // than guessing at a replacement without verifying against real
+    // hardware; use "mit" (with vel_commands_ as MITParam's dq, kp=0) if
+    // velocity-only motion is actually needed.
+    RCLCPP_ERROR_THROTTLE(
+      rclcpp::get_logger("OpenArm_v10HW"), *rclcpp::Clock::make_shared(), 5000,
+      "control_mode=velocity is not implemented against the current libopenarm-can - no commands sent");
   } else {  // "torque" - kp=kd=0 always, tau_commands_ as pure feedforward.
     // Only meaningful when something is actually writing tau_commands_ (e.g.
     // gravity_compensation_controller) - no controller in

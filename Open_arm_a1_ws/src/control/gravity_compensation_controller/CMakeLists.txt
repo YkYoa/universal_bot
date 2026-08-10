@@ -15,6 +15,7 @@ find_package(kdl_parser REQUIRED)
 find_package(orocos_kdl_vendor REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 add_library(gravity_compensation_controller SHARED
   src/gravity_compensation_controller.cpp
@@ -38,10 +39,24 @@ target_link_libraries(gravity_compensation_controller orocos-kdl)
 
 pluginlib_export_plugin_description_file(controller_interface gravity_compensation_controller.xml)
 
+add_executable(gravity_calibration_tool src/gravity_calibration_tool.cpp)
+target_compile_features(gravity_calibration_tool PRIVATE cxx_std_17)
+ament_target_dependencies(gravity_calibration_tool
+  rclcpp
+  kdl_parser
+  std_msgs
+  sensor_msgs
+)
+target_link_libraries(gravity_calibration_tool orocos-kdl)
+
 install(TARGETS gravity_compensation_controller
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
+)
+
+install(TARGETS gravity_calibration_tool
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY include/

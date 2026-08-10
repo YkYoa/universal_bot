@@ -16,7 +16,6 @@ find_package(Eigen3 REQUIRED)
 set(SRC_FILES
   src/computation.cpp
   src/conversion.cpp
-  src/sequence_converter.cpp
 )
 
 set(DEPENDS

@@ -1,258 +1,187 @@
 #!/usr/bin/env python3
 import os
-import sys
-import json
 import threading
 import rclpy
+import yaml
 from rclpy.node import Node
 from std_msgs.msg import String
-from geometry_msgs.msg import PoseStamped
-from std_srvs.srv import Trigger
-from ament_index_python.packages import get_package_share_directory
 
 # Flask & Socket.IO
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify
 from flask_socketio import SocketIO
 
-# XML parser
-import xml.etree.ElementTree as ET
-
-# We create the Flask application
-app = Flask(__name__, 
+app = Flask(__name__,
             template_folder=os.path.join(os.path.dirname(__file__), 'templates'),
             static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# In-memory storage for status updates
-blackboard_state = {}
-node_states = {}
-transition_logs = []
+# In-memory telemetry - sequence_executor publishes whole-sequence status
+# (not per-node transitions like BT.CPP did), so node_states here is coarse:
+# every node in the tree shares the sequence's own current status.
+overall_status = 'IDLE'
+status_log = []
+
+
+def build_sequence_tree(sequence_yaml_path, sequence_name):
+    """Builds the same {id,name,type,attributes,status,children} shape the
+    frontend already renders (previously produced by parsing BT XML) -
+    directly from a `sequences:` entry in sequence.yaml instead. Reuses BT
+    node type strings (PlanToJointTarget/PlanToJointSequence/Parallel/
+    SetHandYaw/SetHandFlex/Repeat/Sequence) purely so the frontend's
+    existing shape/color classification keeps working unchanged - this
+    tree is NOT executed, it's just a visual approximation of what
+    sequence_executor's fixed-shape interpreter actually does (home once,
+    then loop the body)."""
+    with open(sequence_yaml_path) as f:
+        data = yaml.safe_load(f) or {}
+
+    sequences = data.get('sequences', {})
+    if sequence_name not in sequences:
+        return None
+    seq = sequences[sequence_name] or {}
+
+    counter = [0]
+
+    def new_node(name, ntype, children=None):
+        counter[0] += 1
+        return {
+            'id': f'node_{counter[0]}',
+            'name': name,
+            'type': ntype,
+            'attributes': {},
+            'status': overall_status,
+            'children': children or [],
+        }
+
+    root_children = []
+
+    home_section = seq.get('home_section')
+    if home_section:
+        home_children = [new_node(f'Home ({home_section})', 'PlanToJointTarget')]
+        section = data.get(home_section, {}) or {}
+        has_hand = any(str(k).startswith('lh') or str(k).startswith('rh') for k in section.keys())
+        if has_hand:
+            home_children.append(new_node('Hand Hold', 'Parallel', [
+                new_node('SetHandYaw', 'SetHandYaw'),
+                new_node('SetHandFlex', 'SetHandFlex'),
+            ]))
+        root_children.append(new_node('Home (once)', 'Sequence', home_children))
+
+    body_children = []
+    if seq.get('body_sections'):
+        names = [s.strip() for s in str(seq['body_sections']).split(',') if s.strip()]
+        for name in names:
+            body_children.append(new_node(f'Hand pose: {name}', 'SetHandFlex'))
+    elif seq.get('body_section'):
+        label = seq['body_section']
+        if seq.get('body_right_section'):
+            label += f" + {seq['body_right_section']}"
+        body_children.append(new_node(f'Wave: {label}', 'PlanToJointSequence'))
+
+    repeat = seq.get('repeat', 1)
+    if repeat != 1:
+        times = 'forever' if repeat == -1 else f'{repeat}x'
+        root_children.append(new_node(f'Body (repeat {times})', 'Repeat', body_children))
+    else:
+        root_children.extend(body_children)
+
+    return new_node(sequence_name, 'Sequence', root_children)
+
 
 class BTViewerNode(Node):
     def __init__(self):
         super().__init__('bt_viewer_node')
-        
-        # Parameters
-        self.declare_parameter('bt_xml_path', '')
+
+        self.declare_parameter('sequence_yaml_path', '')
+        self.declare_parameter('sequence_name', '')
         self.declare_parameter('port', 5000)
-        
-        # Determine the BT XML Path
-        xml_path = self.get_parameter('bt_xml_path').value
-        if not xml_path:
-            try:
-                xml_path = os.path.join(
-                    get_package_share_directory('bt_executor'),
-                    'bt_trees', 'pick_and_place.xml'
-                )
-            except Exception as e:
-                self.get_logger().error(f"Could not find bt_executor package: {e}")
-                xml_path = ""
-                
-        self.get_logger().info(f"Using Behavior Tree XML: {xml_path}")
-        app.config['BT_XML_PATH'] = xml_path
-        
-        # Subscribers
+
+        app.config['SEQUENCE_YAML_PATH'] = self.get_parameter('sequence_yaml_path').value
+        app.config['SEQUENCE_NAME'] = self.get_parameter('sequence_name').value
+
+        self.get_logger().info(
+            f"Watching sequence '{app.config['SEQUENCE_NAME']}' in {app.config['SEQUENCE_YAML_PATH']}")
+
+        # sequence_executor's node name is "sequence_executor" (set in
+        # sequence_executor.launch.py), so its ~/status and ~/fault topics
+        # resolve to /sequence_executor/status and /sequence_executor/fault.
         self.status_sub = self.create_subscription(
-            String,
-            '/bt_executor/status',
-            self.status_callback,
-            10
-        )
-        self.blackboard_sub = self.create_subscription(
-            String,
-            '/bt_executor/blackboard',
-            self.blackboard_callback,
-            10
-        )
-        self.transitions_sub = self.create_subscription(
-            String,
-            '/bt_executor/transitions',
-            self.transitions_callback,
-            10
-        )
-        
-        # Service clients
-        self.replan_client = self.create_client(Trigger, '/bt_executor/replan')
-        self.goal_updated_client = self.create_client(Trigger, '/bt_executor/goal_updated')
-        
-        # Publishers (for testing/triggering)
-        self.grasp_pose_pub = self.create_publisher(
-            PoseStamped,
-            '/bt_executor/vla_grasp_pose',
-            10
-        )
-        
+            String, '/sequence_executor/status', self.status_callback, 10)
+        self.fault_sub = self.create_subscription(
+            String, '/sequence_executor/fault', self.fault_callback, 10)
+
         self.get_logger().info("BT Viewer Node subscriptions started")
 
     def status_callback(self, msg):
-        socketio.emit('tree_status', {'status': msg.data})
+        global overall_status
+        # sequence_executor publishes "<sequence_name>: <status text>" -
+        # map a few recognizable phrases to the RUNNING/SUCCESS vocabulary
+        # the frontend already understands; anything else just passes
+        # through as informational text under the RUNNING color.
+        text = msg.data
+        if text.endswith(': done'):
+            overall_status = 'SUCCESS'
+        else:
+            overall_status = 'RUNNING'
+        status_log.append({'text': text, 'level': 'status'})
+        if len(status_log) > 100:
+            status_log.pop(0)
+        socketio.emit('tree_status', {'status': overall_status, 'text': text})
+        socketio.emit('log_line', {'text': text, 'level': 'status'})
 
-    def blackboard_callback(self, msg):
-        try:
-            data = json.loads(msg.data)
-            global blackboard_state
-            blackboard_state.update(data)
-            socketio.emit('blackboard_update', data)
-        except Exception as e:
-            self.get_logger().error(f"Failed to parse blackboard json: {e}")
+    def fault_callback(self, msg):
+        global overall_status
+        overall_status = 'FAILURE'
+        status_log.append({'text': msg.data, 'level': 'fault'})
+        if len(status_log) > 100:
+            status_log.pop(0)
+        socketio.emit('tree_status', {'status': overall_status, 'text': msg.data})
+        socketio.emit('log_line', {'text': msg.data, 'level': 'fault'})
 
-    def transitions_callback(self, msg):
-        try:
-            data = json.loads(msg.data)
-            global node_states, transition_logs
-            node_states[data['node_name']] = data['status']
-            transition_logs.append(data)
-            if len(transition_logs) > 100:
-                transition_logs.pop(0)
-            socketio.emit('transition_update', data)
-        except Exception as e:
-            self.get_logger().error(f"Failed to parse transition json: {e}")
 
-    def call_replan(self):
-        if not self.replan_client.wait_for_server(timeout_sec=1.0):
-            self.get_logger().warn("Replan service not available")
-            return False, "Replan service not available"
-        req = Trigger.Request()
-        self.replan_client.call_async(req)
-        return True, "Replan triggered"
-
-    def call_goal_updated(self):
-        if not self.goal_updated_client.wait_for_server(timeout_sec=1.0):
-            self.get_logger().warn("Goal updated service not available")
-            return False, "Goal updated service not available"
-        req = Trigger.Request()
-        self.goal_updated_client.call_async(req)
-        return True, "Goal updated triggered"
-
-    def publish_grasp_pose(self, x, y, z):
-        msg = PoseStamped()
-        msg.header.frame_id = "world"
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.pose.position.x = float(x)
-        msg.pose.position.y = float(y)
-        msg.pose.position.z = float(z)
-        msg.pose.orientation.w = 1.0
-        self.grasp_pose_pub.publish(msg)
-        self.get_logger().info(f"Published custom grasp pose: {x}, {y}, {z}")
-        return True
-
-# Flask Web Server Routes
 @app.route('/')
 def index():
     return render_template('index.html')
 
+
 @app.route('/api/tree')
 def get_tree():
-    xml_path = app.config.get('BT_XML_PATH')
-    if not xml_path or not os.path.exists(xml_path):
-        return jsonify({"error": f"XML file {xml_path} not found"}), 404
-    
+    yaml_path = app.config.get('SEQUENCE_YAML_PATH')
+    sequence_name = app.config.get('SEQUENCE_NAME')
+    if not yaml_path or not os.path.exists(yaml_path):
+        return jsonify({"error": f"sequence.yaml not found at {yaml_path}"}), 404
+    if not sequence_name:
+        return jsonify({"error": "sequence_name param not set"}), 404
     try:
-        structure = parse_bt_xml(xml_path)
-        return jsonify(structure)
+        tree = build_sequence_tree(yaml_path, sequence_name)
+        if tree is None:
+            return jsonify({"error": f"sequences:{sequence_name} not found in {yaml_path}"}), 404
+        return jsonify(tree)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/blackboard')
-def get_blackboard():
-    return jsonify(blackboard_state)
 
-@app.route('/api/transitions')
-def get_transitions():
-    return jsonify(transition_logs)
+@app.route('/api/status')
+def get_status():
+    return jsonify({"status": overall_status})
 
-@app.route('/api/node_states')
-def get_node_states():
-    return jsonify(node_states)
 
-@app.route('/api/replan', methods=['POST'])
-def trigger_replan():
-    success, msg = ros_node.call_replan()
-    return jsonify({"success": success, "message": msg})
+@app.route('/api/logs')
+def get_logs():
+    return jsonify(status_log)
 
-@app.route('/api/goal_updated', methods=['POST'])
-def trigger_goal_updated():
-    success, msg = ros_node.call_goal_updated()
-    return jsonify({"success": success, "message": msg})
-
-@app.route('/api/publish_pose', methods=['POST'])
-def publish_pose():
-    try:
-        data = request.json
-        x = data.get('x', 0.0)
-        y = data.get('y', 0.0)
-        z = data.get('z', 0.0)
-        ros_node.publish_grasp_pose(x, y, z)
-        return jsonify({"success": True, "message": f"Published pose ({x}, {y}, {z})"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 400
-
-def parse_bt_xml(xml_path):
-    try:
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
-        main_tree_id = root.attrib.get('main_tree_to_execute')
-        bt_element = None
-        for child in root:
-            if child.tag == 'BehaviorTree' and child.attrib.get('ID') == main_tree_id:
-                bt_element = child
-                break
-        
-        if bt_element is None:
-            for child in root:
-                if child.tag == 'BehaviorTree':
-                    bt_element = child
-                    break
-                    
-        if bt_element is None:
-            return None
-            
-        counter = [0]
-        
-        def traverse(elem):
-            node_type = elem.tag
-            attrs = dict(elem.attrib)
-            
-            node_id = f"node_{counter[0]}"
-            counter[0] += 1
-            
-            node_name = attrs.get('name', node_type)
-            
-            node_data = {
-                'id': node_id,
-                'name': node_name,
-                'type': node_type,
-                'attributes': attrs,
-                'status': node_states.get(node_name, 'IDLE'),
-                'children': []
-            }
-            
-            for child in elem:
-                child_node = traverse(child)
-                if child_node:
-                    node_data['children'].append(child_node)
-                    
-            return node_data
-            
-        if len(bt_element) > 0:
-            return traverse(bt_element[0])
-        return None
-    except Exception as e:
-        print(f"Error parsing XML: {e}")
-        return None
 
 def main(args=None):
     rclpy.init(args=args)
     global ros_node
     ros_node = BTViewerNode()
-    
-    # Run rclpy spin in background thread
+
     ros_thread = threading.Thread(target=rclpy.spin, args=(ros_node,), daemon=True)
     ros_thread.start()
-    
+
     port = ros_node.get_parameter('port').value
     ros_node.get_logger().info(f"Starting Web server on port {port}")
-    
+
     try:
         socketio.run(app, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
@@ -260,6 +189,7 @@ def main(args=None):
     finally:
         ros_node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

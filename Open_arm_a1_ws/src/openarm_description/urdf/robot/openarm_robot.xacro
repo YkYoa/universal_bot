@@ -215,6 +215,37 @@
                                   scale="$(arg connector_scale)" />
                         </geometry>
                     </collision>
+                    <!-- Lumped mass for the WHOLE amazing_hand, calibrated via
+                         gravity_calibration_tool (control/gravity_compensation_controller)
+                         against 6 real captured poses on real hardware: weighted
+                         least-squares fit against measured joint torque gave
+                         0.5938 kg, closely matching the hand's real measured
+                         weight (~0.5 kg) - validates that this connector (on the
+                         KDL chain, unlike most of the hand's own links which sit
+                         on branches invisible to chain-based gravity torque) is a
+                         sound place to lump it. Re-run the calibration tool if the
+                         connector's mount position or the real hand's mass changes. -->
+                         placed here for gravity_compensation_controller: the hand's
+                         own URDF is a closed-loop mechanism cut into an open tree,
+                         so most of its real link masses live on branches that
+                         aren't on the arm's base->hand_tcp KDL chain and are
+                         invisible to ChainDynParam-based static gravity torque no
+                         matter how accurate their individual values are. This
+                         connector link IS on that chain, has real mount geometry
+                         (unlike the zero-geometry ahand_root/hand_tcp reference
+                         links), and sits closest to the hand's actual mass - a
+                         reasonable single point to lump the whole hand's weight
+                         for gravity comp purposes. Origin/inertia are rough
+                         estimates (offset matches the visual mesh's own origin),
+                         not calibrated CAD values - fine for static gravity
+                         torque (mass + COM matter far more than the inertia
+                         tensor there), not precise enough for anything dynamic. -->
+                    <inertial>
+                        <origin xyz="0 0 -0.05" rpy="0 0 0" />
+                        <mass value="0.5938" />
+                        <inertia ixx="0.0006" ixy="0.0" ixz="0.0"
+                                 iyy="0.0006" iyz="0.0" izz="0.0004" />
+                    </inertial>
                 </link>
                 <joint name="openarm_${side}_ahand_connector_joint" type="fixed">
                     <origin xyz="${xyz}" rpy="${rpy}" />

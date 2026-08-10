@@ -1,21 +1,18 @@
 # qvic_2026
 
 Project home for the QVIC 2026 (Qualcomm) competition entry. Holds this
-project's own `sequence.yaml`, generated BT XML files, and launch setup.
-Reuses generic tooling from `control/` and `builds/openarm_demo/` rather
-than duplicating it — this package should stay thin.
+project's own `sequence.yaml` and launch setup. Reuses generic tooling
+from `control/` rather than duplicating it — this package should stay
+thin.
 
 ## Directory layout
 
 ```
 qvic_2026/
 ├── config/
-│   ├── sequence.yaml           # this project's waypoints/poses (source of truth)
-│   └── qvic_2026*_bt.xml       # generated BT trees (regenerate from sequence.yaml, don't hand-edit)
+│   └── sequence.yaml           # waypoints/poses AND the sequences: entries (source of truth)
 ├── launch/
-│   └── qvic_2026.launch.py     # launches bt_executor_node; auto-regenerates bt_xml_path
-│                                # from sequence.yaml on every launch for arm:=left/right/both
-│                                # (see ARM_REGEN_ARGS) - explicit bt_xml_path:=... skips this
+│   └── qvic_2026.launch.py     # picks a sequences: entry (arm:= or sequence:=), launches sequence_executor
 ├── src/                        # project-specific C++ (empty so far - see "Adding project code" below)
 ├── include/
 ├── CMakeLists.txt
@@ -24,7 +21,9 @@ qvic_2026/
 
 ## The pipeline, end to end
 
-Every sequence this project runs goes through the same four stages:
+Every sequence this project runs goes through three stages — no
+generation/build step in between: `sequence_executor_node` reads
+`config/sequence.yaml` directly off disk at launch time.
 
 **1. Get waypoints into `config/sequence.yaml`** — two ways:
 
@@ -32,11 +31,11 @@ Every sequence this project runs goes through the same four stages:
   `control_mode: torque` (gravity compensation active), physically move it,
   and record positions live.
   ```
-  ros2 run waypoint_recorder record_waypoint --loop --auto-convert --file /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/sequence.yaml --bt-out /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/qvic_2026_bt.xml
+  ros2 run waypoint_recorder record_waypoint --loop --file /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/sequence.yaml
   ```
   Interactive: pick arm (`la`/`ra`/`both`), pick/create a section, then
   press Enter per waypoint (auto-numbered `<arm><Section><N>Angle`), `s` to
-  switch section, `q` to finish (auto-converts to BT XML on exit).
+  switch section, `q` to finish.
 
 - **Formula-generated** (`control/trajectory_waypoint_generator`): compute
   a shape (line, ellipse arc, circle, square) between reference poses
@@ -55,79 +54,78 @@ Both tools write the same key format:
 **`--section` must not end in a digit** — the trailing section digit and
 the point-number digits would concatenate ambiguously.
 
-**2. Convert a section to BT XML** (skip this if you used `--auto-convert`
-above):
-```
-ros2 run openarm_demo sequence_to_bt --yaml /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/sequence.yaml --out /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/qvic_2026_<name>_bt.xml --section <sectionName> --arm left_arm
-```
-A run of consecutive auto-numbered keys in one section is automatically
-merged into a single `PlanToJointSequence` BT node (one continuous
-blended trajectory) instead of N separate `PlanToJointTarget` nodes (N
-independent stop-start moves) — this happens automatically based on the
-`<N>` numbering, no extra flag needed.
+**2. Define (or reuse) a `sequences:` entry.** Each entry is a flat dict
+under the top-level `sequences:` key in `sequence.yaml`:
 
-**2b. Both arms at once** (true simultaneous motion, not two racing
-single-arm goals): use `--both-arms` with a matching left/right section
-pair (same waypoint count, e.g. `waveEllipse` + `waveEllipseR`) to emit
-ONE `PlanToJointSequence` targeting the SRDF `both_arms` group instead of
-two separate BT trees:
-```
-ros2 run openarm_demo sequence_to_bt --yaml /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/sequence.yaml --out /home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/qvic_2026_ellipse_bimanual_bt.xml --both-arms --left-section waveEllipse --right-section waveEllipseR --profile realtime_rrt --tree-name Both
-```
-`--profile` must be an OMPL profile (default `realtime_rrt`), not a Pilz
-one — Pilz refuses to plan for any group without a `kinematics.yaml`
-IK-solver entry, and `both_arms` (two independent chains) structurally
-can't have one. Regenerate this file instead of hand-editing it whenever
-`waveEllipse`/`waveEllipseR` change.
+| field | meaning |
+|---|---|
+| `arm` | `left_arm` \| `right_arm` \| `both_arms` |
+| `planner_profile` | planner profile name (e.g. `fast_ptp`, `realtime_rrt`) |
+| `home_section` | *(optional)* section run once before the loop — arm target plus, if present, `lh`/`rhHomeYaw`/`Flex` hand hold |
+| `body_section` | a section replayed as the sequence body (`PlanToJointSequence`) |
+| `body_right_section` | *(optional)* paired right-arm section, interleaved 1:1 with `body_section` |
+| `body_sections` | *(optional, comma-list, alternative to `body_section`)* section names cycled through in order — used for hand-pose-only sequences |
+| `repeat` | `-1` = infinite, default `1` |
+| `exclude_points` | *(optional, comma-list, 1-indexed)* waypoints to skip (workaround for a known-bad point) |
 
-Add `--home-section <name>` to also prepend a fixed starting pose (a
-`PlanToJointTarget("both_arms")`) before the wave, plus — if the section
-defines `lhHomeYaw`/`lhHomeFlex`/`rhHomeYaw`/`rhHomeFlex` (amazing_hand's
-8 alias joints, 4 each) — a `SetHandYaw`/`SetHandFlex` pair per side that
-sets the hand once and holds it for the whole sequence (the wave itself
-never touches the hand). See `sequence.yaml`'s `waveHome` section for the
-expected key shape (`laHomeAngle`/`raHomeAngle`, 7 values each, required).
-`qvic_2026.launch.py`'s `arm:=both` defaults `ee_type` to `amazing_hand`
-for this reason (pass `ee_type:=openarm_hand` to override).
-
-**3. Rebuild** so the installed `share/` copy picks up the new files:
+Example (arm wave with a home step, looping forever):
+```yaml
+sequences:
+  qvic_2026_both:
+    arm: both_arms
+    planner_profile: realtime_rrt
+    home_section: homePoses
+    body_section: waveEllipse
+    body_right_section: waveEllipseR
+    repeat: -1
 ```
-colcon build --packages-select qvic_2026
+Example (hand-only animation, arm holds still):
+```yaml
+sequences:
+  hand_open_close:
+    arm: both_arms
+    home_section: homePoses
+    body_sections: handOpen, homePoses
+    repeat: -1
 ```
-(run from `~/universal_bot/Open_arm_a1_ws`) — only needed for `wavepose_bimanual`
-or any other manually-generated file. For `arm:=left/right/both`,
-`qvic_2026.launch.py` regenerates the XML straight from `sequence.yaml` on
-every launch (see `ARM_REGEN_ARGS` in the launch file) - edit the YAML,
-relaunch, done. No separate `sequence_to_bt` or `colcon build` step.
+`velocity`/`acceleration` scaling is still looked up from the existing
+top-level `speed:` dict by section name — not a `sequences:` field.
 
-**4. Replay — fake hardware first, always:**
+**3. Replay — fake hardware first, always:**
 ```
 ros2 launch qvic_2026 qvic_2026.launch.py arm:=left use_rviz:=true
 ```
-(`arm:=` is `left`/`right`/`both`; pass `bt_xml_path:=...` directly for a
-manually-generated file like `wavepose_bimanual`, which skips auto-regen.)
+`arm:=left|right|both` maps to `qvic_2026_left`/`_right`/`_both` in
+`sequences:`. For any other entry (e.g. `hand_open_close`), pass it
+directly and skip `arm:=`:
+```
+ros2 launch qvic_2026 qvic_2026.launch.py sequence:=hand_open_close use_rviz:=true
+```
 This is a fully self-contained fake-hardware stack (robot_state_publisher,
-fake ros2_control, move_group, robot_skills_node, bt_executor, RViz) — one
-command, no other terminals needed. Confirm the motion looks right in RViz
-*before* touching real hardware.
+fake ros2_control, move_group, robot_skills_node, sequence_executor, RViz)
+— one command, no other terminals needed. Add `use_api:=true` to also
+launch `bt_viewer`'s web UI (http://127.0.0.1:5000) for live sequence
+status. Confirm the motion looks right in RViz *before* touching real
+hardware. Editing `sequence.yaml` and relaunching is enough to see a
+change — no `colcon build` needed unless you touched C++.
 
 **Real hardware** (only after the fake-hardware dry run looks right), 3
 terminals:
 ```
 ros2 launch robot_hardware_interface bringup.launch.py arms:=true ee_type:=amazing_hand
 ros2 launch openarm_test run_skills_only.launch.py
-ros2 launch qvic_2026 qvic_2026.launch.py bt_xml_path:=/home/hans/universal_bot/Open_arm_a1_ws/install/qvic_2026/share/qvic_2026/config/qvic_2026_<name>_bt.xml
+ros2 launch qvic_2026 qvic_2026.launch.py arm:=both
 ```
 Check `config/hardware_config.yaml`'s (in `robot_hardware_interface`)
-`control_mode` first: must be `position` (or `mit`) for BT-driven trajectory
-replay to actually move the arm — `torque` mode (used for hand-guiding /
-gravity comp) ignores position commands entirely.
+`control_mode` first: must be `position` (or `mit`) for trajectory replay
+to actually move the arm — `torque` mode (used for hand-guiding / gravity
+comp) ignores position commands entirely.
 
 ## `sequence.yaml` conventions
 
 ```yaml
 # Planning group indicator (key prefix): la/ra = arm, lh/rh = hand, head = head goal
-# Key contains "Angle"  -> 7 joint values, replayed via PlanToJointTarget/PlanToJointSequence
+# Key contains "Angle"  -> 7 joint values, replayed via joint_target/joint_sequence
 # Key contains "Joint" (or anything else) -> pose data: 3 position + 4 quaternion
 speed:
   <section>: <velocity>[, <acceleration>]   # MoveIt scaling factors [0-1], optional acceleration
@@ -140,13 +138,15 @@ speed:
   references by `trajectory_waypoint_generator`, not replayed directly.
 - `speed:` entries scale velocity/acceleration per-section; missing or 0 =
   the skill's default profile speed.
+- `sequences:` (see above) is additive to all of this — it never changes
+  how existing data sections are written or read.
 
 ## Collision safety
 
 Neither recording nor formula-generation collision-checks anything by
-itself. Real safety enforcement happens on **replay**: `PlanToJointSequence`
-plans each segment individually (collision-aware) and the corner-blend step
-re-validates the blended path with a safe fallback
+itself. Real safety enforcement happens on **replay**: joint-sequence
+planning plans each segment individually (collision-aware) and the
+corner-blend step re-validates the blended path with a safe fallback
 (`control/motion_planner/src/moveit_cpp_planner_manager.cpp`,
 `getJointSequence()` branch). One known gap either way:
 `openarm_body_shell_link` has no collision geometry defined, so collision
@@ -167,10 +167,9 @@ always watch the fake-hardware dry run before real hardware.
   `add_executable(...)` + `ament_target_dependencies(...)`, same pattern
   every package in this workspace already uses).
 
-To **combine several already-generated sequences** into one continuous run,
-you likely don't need new C++ at all: each section gets its own
-`<BehaviorTree ID="SectionName">` block from `sequence_to_bt`, and BT.CPP's
-`<SubTree ID="OtherSectionName"/>` node lets a top-level `<Sequence>` chain
-several of them together in one hand-composed XML. Only reach for a new
-`.cpp` here if you need runtime logic (pick sequence A vs B, loop, react to
-sensor state) beyond simple stitching.
+To **combine several already-defined sequences** into one continuous run,
+you likely don't need new C++ at all: `home_section`/`body_sections` in a
+single `sequences:` entry already covers "run this once, then cycle
+through these." Only reach for a new `.cpp` here if you need runtime logic
+(pick sequence A vs B, react to sensor state) beyond what the flat schema
+expresses.

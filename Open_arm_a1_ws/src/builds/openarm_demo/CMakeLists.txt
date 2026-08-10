@@ -15,11 +15,6 @@ find_package(computation REQUIRED)
 find_package(common REQUIRED)
 find_package(openarm_messages REQUIRED)
 
-add_executable(sequence_to_bt src/sequence_to_bt.cpp)
-ament_target_dependencies(sequence_to_bt
-  computation
-)
-
 add_executable(openarm_demo_node src/openarm_demo_node.cpp)
 target_include_directories(openarm_demo_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -37,7 +32,6 @@ ament_target_dependencies(openarm_demo_node
 )
 
 install(TARGETS
-  sequence_to_bt
   openarm_demo_node
   DESTINATION lib/${PROJECT_NAME}
 )
