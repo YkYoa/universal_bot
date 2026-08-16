@@ -396,18 +396,20 @@ class MoveItEEController(Node):
         Available poses: home/ready (left_arm/right_arm/both_arms),
         open/close/home (left_hand_fingers/right_hand_fingers - amazing_hand).
         """
-        # Named poses, kept in sync with openarm_bimanual.srdf's group_states
+        # Named poses, kept in sync with openarm_bimanual.srdf's group_states.
+        # "home" joint2 is +-10deg, not 0 - see the group_state's comment in
+        # the SRDF for why.
         named_poses = {
             'left_arm': {
-                'home':  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                'home':  [0.0, -0.174533, 0.0, 0.0, 0.0, 0.0, 0.0],
                 'ready': [0.0, 0.0, 0.0, 1.57, 0.0, 0.0, 0.0],
             },
             'right_arm': {
-                'home':  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                'home':  [0.0, 0.174533, 0.0, 0.0, 0.0, 0.0, 0.0],
                 'ready': [0.0, 0.0, 0.0, 1.57, 0.0, 0.0, 0.0],
             },
             'both_arms': {
-                'home':  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                'home':  [0.0, -0.174533, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.174533, 0.0, 0.0, 0.0, 0.0, 0.0],
                 'ready': [0.0, 0.0, 0.0, 1.57, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.57, 0.0, 0.0, 0.0],
             },
             # order: j11,j12,j13,j14, j21,j22,j23,j24 (thumb = finger 4 = j14/j24)

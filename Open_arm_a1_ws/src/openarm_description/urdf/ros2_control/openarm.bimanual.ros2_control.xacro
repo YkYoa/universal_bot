@@ -10,6 +10,7 @@
              head_use_fake_hardware:=^|false
              fake_sensor_commands:=^|false
              hand:=^|false
+             hand_rotate_ratio:=^|1.0
              ee_type:=^|openarm_hand
              left_arm_prefix:=^|left_
              right_arm_prefix:=^|right_
@@ -61,6 +62,7 @@
               <param name="can_interface">${left_can_interface}</param>
               <param name="arm_prefix">${left_arm_prefix}</param>
               <param name="hand">${hand}</param>
+              <param name="hand_rotate_ratio">${hand_rotate_ratio}</param>
               <param name="can_fd">${can_fd}</param>
               <param name="control_mode">${control_mode}</param>
               <param name="position_mode_velocity">${position_mode_velocity}</param>
@@ -87,7 +89,14 @@
         </hardware>
 
       <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}joint1" initial_position="0.0"/>
-      <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}joint2" initial_position="0.0"/>
+      <!-- Cosmetic sim-only spawn pose matching the "motor8_safe" SRDF
+           group_state (openarm_bimanual.srdf) - RViz/fake hardware starts
+           already angled out instead of straight, no separate "move to
+           safe pose" step needed just to look at it. Real hardware
+           (OpenArm_v10HW) ignores this entirely and reports actual encoder
+           position instead - use motor8_safe (a real commanded trajectory)
+           there, not this. -->
+      <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}joint2" initial_position="-0.174533"/>
       <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}joint3" initial_position="0.0"/>
       <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}joint4" initial_position="0.0"/>
       <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}joint5" initial_position="0.0"/>
@@ -126,6 +135,34 @@
       </ros2_control>
     </xacro:if>
 
+    <!-- LEFT "MOTOR 8" (amazing_hand's connector rotation - openarm_hand's
+         finger_joint2 has no equivalent here, the connector is a single
+         joint). Same fake/gazebo-only reasoning as the gripper block above:
+         openarm_left_hardware_interface's OpenArm_v10HW owns this joint for
+         real; on the fake/gazebo path that plugin is swapped out for
+         mock_components/GenericSystem, which (unlike OpenArm_v10HW) only
+         exports interfaces for joints actually declared in ITS OWN
+         <ros2_control> block - and openarm_left_hardware_interface only
+         declares joint1..7 there, so finger_joint1 needs its own mock
+         component or it silently has no interfaces on this path at all
+         (JointTrajectoryController goals get rejected with no reason
+         logged). -->
+    <xacro:if value="${hand and ee_type == 'amazing_hand' and (use_fake_hardware or gazebo)}">
+      <ros2_control name="openarm_left_hand_rotate_hardware_interface" type="system">
+        <hardware>
+          <xacro:if value="${use_fake_hardware}">
+            <plugin>mock_components/GenericSystem</plugin>
+            <param name="fake_sensor_commands">${fake_sensor_commands}</param>
+            <param name="state_following_offset">0.0</param>
+          </xacro:if>
+          <xacro:unless value="${use_fake_hardware}">
+            <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+          </xacro:unless>
+        </hardware>
+        <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}finger_joint1" initial_position="0.0" />
+      </ros2_control>
+    </xacro:if>
+
     <ros2_control name="openarm_right_hardware_interface" type="system">
         <hardware>
           <param name="arm_type">${arm_type}</param>
@@ -143,6 +180,7 @@
               <param name="can_interface">${right_can_interface}</param>
               <param name="arm_prefix">${right_arm_prefix}</param>
               <param name="hand">${hand}</param>
+              <param name="hand_rotate_ratio">${hand_rotate_ratio}</param>
               <param name="can_fd">${can_fd}</param>
               <param name="control_mode">${control_mode}</param>
               <param name="position_mode_velocity">${position_mode_velocity}</param>
@@ -169,7 +207,9 @@
         </hardware>
 
       <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}joint1" initial_position="0.0"/>
-      <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}joint2" initial_position="0.0"/>
+      <!-- See left_hardware_interface's joint2 comment above - mirrors
+           motor8_safe's right_arm sign (+ instead of -). -->
+      <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}joint2" initial_position="0.174533"/>
       <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}joint3" initial_position="0.0"/>
       <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}joint4" initial_position="0.0"/>
       <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}joint5" initial_position="0.0"/>
@@ -205,6 +245,24 @@
           <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}finger_joint1" initial_position="0.0" />
         </xacro:if>
         <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}finger_joint2" initial_position="0.0" />
+      </ros2_control>
+    </xacro:if>
+
+    <!-- RIGHT "MOTOR 8" - see openarm_left_hand_rotate_hardware_interface's
+         comment above. -->
+    <xacro:if value="${hand and ee_type == 'amazing_hand' and (use_fake_hardware or gazebo)}">
+      <ros2_control name="openarm_right_hand_rotate_hardware_interface" type="system">
+        <hardware>
+          <xacro:if value="${use_fake_hardware}">
+            <plugin>mock_components/GenericSystem</plugin>
+            <param name="fake_sensor_commands">${fake_sensor_commands}</param>
+            <param name="state_following_offset">0.0</param>
+          </xacro:if>
+          <xacro:unless value="${use_fake_hardware}">
+            <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+          </xacro:unless>
+        </hardware>
+        <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}finger_joint1" initial_position="0.0" />
       </ros2_control>
     </xacro:if>
 

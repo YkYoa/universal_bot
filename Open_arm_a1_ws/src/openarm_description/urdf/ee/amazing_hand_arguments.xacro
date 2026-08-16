@@ -52,6 +52,21 @@
   <xacro:arg name="tcp_xyz" default="0 0 0" />
   <xacro:arg name="tcp_rpy" default="0 0 0" />
 
+  <!-- Hand-rotate axis ("motor 8" - the same physical CAN motor that drove
+       openarm_hand's finger_joint1 gripper actuator; on amazing_hand rigs it
+       instead spins the whole hand via the connector, through a mechanism
+       external to this URDF). Axis is in the connector_joint's own frame
+       (post connector_rpy rotation). VERIFY against the real mechanism
+       before running on hardware - wrong axis/limits will drive the motor
+       into a mechanical hard stop. -->
+  <xacro:arg name="hand_rotate_axis" default="0 0 1" />
+  <!-- Same as arm joint7 (also a DM4310) - a placeholder, not a measured
+       value for this mechanism. -->
+  <xacro:arg name="hand_rotate_lower" default="-1.570796" />
+  <xacro:arg name="hand_rotate_upper" default="1.570796" />
+  <xacro:arg name="hand_rotate_effort" default="12.0" />
+  <xacro:arg name="hand_rotate_velocity" default="2.0" />
+
   <!-- Name of the description package -->
   <xacro:arg name="description_pkg" default="openarm_description" />
 

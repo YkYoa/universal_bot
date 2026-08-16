@@ -32,6 +32,15 @@ head_board:
 control_mode: position
 position_mode_velocity: 1.0
 
+# Motor-shaft-radians per joint-radian for "motor 8" (CAN id 0x08) when
+# ee_type:=amazing_hand - it spins the hand's connector plate through some
+# external mechanism instead of driving openarm_hand's gripper jaws. 1.0 =
+# direct drive (1 motor turn = 1 joint turn). Set this to the real gear/pulley
+# ratio if there is one, and verify openarm_left/right_finger_joint1's
+# rotate-lower/upper/axis (openarm_description/urdf/ee/amazing_hand_arguments.xacro)
+# against the physical mechanism before commanding it on real hardware.
+hand_rotate_ratio: 1.0
+
 shutdown:
   disable_retries: 3
   retry_delay_ms: 100

@@ -16,6 +16,8 @@ its own (previously one-directional, previously copy-pasted three times).
 
 import re
 
+import yaml
+
 
 def load_srdf_for_ee_type(srdf_path: str, ee_type: str, body_type: str = None) -> str:
     with open(srdf_path, "r") as f:
@@ -76,3 +78,40 @@ def load_srdf_for_ee_type(srdf_path: str, ee_type: str, body_type: str = None) -
         )
 
     return content
+
+
+# openarm_left_finger_joint1/openarm_right_finger_joint1 ("motor 8") is
+# claimed by TWO mutually-exclusive controller entries in moveit_controllers.yaml
+# depending on ee_type: left_gripper_controller/right_gripper_controller
+# (openarm_hand's 2-finger gripper) or left_hand_rotate_controller/
+# right_hand_rotate_controller (amazing_hand's connector rotation - see
+# amazing_hand_connector's joint comment in openarm_robot.xacro). Only one
+# pair is ever actually spawned by controller_manager for a given ee_type
+# (moveit_bimanual.launch.py/bringup.launch.py's is_openarm_hand/
+# is_amazing_hand spawner conditions); leaving both declared in move_group's
+# own controller list lets MoveIt route a trajectory to whichever isn't
+# actually running, since it picks by static joint-name match, not live
+# controller state - "Action client not connected to action server" at
+# execute time. Filtering here keeps this a config bug you configure away
+# rather than a code path you debug every time ee_type changes.
+_CONTROLLERS_BY_EE_TYPE = {
+    "openarm_hand": ("left_gripper_controller", "right_gripper_controller"),
+    "amazing_hand": ("left_hand_rotate_controller", "right_hand_rotate_controller"),
+}
+
+
+def load_moveit_controllers_for_ee_type(yaml_path: str, ee_type: str) -> dict:
+    with open(yaml_path, "r") as f:
+        raw = yaml.safe_load(f)
+    params = raw["/**"]["ros__parameters"]
+    scm = params["moveit_simple_controller_manager"]
+
+    keep = _CONTROLLERS_BY_EE_TYPE.get(ee_type)
+    drop = _CONTROLLERS_BY_EE_TYPE.get(
+        "amazing_hand" if ee_type == "openarm_hand" else "openarm_hand", ())
+    if keep is not None:
+        scm["controller_names"] = [n for n in scm["controller_names"] if n not in drop]
+        for name in drop:
+            scm.pop(name, None)
+
+    return params

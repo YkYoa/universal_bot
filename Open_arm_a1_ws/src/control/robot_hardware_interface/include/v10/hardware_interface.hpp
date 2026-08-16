@@ -107,6 +107,11 @@ private:
   std::array<double, ARM_DOF> kd_{2.75, 2.5, 2.0, 2.0, 0.7, 0.6, 0.5};
   double gripper_kp_{DEFAULT_GRIPPER_KP};
   double gripper_kd_{DEFAULT_GRIPPER_KD};
+  // Motor-shaft-radians per joint-radian for "motor 8" when ee_type ==
+  // amazing_hand (direct passthrough, unlike the openarm_hand gripper's
+  // linear-stroke scaling below) - 1.0 unless the connector isn't direct
+  // drive. See joint_to_motor_radians()/motor_radians_to_joint().
+  double hand_rotate_ratio_{1.0};
 
   std::vector<std::string> joint_names_;
 

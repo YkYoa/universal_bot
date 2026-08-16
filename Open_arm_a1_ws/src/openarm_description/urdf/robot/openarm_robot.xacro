@@ -157,6 +157,7 @@
             ee_type="${ee_type}"
             body_type="${body_type}"
             no_prefix="${no_prefix}"
+            hand_rotate_ratio="$(arg hand_rotate_ratio)"
             shutdown_disable_retries="${shutdown_disable_retries}"
             shutdown_retry_delay_ms="${shutdown_retry_delay_ms}"
             shutdown_home_timeout_ms="${shutdown_home_timeout_ms}"
@@ -247,10 +248,24 @@
                                  iyy="0.0006" iyz="0.0" izz="0.0004" />
                     </inertial>
                 </link>
-                <joint name="openarm_${side}_ahand_connector_joint" type="fixed">
+                <!-- "Motor 8": the same real CAN motor (DM4310, id 0x08) that
+                     drives openarm_hand's finger_joint1 gripper actuator -
+                     hand_ is xacro-arg "hand" (default true) independent of
+                     ee_type, so OpenArm_v10HW already exports a
+                     command/state interface named openarm_${side}_finger_joint1
+                     regardless of which end-effector is attached (see
+                     generate_joint_names() in hardware_interface.cpp). Naming
+                     this joint the same lets that pre-existing interface
+                     attach here instead of floating unclaimed. Axis/limits
+                     are placeholders - verify against the real mechanism
+                     before running on hardware (see amazing_hand_arguments.xacro). -->
+                <joint name="openarm_${side}_finger_joint1" type="revolute">
                     <origin xyz="${xyz}" rpy="${rpy}" />
                     <parent link="${parent}" />
                     <child link="openarm_${side}_ahand_connector" />
+                    <axis xyz="$(arg hand_rotate_axis)" />
+                    <limit lower="$(arg hand_rotate_lower)" upper="$(arg hand_rotate_upper)"
+                           effort="$(arg hand_rotate_effort)" velocity="$(arg hand_rotate_velocity)" />
                 </joint>
             </xacro:macro>
 
@@ -327,6 +342,7 @@
             use_fake_hardware="${use_fake_hardware}"
             fake_sensor_commands="${fake_sensor_commands}"
             hand="${hand}"
+            hand_rotate_ratio="$(arg hand_rotate_ratio)"
             ee_type="${ee_type}"
             bimanual="false"
             can_fd="${can_fd}"/>

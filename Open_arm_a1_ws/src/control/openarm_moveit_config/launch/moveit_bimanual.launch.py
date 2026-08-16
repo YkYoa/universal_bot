@@ -7,7 +7,7 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
-from openarm_moveit_config.srdf_utils import load_srdf_for_ee_type
+from openarm_moveit_config.srdf_utils import load_moveit_controllers_for_ee_type, load_srdf_for_ee_type
 
 # Fix CycloneDDS buffer for large URDFs
 if "CYCLONEDDS_URI" not in os.environ:
@@ -93,7 +93,15 @@ def launch_setup(context, *args, **kwargs):
     joint_limits_yaml_path = os.path.join(moveit_config_pkg, "config", "joint_limits.yaml")
 
     # ── MoveIt Controller Manager ──
-    moveit_controllers_yaml_path = os.path.join(moveit_config_pkg, "config", "moveit_controllers.yaml")
+    # ee_type-filtered (see load_moveit_controllers_for_ee_type's docstring in
+    # srdf_utils.py) - the static file declares both left_gripper_controller/
+    # right_gripper_controller and left_hand_rotate_controller/
+    # right_hand_rotate_controller claiming the same joint (openarm_<side>_
+    # finger_joint1, "motor 8"), only one pair of which is ever spawned.
+    moveit_controllers_params = load_moveit_controllers_for_ee_type(
+        os.path.join(moveit_config_pkg, "config", "moveit_controllers.yaml"),
+        LaunchConfiguration("ee_type").perform(context),
+    )
 
     # ── ros2_control controllers ──
     controller_config = PathJoinSubstitution(
@@ -187,7 +195,11 @@ def launch_setup(context, *args, **kwargs):
             condition=is_amazing_hand,
         )
         for name in ("left_hand_j1_controller", "left_hand_j2_controller",
-                     "right_hand_j1_controller", "right_hand_j2_controller")
+                     "right_hand_j1_controller", "right_hand_j2_controller",
+                     # "Motor 8" (openarm_<side>_finger_joint1) repurposed to
+                     # spin the connector - see its declaration comment in
+                     # bimanual_controllers.yaml.
+                     "left_hand_rotate_controller", "right_hand_rotate_controller")
     ]
 
     # body v2 articulated neck + head
@@ -213,7 +225,7 @@ def launch_setup(context, *args, **kwargs):
             chomp_planning_yaml_path,
             stomp_planning_yaml_path,
             joint_limits_yaml_path,
-            moveit_controllers_yaml_path,
+            moveit_controllers_params,
             trajectory_execution,
             planning_scene_monitor,
             bounds_tolerances,
@@ -234,7 +246,7 @@ def launch_setup(context, *args, **kwargs):
             robot_description_semantic,
             kinematics_yaml_path,
             moveit_cpp_yaml_path,
-            moveit_controllers_yaml_path,
+            moveit_controllers_params,
             joint_limits_yaml_path,
             trajectory_execution,
             planning_scene_monitor,

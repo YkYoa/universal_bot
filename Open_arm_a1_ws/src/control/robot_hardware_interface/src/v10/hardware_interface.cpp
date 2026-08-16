@@ -116,6 +116,9 @@ bool OpenArm_v10HW::parse_config()
   if (auto it = params.find("kd_hand"); it != params.end()) {
     gripper_kd_ = std::stod(it->second);
   }
+  if (auto it = params.find("hand_rotate_ratio"); it != params.end()) {
+    hand_rotate_ratio_ = std::stod(it->second);
+  }
 
   RCLCPP_INFO(
     rclcpp::get_logger("OpenArm_v10HW"),
@@ -151,6 +154,13 @@ double OpenArm_v10HW::joint_to_motor_radians(double joint_value) const
   if (ee_type_ == "pinch_gripper") {
     return joint_value;
   }
+  if (ee_type_ == "amazing_hand") {
+    // "Motor 8" here spins the amazing_hand connector directly (a real
+    // revolute joint in radians), not a linear gripper stroke - passthrough
+    // (with an optional gear ratio) instead of the finger_joint1 stroke
+    // scaling below, which is specific to openarm_hand's 0-0.044m jaw travel.
+    return joint_value * hand_rotate_ratio_;
+  }
   return (joint_value / GRIPPER_JOINT_OPEN) * GRIPPER_MOTOR_OPEN;
 }
 
@@ -158,6 +168,9 @@ double OpenArm_v10HW::motor_radians_to_joint(double motor_radians) const
 {
   if (ee_type_ == "pinch_gripper") {
     return motor_radians;
+  }
+  if (ee_type_ == "amazing_hand") {
+    return motor_radians / hand_rotate_ratio_;
   }
   return GRIPPER_JOINT_OPEN * (motor_radians / GRIPPER_MOTOR_OPEN);
 }

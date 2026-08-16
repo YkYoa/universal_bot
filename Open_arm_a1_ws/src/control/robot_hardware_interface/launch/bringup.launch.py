@@ -11,7 +11,7 @@ from launch.substitutions import Command, FindExecutable, LaunchConfiguration, P
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
-from openarm_moveit_config.srdf_utils import load_srdf_for_ee_type
+from openarm_moveit_config.srdf_utils import load_moveit_controllers_for_ee_type, load_srdf_for_ee_type
 
 # CycloneDDS: large URDF / many joints
 if "CYCLONEDDS_URI" not in os.environ:
@@ -147,6 +147,7 @@ def launch_setup(context, *args, **kwargs):
     shutdown_home_timeout_ms = str(hw_cfg["shutdown"].get("home_timeout_ms", 3000))
     shutdown_home_tolerance = str(hw_cfg["shutdown"].get("home_tolerance", 0.05))
     position_mode_velocity = str(hw_cfg.get("position_mode_velocity", 1.0))
+    hand_rotate_ratio = str(hw_cfg.get("hand_rotate_ratio", 1.0))
 
     use_fake_hardware = "false" if arms_real else "true"
     head_use_fake_hardware = "false" if head_real else "true"
@@ -180,6 +181,8 @@ def launch_setup(context, *args, **kwargs):
         "control_mode:=", control_mode,
         " ",
         "position_mode_velocity:=", position_mode_velocity,
+        " ",
+        "hand_rotate_ratio:=", hand_rotate_ratio,
         " ",
         "gazebo:=false",
         " ",
@@ -221,7 +224,13 @@ def launch_setup(context, *args, **kwargs):
     chomp_planning_yaml_path = os.path.join(hw_config_pkg, "config", "chomp_planning.yaml")
     stomp_planning_yaml_path = os.path.join(hw_config_pkg, "config", "stomp_planning.yaml")
     joint_limits_yaml_path = os.path.join(hw_config_pkg, "config", "joint_limits.yaml")
-    moveit_controllers_yaml_path = os.path.join(hw_config_pkg, "config", "moveit_controllers.yaml")
+    # ee_type-filtered - see load_moveit_controllers_for_ee_type's docstring
+    # in openarm_moveit_config/srdf_utils.py (same left_gripper_controller vs
+    # left_hand_rotate_controller "motor 8" ambiguity as moveit_bimanual.launch.py).
+    moveit_controllers_params = load_moveit_controllers_for_ee_type(
+        os.path.join(hw_config_pkg, "config", "moveit_controllers.yaml"),
+        ee_type.perform(context),
+    )
     controller_config = os.path.join(hw_config_pkg, "config", "bimanual_controllers.yaml")
     rviz_config_file = os.path.join(hw_config_pkg, "config", "moveit.rviz")
 
@@ -311,7 +320,11 @@ def launch_setup(context, *args, **kwargs):
             condition=is_amazing_hand,
         )
         for name in ("left_hand_j1_controller", "left_hand_j2_controller",
-                     "right_hand_j1_controller", "right_hand_j2_controller")
+                     "right_hand_j1_controller", "right_hand_j2_controller",
+                     # "Motor 8" (openarm_<side>_finger_joint1) repurposed to
+                     # spin the amazing_hand connector - see
+                     # bimanual_controllers.yaml.
+                     "left_hand_rotate_controller", "right_hand_rotate_controller")
     ]
     head_controller_spawner = Node(
         package="controller_manager", executable="spawner",
@@ -374,7 +387,7 @@ def launch_setup(context, *args, **kwargs):
             chomp_planning_yaml_path,
             stomp_planning_yaml_path,
             joint_limits_yaml_path,
-            moveit_controllers_yaml_path,
+            moveit_controllers_params,
             trajectory_execution,
             planning_scene_monitor,
             bounds_tolerances,

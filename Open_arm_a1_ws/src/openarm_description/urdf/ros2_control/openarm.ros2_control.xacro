@@ -8,6 +8,7 @@
              use_fake_hardware:=^|false
              fake_sensor_commands:=^|false
              hand:=^|false
+             hand_rotate_ratio:=^|1.0
              ee_type:=^|openarm_hand
              gazebo_effort:=^|false
              arm_prefix:=''
@@ -28,6 +29,7 @@
             <param name="can_interface">${can_interface}</param>
             <param name="arm_prefix">${arm_prefix}</param>
             <param name="hand">${hand}</param>
+            <param name="hand_rotate_ratio">${hand_rotate_ratio}</param>
             <param name="can_fd">${can_fd}</param>
             <param name="kp1">${control_gains['joint1']['kp']}</param>
             <param name="kp2">${control_gains['joint2']['kp']}</param>
