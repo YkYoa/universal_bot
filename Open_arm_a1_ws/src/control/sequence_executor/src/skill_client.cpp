@@ -26,6 +26,22 @@ void SkillClient::moveToJoint(
   sendGoal(std::move(goal), std::move(callback));
 }
 
+void SkillClient::moveToNamedPose(
+  const std::string& arm, const std::string& named_pose, const std::string& planner_profile,
+  double velocity_scaling, double acceleration_scaling, ResultCallback callback)
+{
+  ExecuteSkill::Goal goal;
+  goal.skill_name = "move_to_named_pose";
+  goal.arm = arm;
+  goal.planner_profile = planner_profile;
+  goal.planning_mode = "normal";
+  goal.named_pose = named_pose;
+  goal.velocity_override = velocity_scaling;
+  goal.acceleration_override = acceleration_scaling;
+  goal.position_only = false;
+  sendGoal(std::move(goal), std::move(callback));
+}
+
 void SkillClient::moveToJointSequence(
   const std::string& arm, const std::vector<double>& joint_sequence, const std::string& planner_profile,
   double velocity_scaling, double acceleration_scaling, ResultCallback callback)

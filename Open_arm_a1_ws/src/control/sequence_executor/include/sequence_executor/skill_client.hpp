@@ -33,6 +33,18 @@ public:
     const std::string& arm, const std::vector<double>& joint_targets, const std::string& planner_profile,
     double velocity_scaling, double acceleration_scaling, ResultCallback callback);
 
+  // Resolves against the SRDF's <group_state name="named_pose" group="arm">
+  // server-side (MoveToNamedPoseSkill), joint-by-name via
+  // JointModelGroup::getVariableDefaultPositions - safe for a group whose DOF
+  // count varies by build (e.g. "both_arms"/"left_arm" gaining amazing_hand's
+  // "motor 8" connector joint), unlike moveToJoint's raw positional vector,
+  // which must match the live group's variable count exactly or
+  // robot_skills_node aborts (RobotState::setJointGroupPositions asserts on
+  // size mismatch).
+  void moveToNamedPose(
+    const std::string& arm, const std::string& named_pose, const std::string& planner_profile,
+    double velocity_scaling, double acceleration_scaling, ResultCallback callback);
+
   void moveToJointSequence(
     const std::string& arm, const std::vector<double>& joint_sequence, const std::string& planner_profile,
     double velocity_scaling, double acceleration_scaling, ResultCallback callback);

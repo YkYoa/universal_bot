@@ -19,6 +19,33 @@ const double TOLERANCE = 0.001;
 
 const std::string PLAN_DIR = "/home/hans/universal_bot/plan";
 
+// moveit::core::RobotState::setJointGroupPositions() asserts (SIGABRT, taking
+// down the whole robot_skills_node - every in-flight goal, not just this one)
+// if the vector's length doesn't exactly match the group's variable count. A
+// caller-supplied joint_targets/joint_sequence array is exactly the kind of
+// input that can be wrong (e.g. a 7-per-arm vector built against a group that
+// gained an extra DOF - see amazing_hand_connector's joint comment in
+// openarm_robot.xacro for how "left_arm" grew from 7 to 8 variables once its
+// connector joint became revolute), so it must be validated before reaching
+// that call instead of trusted. Returns "" if `count` is valid for
+// `group_name`, otherwise a message describing the mismatch.
+std::string checkJointVectorSize(const moveit::core::RobotModelConstPtr& model,
+                                  const std::string& group_name, size_t count)
+{
+    if (!model) {
+        return "robot model is not available";
+    }
+    const moveit::core::JointModelGroup* jmg = model->getJointModelGroup(group_name);
+    if (!jmg) {
+        return "unknown planning group '" + group_name + "'";
+    }
+    if (count != jmg->getVariableCount()) {
+        return "joint target has " + std::to_string(count) + " value(s) but group '" +
+               group_name + "' needs " + std::to_string(jmg->getVariableCount());
+    }
+    return "";
+}
+
 std::string get_plan_filename(const planning_interface::PlannerRequest& request)
 {
     std::stringstream ss;
@@ -57,6 +84,26 @@ std::string get_plan_filename(const planning_interface::PlannerRequest& request)
             c = '_';
         }
     }
+
+    // Every joint value gets baked into this name at fixed(4) precision, so it
+    // grows with DOF count - fine for a 7-DOF single arm, but a 16-DOF
+    // "both_arms" joint_sequence (e.g. amazing_hand's extra "motor 8"
+    // connector joint - see amazing_hand_connector's comment in
+    // openarm_robot.xacro) can push the *_from_..._to_... tail past ext4's
+    // 255-byte filename limit. std::filesystem then throws on any access
+    // (exists()/open()), uncaught here, which takes down the whole
+    // robot_skills_node (RCLCPP_ERROR would only log it - this crashes
+    // before ever reaching that). Collapse an oversized name to a bounded
+    // hash instead of letting the DOF count decide whether caching a plan
+    // is safe to attempt.
+    constexpr std::size_t kMaxStem = 200;  // headroom under 255 for the ".yaml" suffix and the PLAN_DIR path
+    if (s.size() > kMaxStem) {
+        const std::size_t digest = std::hash<std::string>{}(s);
+        std::stringstream collapsed;
+        collapsed << s.substr(0, 40) << "_h" << std::hex << digest;
+        s = collapsed.str();
+    }
+
     return s + ".yaml";
 }
 
@@ -261,8 +308,21 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
     std::string filename = get_plan_filename(request);
     std::filesystem::path plan_filepath = std::filesystem::path(PLAN_DIR) / filename;
 
-    // Check if the plan is already cached
-    if (save_plan && std::filesystem::exists(plan_filepath)) {
+    // Check if the plan is already cached. std::filesystem::exists() (the
+    // throwing overload) can itself throw filesystem_error (e.g. a stale/bad
+    // path) - outside the try block below, that would be an uncaught
+    // exception straight out of plan(), taking down the whole
+    // robot_skills_node. The cache is an optimization; any filesystem hiccup
+    // here should fall back to replanning, not crash the live robot.
+    bool plan_cached = false;
+    try {
+        plan_cached = save_plan && std::filesystem::exists(plan_filepath);
+    } catch (const std::exception& e) {
+        RCLCPP_ERROR(node_->get_logger(),
+            "[MoveItCppPlannerManager] Could not check for a cached plan at '%s': %s. Will replan.",
+            plan_filepath.string().c_str(), e.what());
+    }
+    if (plan_cached) {
         try {
             YAML::Node plan_node = YAML::LoadFile(plan_filepath.string());
             moveit_msgs::msg::RobotTrajectory traj = deserialize_trajectory(plan_node);
@@ -451,6 +511,15 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
             planning_component->setGoal(request.getTargetPose().value(), ee_link);
         }
     } else if (!request.getJointTargets().empty()) {
+        const std::string size_error = checkJointVectorSize(
+            moveit_cpp_->getRobotModel(), request.getGroupName(), request.getJointTargets().size());
+        if (!size_error.empty()) {
+            response.success = false;
+            response.error_message = size_error;
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
+            return response;
+        }
         moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
         goal_state.setToDefaultValues();
         goal_state.setJointGroupPositions(request.getGroupName(), request.getJointTargets());
@@ -467,6 +536,16 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         // this produces one continuous motion instead of N stop-start
         // segments.
         const auto& joint_sequence = request.getJointSequence();
+
+        const std::string size_error = checkJointVectorSize(
+            moveit_cpp_->getRobotModel(), request.getGroupName(), joint_sequence.front().size());
+        if (!size_error.empty()) {
+            response.success = false;
+            response.error_message = size_error;
+            publish_target_marker_for_request(request, false);
+            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
+            return response;
+        }
 
         moveit::core::RobotStatePtr start_state;
         if (request.getStartState()) {
@@ -950,7 +1029,9 @@ void MoveItCppPlannerManager::publish_target_marker_for_request(const planning_i
     } else if (!request.getWaypoints().empty()) {
         target_pose = request.getWaypoints().back();
     } else if (!request.getJointTargets().empty()) {
-        if (moveit_cpp_ && moveit_cpp_->getRobotModel()) {
+        if (moveit_cpp_ && moveit_cpp_->getRobotModel() &&
+            checkJointVectorSize(moveit_cpp_->getRobotModel(), request.getGroupName(),
+                                  request.getJointTargets().size()).empty()) {
             moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
             goal_state.setToDefaultValues();
             goal_state.setJointGroupPositions(request.getGroupName(), request.getJointTargets());
@@ -977,7 +1058,9 @@ void MoveItCppPlannerManager::publish_target_marker_for_request(const planning_i
             }
         }
     } else if (!request.getJointSequence().empty()) {
-        if (moveit_cpp_ && moveit_cpp_->getRobotModel()) {
+        if (moveit_cpp_ && moveit_cpp_->getRobotModel() &&
+            checkJointVectorSize(moveit_cpp_->getRobotModel(), request.getGroupName(),
+                                  request.getJointSequence().back().size()).empty()) {
             moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
             goal_state.setToDefaultValues();
             goal_state.setJointGroupPositions(request.getGroupName(), request.getJointSequence().back());

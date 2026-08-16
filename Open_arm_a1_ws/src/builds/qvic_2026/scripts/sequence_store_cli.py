@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Command-line front end for the qvic_2026 sequence store.
 
+    sequence_store_cli.py import
     sequence_store_cli.py import --file config/sequence.yaml
     sequence_store_cli.py list
     sequence_store_cli.py show qvic_2026_both
@@ -8,6 +9,10 @@
     sequence_store_cli.py delete some_sequence
 
 Point it at a different database with --db or the QVIC_DB_PATH env var.
+`import` with no --file seeds/refreshes store.DEFAULT_DB_PATH's sqlite file
+from this project's own config/sequence.yaml - store.connect() creates the
+file and schema on demand, so this is the one command that takes a bare
+checkout to a working sequence store.
 """
 
 import argparse
@@ -22,6 +27,11 @@ try:
 except ImportError:  # pragma: no cover - only hit before colcon build
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from qvic_2026 import store, yaml_sync
+
+# Sibling of store.DEFAULT_DB_PATH - this in-development repo only ever runs
+# from this one checkout (same reasoning as store.py/qvic_2026.launch.py).
+DEFAULT_SEQUENCE_YAML = os.path.join(
+    os.path.dirname(os.path.dirname(store.DEFAULT_DB_PATH)), "config", "sequence.yaml")
 
 
 def cmd_import(args):
@@ -76,7 +86,8 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("import", help="load a sequence.yaml into the store")
-    p.add_argument("--file", required=True)
+    p.add_argument("--file", default=DEFAULT_SEQUENCE_YAML,
+                   help=f"default: {DEFAULT_SEQUENCE_YAML}")
     p.add_argument("--no-replace", action="store_true",
                    help="skip sequences that already exist instead of overwriting")
     p.set_defaults(func=cmd_import)

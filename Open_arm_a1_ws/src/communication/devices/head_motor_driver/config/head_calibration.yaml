@@ -28,9 +28,14 @@ pan:  # channel 0 - confirmed neck_joint (pan).
   pwm_min_us: 500
   pwm_max_us: 2520
   invert: false
-  center_deg: 130.7
+  # center_deg/pwm_to_deg_intercept re-derived 2026-08-16 from a real
+  # measured reference point: PWM=959us is the true home position, at
+  # absolute servo angle 90deg. Slope kept as-is (PWM-per-degree scale
+  # factor, not re-measured); intercept solved so this one point lies
+  # exactly on the line: intercept = center_deg - pwm_target*slope.
+  center_deg: 90.0
   pwm_to_deg_slope: 0.11035055741866533
-  pwm_to_deg_intercept: -35.92227331598851
+  pwm_to_deg_intercept: -15.826184564500053
   adc_to_deg_slope: 0.06395635853117716
   adc_to_deg_intercept: -2.1064436012111107
   # Trapezoidal rate-limiter for the commanded angle (see motion_profile.hpp)

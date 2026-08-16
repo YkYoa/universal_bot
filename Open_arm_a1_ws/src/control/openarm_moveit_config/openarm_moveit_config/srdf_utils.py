@@ -45,6 +45,30 @@ def load_srdf_for_ee_type(srdf_path: str, ee_type: str, body_type: str = None) -
             line for line in content.split('\n')
             if not re.search(r'openarm_(?:left|right)_(?:hand"|left_finger|right_finger)', line)
         )
+        # openarm_<side>_finger_joint1 ("motor 8") sits directly on the
+        # left_arm/right_arm chain's base->hand_tcp path (link7 -> connector
+        # -> ... -> hand_tcp - see amazing_hand_connector's joint comment in
+        # openarm_robot.xacro), so without this it's a free variable to
+        # KDL/OMPL for THAT group: dragging the interactive marker or any
+        # left_arm Plan&Execute can drive it to an arbitrary/swinging value
+        # chasing 6-DOF Cartesian goals with a now-8-DOF chain, independent
+        # of whatever left_hand_rotate_controller last commanded - looks
+        # like the joint "won't stop rotating" even though nothing is
+        # touching it directly. passive_joint keeps FK correct (hand_tcp's
+        # pose still reflects the joint's real position) while excluding it
+        # from left_arm/right_arm's own IK/planning variables - it's only
+        # ever actively planned/commanded through left_hand_rotate_controller
+        # or a group that explicitly lists it (neither chain group does).
+        # (Added via string injection, not left in the static SRDF, because
+        # the line-strip above would delete a literal <passive_joint> tag
+        # too - "finger_joint1" matches the same left_finger/right_finger
+        # pattern being stripped for this ee_type.)
+        content = content.replace(
+            "  <!-- Virtual joints -->",
+            '  <passive_joint name="openarm_left_finger_joint1"/>\n'
+            '  <passive_joint name="openarm_right_finger_joint1"/>\n\n'
+            "  <!-- Virtual joints -->"
+        )
     elif ee_type == "openarm_hand":
         # Mirror image: strip the amazing_hand-only groups/group_states and
         # any disable_collisions line for its ahand_* links. The

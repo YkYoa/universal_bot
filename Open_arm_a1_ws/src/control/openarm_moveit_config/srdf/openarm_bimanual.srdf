@@ -45,14 +45,6 @@
 
   <!-- ============================================ -->
   <!-- AMAZING HAND FINGERS                         -->
-  <!-- Only valid when the robot is built with       -->
-  <!-- ee_type:=amazing_hand (mutually exclusive     -->
-  <!-- with left_gripper/right_gripper above, which  -->
-  <!-- are the default ee_type:=openarm_hand groups) -->
-  <!-- j1<i> = yaw/abduction, j2<i> = proximal flex  -->
-  <!-- of finger i (i=1..3 top-down, 4=thumb).       -->
-  <!-- Distal knuckle is mechanically coupled to     -->
-  <!-- flexion through the linkage, not independent. -->
   <!-- ============================================ -->
   <group name="left_hand_fingers">
     <joint name="openarm_left_j11"/>
@@ -85,12 +77,6 @@
   <!-- ============================================ -->
   <!-- Default poses                                -->
   <!-- ============================================ -->
-  <!-- joint2 +-10deg (not 0) so amazing_hand's connector isn't pointed back
-       at the body/other arm at rest - relevant when commanding "motor 8"
-       (openarm_<side>_finger_joint1, see amazing_hand_connector's joint
-       comment in openarm_robot.xacro). Keep moveit_ee_controller.py's
-       named_poses['left_arm']/['right_arm']/['both_arms']['home'] in sync
-       with this if it changes again. -->
   <group_state name="home" group="left_arm">
     <joint name="openarm_left_joint1" value="0.0"/>
     <joint name="openarm_left_joint2" value="-0.174533"/>
@@ -337,27 +323,17 @@
   <disable_collisions link1="openarm_body_link0" link2="openarm_right_link1" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_right_link2" reason="Never"/>
 
-  <!-- Body to amazing_hand at rest (arm's default all-zero pose folds the hand
-       in close enough for proximal_3 to overlap the torso; found via
-       GetStateValidity on the default start state, which was blocking ALL
-       arm-group planning, not just head/neck) -->
   <disable_collisions link1="openarm_body_link0" link2="openarm_left_ahand_proximal_3" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_right_ahand_proximal_3" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_left_ahand_distal_3" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_right_ahand_distal_3" reason="Never"/>
 
-  <!-- Body to openarm_hand (2-finger gripper) at rest: same rest-pose overlap
-       as amazing_hand above, this time for the gripper's own hand link. -->
   <disable_collisions link1="openarm_body_link0" link2="openarm_left_hand" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_right_hand" reason="Never"/>
 
-  <!-- amazing_hand internal: proximal_1/proximal_2 overlap the (thumb?) proximal
-       segment at rest - same GetStateValidity finding as above, right hand only
-       (left hand's mirrored geometry didn't show the same contact) -->
   <disable_collisions link1="openarm_right_ahand_proximal_1" link2="openarm_right_ahand_proximal" reason="Never"/>
   <disable_collisions link1="openarm_right_ahand_proximal_2" link2="openarm_right_ahand_proximal" reason="Never"/>
 
-  <!-- Body to base wheels/casters (body cage extends into base area) -->
   <disable_collisions link1="openarm_body_link0" link2="openarm_base_right_drive_wheel_link" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_base_left_drive_wheel_link" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_base_fr_caster_link" reason="Never"/>
@@ -369,8 +345,6 @@
   <disable_collisions link1="openarm_body_link0" link2="openarm_base_br_wheel_link" reason="Never"/>
   <disable_collisions link1="openarm_body_link0" link2="openarm_base_bl_wheel_link" reason="Never"/>
 
-  <!-- Base wheels (real adjacency is to openarm_base_link_body, the mesh/wheels
-       link - see comment above) -->
   <disable_collisions link1="openarm_base_link_body" link2="openarm_base_right_drive_wheel_link" reason="Adjacent"/>
   <disable_collisions link1="openarm_base_link_body" link2="openarm_base_left_drive_wheel_link" reason="Adjacent"/>
   <disable_collisions link1="openarm_base_link_body" link2="openarm_base_fr_caster_link" reason="Adjacent"/>
@@ -416,12 +390,6 @@
 
   <!-- ============================================ -->
   <!-- AMAZING HAND FINGER SELF-COLLISION (ee_type:=amazing_hand only)      -->
-  <!-- Cylinder collision primitives were added to each finger's proximal/ -->
-  <!-- distal links (see hand_kinematics_node / add_finger_collision.py).  -->
-  <!-- Adjacent same-finger segments (gimbal<->proximal, proximal<->distal) -->
-  <!-- always touch at the joint, so disable those pairs here to avoid     -->
-  <!-- false "always colliding" noise; cross-finger and cross-hand pairs   -->
-  <!-- stay checked, which is the actual point of adding this geometry.    -->
   <!-- ============================================ -->
   <disable_collisions link1="openarm_left_ahand_gimbal" link2="openarm_left_ahand_proximal" reason="Adjacent"/>
   <disable_collisions link1="openarm_left_ahand_proximal" link2="openarm_left_ahand_distal" reason="Adjacent"/>

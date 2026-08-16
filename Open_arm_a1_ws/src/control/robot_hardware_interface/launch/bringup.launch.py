@@ -303,6 +303,7 @@ def launch_setup(context, *args, **kwargs):
         package="controller_manager", executable="spawner",
         arguments=["right_arm_controller", "-c", "/controller_manager"],
     )
+
     left_gripper_controller_spawner = Node(
         package="controller_manager", executable="spawner",
         arguments=["left_gripper_controller", "-c", "/controller_manager"],

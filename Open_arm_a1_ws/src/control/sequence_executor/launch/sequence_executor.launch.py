@@ -89,8 +89,6 @@ def launch_setup(context, *args, **kwargs):
     with open(kinematics_yaml) as f:
         kin_cfg = yaml.safe_load(f) or {}
     kin_params = kin_cfg.get("/**", {}).get("ros__parameters", kin_cfg)
-    # kin_params is: {"robot_description_kinematics": {"left_arm": {...}, ...}}
-    # If it already has the top-level key, use it directly; otherwise wrap it.
     if "robot_description_kinematics" in kin_params:
         robot_description_kinematics = kin_params
     else:
@@ -141,14 +139,19 @@ def launch_setup(context, *args, **kwargs):
              parameters=[{"use_sim_time": use_sim_time}],
              condition=UnlessCondition(isaacsim))
         for c in ["joint_state_broadcaster",
-                  "left_arm_controller",  "right_arm_controller",
-                  "left_gripper_controller", "right_gripper_controller"]
+                  "left_arm_controller",  "right_arm_controller"]
     ]
 
-    # amazing_hand's 8 alias joints per side are split across two
-    # JointTrajectoryControllers (yaw j11-j14, flex j21-j24 - see
-    # robot_control/config/bimanual_controllers.yaml); these only exist in
-    # the URDF/ros2_control under ee_type:=amazing_hand.
+    is_openarm_hand_not_isaacsim = IfCondition(PythonExpression(
+        ["'", ee_type, "' == 'openarm_hand' and '", isaacsim, "' == 'false'"]))
+    gripper_spawners = [
+        Node(package="controller_manager", executable="spawner",
+             arguments=[c, "-c", "/controller_manager"],
+             parameters=[{"use_sim_time": use_sim_time}],
+             condition=is_openarm_hand_not_isaacsim)
+        for c in ["left_gripper_controller", "right_gripper_controller"]
+    ]
+
     is_amazing_hand_not_isaacsim = IfCondition(PythonExpression(
         ["'", ee_type, "' == 'amazing_hand' and '", isaacsim, "' == 'false'"]))
     hand_spawners = [
@@ -157,7 +160,8 @@ def launch_setup(context, *args, **kwargs):
              parameters=[{"use_sim_time": use_sim_time}],
              condition=is_amazing_hand_not_isaacsim)
         for c in ["left_hand_j1_controller", "left_hand_j2_controller",
-                  "right_hand_j1_controller", "right_hand_j2_controller"]
+                  "right_hand_j1_controller", "right_hand_j2_controller",
+                  "left_hand_rotate_controller", "right_hand_rotate_controller"]
     ]
 
     move_group = Node(
@@ -199,11 +203,6 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ── Sequence executor ────────────────────────────────────────────────────
-    # The executable is swappable so a project can run its own build of the
-    # state machine - qvic_2026's qvic_fsm_node adds a SQLite store and ten
-    # hardcoded actions on top of exactly this node. The node *name* stays
-    # fixed either way, because it is what ~/state, ~/run_sequence, and
-    # ~/fsm_command resolve against.
     sequence_executor = Node(
         package=executor_package,
         executable=executor_executable,
@@ -218,10 +217,6 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ── Optional REST + WebSocket API and web dashboard ──────────────────────
-    # Serves the FSM viewer, the sequence CRUD the Android app uses, and the
-    # live fsm_state stream on port 5050. (This replaced bt_viewer, whose
-    # package was deleted in 4dd39d7 while this launch file still referenced
-    # it - use_api:=true used to fail outright.)
     robot_api = Node(
         package="moveit_api",
         executable="robot_api_server",
@@ -255,6 +250,7 @@ def launch_setup(context, *args, **kwargs):
         rsp,
         ros2_ctrl,
         *spawners,
+        *gripper_spawners,
         *hand_spawners,
         move_group,
         robot_skills,

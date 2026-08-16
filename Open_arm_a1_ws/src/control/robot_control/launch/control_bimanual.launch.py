@@ -54,7 +54,7 @@ def generate_launch_description():
     # Khai báo argument để người dùng chọn bật mô phỏng Gazebo hay chạy robot thật
     gazebo_arg = DeclareLaunchArgument(
         "gazebo",
-        default_value="true",
+        default_value="false",
         description="Run with Gazebo simulation (true) or Real Hardware (false).",
     )
 
@@ -100,10 +100,7 @@ def generate_launch_description():
     hand = LaunchConfiguration("hand")
     ee_type = LaunchConfiguration("ee_type")
     body_type = LaunchConfiguration("body_type")
-    
-    # Tính toán động giá trị use_sim_time: 'true' nếu không chạy fake hardware VÀ chạy gazebo, ngược lại là 'false'
-    # Để đơn giản, ta kiểm tra xem có chạy Gazebo không: nếu gazebo == 'true' và use_fake_hardware == 'false'
-    # Ta dùng một PythonExpression để xử lý
+
     use_sim_time = PythonExpression([
         "'true' if '", gazebo, "' == 'true' and '", use_fake_hardware, "' == 'false' else 'false'"
     ])
@@ -143,14 +140,12 @@ def generate_launch_description():
         ]
     )
     robot_description = {"robot_description": ParameterValue(robot_description_content, value_type=str)}
-
-    # Điều kiện để chạy môi trường Gazebo mô phỏng
     run_gazebo = PythonExpression(["'", use_fake_hardware, "' == 'false' and '", gazebo, "' == 'true'"])
     
-    # Điều kiện để chạy node điều khiển độc lập (Fake hardware OR Real hardware)
+    # Fake hardware OR Real hardware
     run_standalone_control = PythonExpression(["'", use_fake_hardware, "' == 'true' or '", gazebo, "' == 'false'"])
 
-    # Điều kiện chọn end-effector: openarm_hand (gripper 2 ngón) hoặc amazing_hand (5 ngón)
+    # Điều kiện chọn end-effector: openarm_hand hoặc amazing_hand 
     run_openarm_hand = PythonExpression(["'", ee_type, "' == 'openarm_hand'"])
     run_amazing_hand = PythonExpression(["'", ee_type, "' == 'amazing_hand'"])
     run_body_v2 = PythonExpression(["'", body_type, "' == 'v2'"])
@@ -166,7 +161,7 @@ def generate_launch_description():
         ],
     )
 
-    # ── MÔI TRƯỜNG GAZEBO (Chỉ chạy khi use_fake_hardware:=false và gazebo:=true) ──
+    # GAZOBO
     gazebo_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([
@@ -220,8 +215,6 @@ def generate_launch_description():
         output="both",
         condition=IfCondition(run_standalone_control)
     )
-
-    # ── ĐỊNH NGHĨA CÁC SPAWNER CONTROLLER ──
     
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
@@ -260,7 +253,6 @@ def generate_launch_description():
         condition=IfCondition(run_openarm_hand)
     )
 
-    # ── amazing_hand (ee_type:=amazing_hand): j1/j2 group controllers per side ──
     left_hand_j1_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -293,7 +285,6 @@ def generate_launch_description():
         condition=IfCondition(run_amazing_hand)
     )
 
-    # body v2 articulated neck + head
     head_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -332,10 +323,6 @@ def generate_launch_description():
         # so remap RViz's subscription instead of the publisher.
         remappings=[("/robot_description_full", "/robot_description")]
     )
-
-    # Quy trình kích hoạt các Spawner:
-    # 1. Khi dùng Gazebo: Đợi spawn_robot_node hoàn tất rồi nạp controller.
-    # 2. Khi dùng Standalone (Fake hoặc Real): Kích hoạt các spawner sau khi robot_state_publisher_node chạy xong.
     
     load_controllers_event_gz = RegisterEventHandler(
         event_handler=OnProcessExit(

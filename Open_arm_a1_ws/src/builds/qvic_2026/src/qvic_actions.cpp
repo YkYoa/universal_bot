@@ -59,13 +59,8 @@ using sequence_executor::BuiltinContext;
 
 namespace {
 
-// Everything that moves an arm needs the hardware in position or mit mode;
-// torque mode ignores position commands outright.
 constexpr const char* kMotion = sequence_executor::kModeMotion;
 
-// A slot nobody has filled in yet. It fails rather than silently succeeding,
-// so an empty action wired to a button on the Android app says so instead of
-// looking like it worked.
 BuiltinAction placeholder(const std::string& id, const std::string& label)
 {
   BuiltinAction action;
@@ -80,8 +75,6 @@ BuiltinAction placeholder(const std::string& id, const std::string& label)
 }
 
 // ── action_01: worked example ────────────────────────────────────────────────
-// Both arms to their home pose, then both hands to the home posture. Two async
-// hops, showing the cancel check and the single-`done` discipline.
 BuiltinAction homeBothArms()
 {
   BuiltinAction action;
@@ -91,25 +84,21 @@ BuiltinAction homeBothArms()
   action.required_control_mode = kMotion;
 
   action.run = [](BuiltinContext& ctx, BuiltinAction::DoneCallback done) {
-    // Copy what the callbacks need - ctx does not outlive this call.
     auto skill = ctx.skill;
     auto hand = ctx.hand;
-    auto source = ctx.source;
     auto cancelled = ctx.cancelled;
     auto logger = ctx.node->get_logger();
 
-    std::vector<double> targets;
-    try {
-      targets = source->loadWaypoint("homePoses/laHomeAngle");
-      const auto right = source->loadWaypoint("homePoses/raHomeAngle");
-      targets.insert(targets.end(), right.begin(), right.end());
-    } catch (const std::exception& e) {
-      done(false, std::string("could not read the home waypoints: ") + e.what());
-      return;
-    }
-
-    skill->moveToJoint(
-      "both_arms", targets, "safe_rrt", 0.0, 0.0,
+    // Named pose, not the DB's raw 7-per-arm waypoint vector: "both_arms"
+    // has a <group_state name="home"> in openarm_bimanual.srdf, resolved
+    // server-side joint-by-name (MoveToNamedPoseSkill), so it stays correct
+    // even though "both_arms" is 16-DOF (not 14) under ee_type:=amazing_hand
+    // - see amazing_hand_connector's joint comment in openarm_robot.xacro.
+    // moveToJoint's raw vector has no such flexibility: robot_skills_node
+    // aborts outright if the vector's length doesn't exactly match the
+    // live group's DOF.
+    skill->moveToNamedPose(
+      "both_arms", "home", "safe_rrt", 0.0, 0.0,
       [hand, cancelled, logger, done](bool ok, const std::string& error) {
         if (!ok) {
           done(false, "home move failed: " + error);
@@ -145,35 +134,6 @@ BuiltinAction homeBothArms()
 }
 
 // ── action_02: bimanual wave ─────────────────────────────────────────────────
-//
-// Home both arms, bring them to the start of the arc, then sweep the ellipse
-// out and back until the operator cancels. Both arms move *together*.
-//
-// ── Why one goal and not two ─────────────────────────────────────────────────
-//
-// The obvious shape - one cartesian_move per arm, fired concurrently - does
-// not run concurrently. robot_skills serialises them: SkillServer keeps a
-// single execute_thread_ and handle_accepted() joins it before starting the
-// next goal (skill_server.cpp), so the second arm waits for the first to
-// finish. The arms take turns, which is not a bimanual wave.
-//
-// So the sweep goes out as ONE move_to_joint_sequence goal on the both_arms
-// group, with the two arms' waypoints interleaved (stride 14: left 7 then
-// right 7 per point). MoveIt then plans and executes a single trajectory that
-// moves all fourteen joints at once - genuinely simultaneous, and it is the
-// same path robot_skills already blends for qvic_2026_both.
-//
-// This also sidesteps IK entirely, which matters here: these are 7-DOF
-// redundant arms on KDLKinematicsPlugin with a 0.5s timeout, and that solver
-// routinely fails to converge - compute_ik refuses even poses obtained by
-// running FK on joint values the arm reaches every run. Anything with a pose
-// goal (move_to_pose, or OMPL sampling a Cartesian goal state) fails with
-// "Unable to solve the planning problem". Joint goals never touch it.
-//
-// The arc shape itself is not lost: waveEllipse/waveEllipseR were generated
-// from the ellipse formula by trajectory_waypoint_generator, so replaying them
-// is replaying the ellipse - already sampled, already reachable.
-
 namespace {
 
 constexpr const char* kWaveProfile = "safe_rrt";
@@ -193,8 +153,6 @@ struct WaveData
   std::vector<double> back;        // the same, reversed
 };
 
-// Interleave two equal-length arcs into the stride-14 flat vector the
-// both_arms group expects.
 std::vector<double> interleave(const std::vector<std::vector<double>>& left,
                                const std::vector<std::vector<double>>& right,
                                bool reversed)
@@ -256,17 +214,11 @@ BuiltinAction waveBothArms()
       return;
     }
 
-    // The loop lives here, not in the FSM: a builtin runs to completion once.
-    // `forward` alternates so the arms sweep out and back rather than snapping
-    // between passes. The shared_ptr keeps the lambda alive across its own
-    // async hops; the cancel check is what ends it.
     auto sweep = std::make_shared<std::function<void(bool)>>();
     auto cycle = std::make_shared<int>(0);
 
     *sweep = [skill, wave, cancelled, logger, done, sweep, cycle](bool forward) {
       if (cancelled()) {
-        // Stopping is an operator decision, not a failure - but the FSM needs
-        // the "cancelled" marker to report it as one rather than a fault.
         done(false, "cancelled");
         return;
       }
@@ -314,6 +266,23 @@ BuiltinAction waveBothArms()
 
   return action;
 }
+
+// BuiltinAction action_03()
+// {
+//   BuiltinAction action;
+//   action.id = "action_03";
+//   action.label = "greeting";
+//   action.description = "Greeting in 5-6 seconds";
+//   action.required_control_mode = kModeMotion;
+//   action.run = [](BuiltinContext& ctx, BuiltinAction::DoneCallback done){
+//   auto skill = ctx.skill;
+//   auto source = ctx.source;
+//   auto cancelled = ctx.cancelled;
+//   auto logger = ctx.node->get_logger();
+
+//   auto 
+//   };
+// }
 
 }  // namespace
 
