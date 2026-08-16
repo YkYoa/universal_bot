@@ -131,6 +131,23 @@ def launch_setup(context, *args, **kwargs):
     # Nodes
     # ─────────────────────────────────────────────
 
+    # head_use_fake_hardware:=false (i.e. head:=true) puts HeadHW in the
+    # ros2_control block, but HeadHW only talks over a UDS socket to this
+    # process - without it running, on_activate() never connects and
+    # read()/write() just freeze at their default state forever (per
+    # HeadHW's own "don't fail the whole controller" comment in
+    # hardware_interface.cpp), even though a FollowJointTrajectory goal can
+    # still report "success" against that frozen state. This launch used to
+    # never start it at all (only bringup.launch.py did), so head:=true here
+    # silently produced a HeadHW that could accept commands but never
+    # reflect real position back to /joint_states or RViz.
+    head_motor_driver_node = Node(
+        package="communication_devices",
+        executable="head_motor_driver_node",
+        output="screen",
+        condition=IfCondition(PythonExpression(["'", head, "' == 'true'"])),
+    )
+
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -286,6 +303,7 @@ def launch_setup(context, *args, **kwargs):
     )
 
     return [
+        head_motor_driver_node,
         robot_state_publisher_node,
         ros2_control_node,
         joint_state_broadcaster_spawner,

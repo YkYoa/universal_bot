@@ -746,14 +746,19 @@ hardware_interface::return_type HeadHW::read(
   // driver key feeds which index - physical wiring has neck_joint (index 0)
   // driven by the board's "tilt" motor and head_joint (index 1) driven by
   // its "pan" motor, confirmed by commanding each joint from RViz one at a
-  // time and observing which motor actually moved.
+  // time and observing which motor actually moved. Must match write()'s
+  // tilt_cmd/pan_cmd assignment below exactly - this used to read the
+  // opposite fields (pan_pos for index 0, tilt_pos for index 1), so each
+  // joint's reported state was actually the OTHER joint's commanded
+  // position (confirmed on real hardware 2026-08-16: commanding head_joint
+  // updated neck_joint's displayed value in RViz).
   if (joint_names_.size() >= 1) {
-    if (auto v = extract_number(line, "pan_pos")) pos_states_[0] = filter_position(0, *v);
-    if (auto v = extract_number(line, "pan_vel")) vel_states_[0] = *v;
+    if (auto v = extract_number(line, "tilt_pos")) pos_states_[0] = filter_position(0, *v);
+    if (auto v = extract_number(line, "tilt_vel")) vel_states_[0] = *v;
   }
   if (joint_names_.size() >= 2) {
-    if (auto v = extract_number(line, "tilt_pos")) pos_states_[1] = filter_position(1, *v);
-    if (auto v = extract_number(line, "tilt_vel")) vel_states_[1] = *v;
+    if (auto v = extract_number(line, "pan_pos")) pos_states_[1] = filter_position(1, *v);
+    if (auto v = extract_number(line, "pan_vel")) vel_states_[1] = *v;
   }
   if (auto v = extract_bool(line, "is_healthy")) {
     if (*v != is_healthy_) {

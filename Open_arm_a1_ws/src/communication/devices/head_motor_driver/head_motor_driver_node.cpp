@@ -393,20 +393,38 @@ void HeadMotorDriver::controlLoop()
     auto pan_adc = parseAdc(reply0);
     auto tilt_adc = parseAdc(reply1);
 
-    if (connected && pan_adc.has_value() && tilt_adc.has_value()) {
-      double pan_rad = pan_filter_.update(pan_cal_.adc_to_rad(*pan_adc));
-      double tilt_rad = tilt_filter_.update(tilt_cal_.adc_to_rad(*tilt_adc));
+    if (connected) {
+      double pan_rad, tilt_rad;
+      bool stall_timeout_hit = false;
 
-      bool stalled = std::abs(pan_profiled - pan_rad) > stall_error_threshold_rad_ ||
-                     std::abs(tilt_profiled - tilt_rad) > stall_error_threshold_rad_;
-      if (stalled) {
-        if (!stall_since_s_.has_value()) stall_since_s_ = nowSeconds();
-      } else if (!watchdog_tripped) {
+      if (pan_adc.has_value() && tilt_adc.has_value()) {
+        // Real feedback path - currently dead (see KNOWN GAP above), kept
+        // ready for when a real STATUS query is implemented.
+        pan_rad = pan_filter_.update(pan_cal_.adc_to_rad(*pan_adc));
+        tilt_rad = tilt_filter_.update(tilt_cal_.adc_to_rad(*tilt_adc));
+
+        bool stalled = std::abs(pan_profiled - pan_rad) > stall_error_threshold_rad_ ||
+                       std::abs(tilt_profiled - tilt_rad) > stall_error_threshold_rad_;
+        if (stalled) {
+          if (!stall_since_s_.has_value()) stall_since_s_ = nowSeconds();
+        } else if (!watchdog_tripped) {
+          stall_since_s_.reset();
+        }
+        stall_timeout_hit = stall_since_s_.has_value() &&
+          (nowSeconds() - *stall_since_s_ > stall_timeout_s_);
+      } else {
+        // TRICK - no real ADC feedback available (KNOWN GAP above): report
+        // back exactly what we just commanded (post rate-limit), trusting
+        // the SERVO ack as proof it's being driven there. This is
+        // open-loop - stall/obstruction detection is impossible this way
+        // (state always matches command by construction, so is_healthy
+        // here only means "board reachable and accepting commands", not
+        // "actually reached that position"). Delete this branch (keep only
+        // the real-feedback one above) once a real STATUS query exists.
+        pan_rad = tilt_profiled;
+        tilt_rad = pan_profiled;
         stall_since_s_.reset();
       }
-
-      bool stall_timeout_hit = stall_since_s_.has_value() &&
-        (nowSeconds() - *stall_since_s_ > stall_timeout_s_);
 
       sendState(pan_rad, tilt_rad, !stall_timeout_hit,
                 stall_timeout_hit ? "stall detected" : "");

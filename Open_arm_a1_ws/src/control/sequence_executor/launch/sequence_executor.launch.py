@@ -139,7 +139,12 @@ def launch_setup(context, *args, **kwargs):
              parameters=[{"use_sim_time": use_sim_time}],
              condition=UnlessCondition(isaacsim))
         for c in ["joint_state_broadcaster",
-                  "left_arm_controller",  "right_arm_controller"]
+                  "left_arm_controller",  "right_arm_controller",
+                  # body v2 articulated neck + head - unconditional because
+                  # robot_description below never overrides xacro's own
+                  # body_type default ("v2"), unlike bringup.launch.py's
+                  # is_body_v2-gated spawner (real hardware also supports v1).
+                  "head_controller"]
     ]
 
     is_openarm_hand_not_isaacsim = IfCondition(PythonExpression(

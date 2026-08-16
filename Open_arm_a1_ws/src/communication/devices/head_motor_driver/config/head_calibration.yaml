@@ -13,7 +13,8 @@
 #
 # min_angle_rad/max_angle_rad match the URDF's actual joint limits
 # (openarm_description/urdf/body/openarm_body.xacro: both neck_joint and
-# head_joint are +-1.57 rad), not HEAD_DRIVER_SPEC.md's placeholder values.
+# head_joint are +-1.0472 rad / +-60deg), not HEAD_DRIVER_SPEC.md's
+# placeholder values.
 #
 # pwm_min_us/pwm_max_us are this channel's empirically-found safe range -
 # outside it the servo's own signal decoder ignores the PWM entirely (see
@@ -23,8 +24,8 @@
 pan:  # channel 0 - confirmed neck_joint (pan).
   adc_min: 669           # raw ADC at min_angle_rad (informational only, not used in conversion math)
   adc_max: 3483          # raw ADC at max_angle_rad (informational only, not used in conversion math)
-  min_angle_rad: -1.57
-  max_angle_rad: 1.57
+  min_angle_rad: -1.0472
+  max_angle_rad: 1.0472
   pwm_min_us: 500
   pwm_max_us: 2520
   invert: false
@@ -132,8 +133,8 @@ pan:  # channel 0 - confirmed neck_joint (pan).
 tilt:  # channel 1 - confirmed head_joint (tilt).
   adc_min: 607
   adc_max: 3623
-  min_angle_rad: -1.57
-  max_angle_rad: 1.57
+  min_angle_rad: -1.0472
+  max_angle_rad: 1.0472
   pwm_min_us: 500
   pwm_max_us: 2550
   invert: false

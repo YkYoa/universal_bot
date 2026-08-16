@@ -361,6 +361,8 @@ void SequenceFsm::dispatch(const Step& step)
     dispatchHandPose(step);
   } else if (step.type == "gripper") {
     dispatchGripper(step);
+  } else if (step.type == "move_groups") {
+    dispatchMoveGroups(step);
   } else if (step.type == "wait" || step.type == "teach_hold") {
     dispatchWait(step);
   } else if (isSceneStep(step.type)) {

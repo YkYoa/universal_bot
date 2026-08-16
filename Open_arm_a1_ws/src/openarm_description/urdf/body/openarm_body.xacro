@@ -120,7 +120,7 @@
         <parent link="${prefix}link0" />
         <child link="${prefix}neck_link" />
         <axis xyz="0 0 -1" />
-        <limit lower="-1.57" upper="1.57" effort="10" velocity="3" />
+        <limit lower="-1.0472" upper="1.0472" effort="10" velocity="3" />
       </joint>
 
       <link name="${prefix}head_link">
@@ -151,7 +151,7 @@
         <parent link="${prefix}neck_link" />
         <child link="${prefix}head_link" />
         <axis xyz="0.034355 -0.034358 0.99882" />
-        <limit lower="-1.57" upper="1.57" effort="10" velocity="3" />
+        <limit lower="-1.0472" upper="1.0472" effort="10" velocity="3" />
       </joint>
 
       <!-- Cosmetic outer shell, visual-only (no collision geometry, doesn't
