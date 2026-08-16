@@ -23,6 +23,7 @@ def launch_setup(context, *args, **kwargs):
     use_rviz = LaunchConfiguration("use_rviz")
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_robot_skills = LaunchConfiguration("use_robot_skills")
+    use_move_group = LaunchConfiguration("use_move_group")
     ee_type = LaunchConfiguration("ee_type")
     body_type = LaunchConfiguration("body_type")
     is_amazing_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'amazing_hand'"]))
@@ -139,35 +140,38 @@ def launch_setup(context, *args, **kwargs):
         output="both",
     )
 
+    kSpawnerTimeoutArgs = ["--service-call-timeout", "30"]
+
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"],
+        arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager",
+                   *kSpawnerTimeoutArgs],
     )
 
     left_arm_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["left_arm_controller", "-c", "/controller_manager"],
+        arguments=["left_arm_controller", "-c", "/controller_manager", *kSpawnerTimeoutArgs],
     )
 
     right_arm_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["right_arm_controller", "-c", "/controller_manager"],
+        arguments=["right_arm_controller", "-c", "/controller_manager", *kSpawnerTimeoutArgs],
     )
 
     left_gripper_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["left_gripper_controller", "-c", "/controller_manager"],
+        arguments=["left_gripper_controller", "-c", "/controller_manager", *kSpawnerTimeoutArgs],
         condition=is_openarm_hand,
     )
 
     right_gripper_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["right_gripper_controller", "-c", "/controller_manager"],
+        arguments=["right_gripper_controller", "-c", "/controller_manager", *kSpawnerTimeoutArgs],
         condition=is_openarm_hand,
     )
 
@@ -179,7 +183,7 @@ def launch_setup(context, *args, **kwargs):
         Node(
             package="controller_manager",
             executable="spawner",
-            arguments=[name, "-c", "/controller_manager"],
+            arguments=[name, "-c", "/controller_manager", *kSpawnerTimeoutArgs],
             condition=is_amazing_hand,
         )
         for name in ("left_hand_j1_controller", "left_hand_j2_controller",
@@ -190,7 +194,7 @@ def launch_setup(context, *args, **kwargs):
     head_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["head_controller", "-c", "/controller_manager"],
+        arguments=["head_controller", "-c", "/controller_manager", *kSpawnerTimeoutArgs],
         condition=is_body_v2,
     )
 
@@ -215,6 +219,7 @@ def launch_setup(context, *args, **kwargs):
             bounds_tolerances,
             {"use_sim_time": use_sim_time},
         ],
+        condition=IfCondition(use_move_group),
     )
 
     # ── Robot Skills Node (MoveItCpp in-process backend) ──
@@ -235,6 +240,13 @@ def launch_setup(context, *args, **kwargs):
             planning_scene_monitor,
             bounds_tolerances,
             {"use_sim_time": use_sim_time},
+        ],
+        remappings=[
+            ("/attached_collision_object", "/robot_skills/attached_collision_object"),
+            ("/collision_object", "/robot_skills/collision_object"),
+            ("/planning_scene_world", "/robot_skills/planning_scene_world"),
+            ("/planning_scene", "/robot_skills/planning_scene"),
+            ("/monitored_planning_scene", "/robot_skills/monitored_planning_scene"),
         ],
         condition=IfCondition(use_robot_skills),
     )
@@ -317,11 +329,23 @@ def generate_launch_description():
     use_robot_skills_arg = DeclareLaunchArgument(
         "use_robot_skills",
         default_value="true",
-        description="Whether to launch robot_skills_node (true) or not (false). It runs its own "
-                     "independent MoveItCpp instance -- full robot model load, planning scene "
-                     "monitor, and FK/collision computation, duplicating move_group's. RViz's "
-                     "Plan & Execute only talks to move_group, so set false for interactive "
-                     "RViz-only sessions to roughly halve planning-side CPU load.",
+        description="Whether to launch robot_skills_node (true) or not (false). This is the node "
+                     "sequence_executor, moveit_api, and openarm_demo actually plan/execute "
+                     "through (its own MoveItCpp instance, own PlanningSceneMonitor, namespaced "
+                     "under /robot_skills/*). Leave this true for basically everything - it is "
+                     "not optional for sequence playback. See use_move_group for the other node.",
+    )
+    use_move_group_arg = DeclareLaunchArgument(
+        "use_move_group",
+        default_value="false",
+        description="Whether to launch move_group (true) or not (false, default). move_group is "
+                     "only there for RViz's interactive MotionPlanning panel (drag markers, manual "
+                     "Plan & Execute) - nothing in this workspace's automated paths (sequence_executor, "
+                     "moveit_api, openarm_demo) talks to it. Running it is a second full planning "
+                     "stack (OMPL+Pilz+CHOMP+STOMP, its own PlanningSceneMonitor) alongside "
+                     "robot_skills_node's, which was the main source of RViz lag during sequence "
+                     "playback. Set true only for manual pose testing, and enable the 'MoveIt' "
+                     "display in RViz to match.",
     )
 
     return LaunchDescription(
@@ -333,6 +357,7 @@ def generate_launch_description():
             ee_type_arg,
             body_type_arg,
             use_robot_skills_arg,
+            use_move_group_arg,
             OpaqueFunction(function=launch_setup),
         ]
     )

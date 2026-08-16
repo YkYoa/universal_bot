@@ -1,12 +1,20 @@
 /**:
   ros__parameters:
     planning_scene_monitor_options:
-      name: "planning_scene_monitor"
+      # NOTE: the *_topic fields below (joint_state_topic, attached_collision_object_topic,
+      # monitored_planning_scene_topic, publish_planning_scene_topic) are declared
+      # `const std::string` in this MoveIt version's MoveItCpp::PlanningSceneMonitorOptions
+      # and are only ever set from their compiled-in defaults - load() does not read them
+      # from ROS params. Setting them here is a silent no-op. To keep this MoveItCpp
+      # instance's scene topics from colliding with move_group's (same defaults, both
+      # nodes in moveit_bimanual.launch.py), remap at the launch level instead - see
+      # the `remappings=` on robot_skills_node in moveit_bimanual.launch.py.
+      name: "robot_skills_planning_scene_monitor"
       robot_description: "robot_description"
       joint_state_topic: "/joint_states"
-      attached_collision_object_topic: "/planning_scene_monitor"
+      attached_collision_object_topic: "/attached_collision_object"
       publish_planning_scene_topic: "/planning_scene"
-      monitored_planning_scene_topic: "/monitored_planning_scene"
+      monitored_planning_scene_topic: "monitored_planning_scene"
       # ros2_control spawner Node actions in launch files aren't serialized
       # (they race for the controller_manager service), so joint_state_broadcaster
       # can take well past 10s to actually activate under load - this crashed
