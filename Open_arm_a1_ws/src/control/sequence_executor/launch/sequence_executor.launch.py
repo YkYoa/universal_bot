@@ -4,7 +4,8 @@ sequence_executor.launch.py
 ─────────────────────────────────────────────────────────────────────────────
 Launches the full motion-sequence stack:
   1. robot_state_publisher
-  2. ros2_control (fake hardware)
+  2. ros2_control (fake hardware by default; use_fake_hardware:=false/head:=true
+     for real hardware, same toggles as moveit_bimanual.launch.py)
   3. Controller spawners (arms + grippers)
   4. MoveIt2 move_group (with OMPL + Pilz pipelines)
   5. sequence_executor_node  <- reads sequence.yaml directly, runs one
@@ -51,14 +52,49 @@ def launch_setup(context, *args, **kwargs):
     db_path      = LaunchConfiguration("db_path")
     executor_package    = LaunchConfiguration("executor_package")
     executor_executable = LaunchConfiguration("executor_executable")
+    use_fake_hardware = LaunchConfiguration("use_fake_hardware")
+    head         = LaunchConfiguration("head")
+
+    # ── Hardware config (same file bringup.launch.py reads) ─────────────────
+    # Single source of truth for control_mode/position_mode_velocity/
+    # hand_rotate_ratio/CAN interfaces, so this launch and bringup.launch.py
+    # can never silently disagree (previously this file passed none of these
+    # to the xacro, so it silently fell back to openarm.bimanual.ros2_control
+    # .xacro's own control_mode:=^|mit default - real hardware runs through
+    # this launch were actually in MIT mode even when hardware_config.yaml
+    # said "position", with no indication in any log here).
+    hw_cfg_pkg = get_package_share_directory("robot_hardware_interface")
+    with open(os.path.join(hw_cfg_pkg, "config", "hardware_config.yaml")) as f:
+        hw_cfg = yaml.safe_load(f)
+    control_mode = hw_cfg.get("control_mode", "mit")
+    position_mode_velocity = str(hw_cfg.get("position_mode_velocity", 1.0))
+    hand_rotate_ratio = str(hw_cfg.get("hand_rotate_ratio", 1.0))
+    left_can_interface = hw_cfg["interfaces"]["left_can"]
+    right_can_interface = hw_cfg["interfaces"]["right_can"]
+    arms_real = use_fake_hardware.perform(context) == "false"
+    print(f"[sequence_executor] control_mode={control_mode} "
+          f"(left={left_can_interface}, right={right_can_interface}, "
+          f"position_mode_velocity={position_mode_velocity}, "
+          f"hand_rotate_ratio={hand_rotate_ratio})")
+    if control_mode == "torque" and arms_real:
+        print("[sequence_executor] WARNING: control_mode=torque - unlike bringup.launch.py, "
+              "this launch does NOT spawn/auto-enable a gravity_comp_controller, so the arms "
+              "will build in torque mode with no controller driving them. Use bringup.launch.py "
+              "for control_mode=torque, or switch hardware_config.yaml back to mit/position.")
 
     # ── Robot description ────────────────────────────────────────────────────
     robot_description_content = Command([
         PathJoinSubstitution([FindExecutable(name="xacro")]), " ",
         PathJoinSubstitution([FindPackageShare("openarm_description"),
                               "urdf", "robot", "v10.urdf.xacro"]),
-        " bimanual:=true ros2_control:=true use_fake_hardware:=true",
-        " head_use_fake_hardware:=true",
+        " bimanual:=true ros2_control:=true use_fake_hardware:=", use_fake_hardware,
+        " head_use_fake_hardware:=",
+        PythonExpression(["'false' if '", head, "' == 'true' else 'true'"]),
+        " left_can_interface:=", left_can_interface,
+        " right_can_interface:=", right_can_interface,
+        " control_mode:=", control_mode,
+        " position_mode_velocity:=", position_mode_velocity,
+        " hand_rotate_ratio:=", hand_rotate_ratio,
         " mobile_base:=true",
         " mobile_base_xyz:='0 0 0.31'",
         " mobile_base_body_xyz:='0 0 0'",
@@ -115,6 +151,20 @@ def launch_setup(context, *args, **kwargs):
     }
 
     # ── Nodes ────────────────────────────────────────────────────────────────
+
+    # head:=true puts HeadHW in the ros2_control block, but HeadHW only
+    # talks over a UDS socket to this process - without it, on_activate()
+    # retries for 10s then throws, which kills the WHOLE ros2_control_node
+    # (all hardware, not just the head - confirmed on real hardware
+    # 2026-08-16: "Failed to set the initial state of the component ...
+    # to active" terminated ros2_control_node entirely). See the identical
+    # gap this had in moveit_bimanual.launch.py.
+    head_motor_driver_node = Node(
+        package="communication_devices",
+        executable="head_motor_driver_node",
+        output="screen",
+        condition=IfCondition(PythonExpression(["'", head, "' == 'true'"])),
+    )
 
     rsp = Node(
         package="robot_state_publisher",
@@ -252,6 +302,7 @@ def launch_setup(context, *args, **kwargs):
     )
 
     return [
+        head_motor_driver_node,
         rsp,
         ros2_ctrl,
         *spawners,
@@ -272,7 +323,19 @@ def generate_launch_description():
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument(
             "ee_type", default_value="openarm_hand",
-            description="End-effector type: openarm_hand or amazing_hand (fake either way here)."
+            description="End-effector type: openarm_hand or amazing_hand."
+        ),
+        DeclareLaunchArgument(
+            "use_fake_hardware", default_value="true",
+            description="Whether to run the arms/base with fake/mock hardware (true, default) "
+                        "or real hardware (false) - see openarm.bimanual.ros2_control.xacro for "
+                        "the CAN interfaces/control_mode defaults used when false.",
+        ),
+        DeclareLaunchArgument(
+            "head", default_value="false",
+            description="Whether the head/neck board is physically present and wired (true) or "
+                        "not (false, default) - independent of use_fake_hardware, same as "
+                        "moveit_bimanual.launch.py.",
         ),
         DeclareLaunchArgument(
             "isaacsim",

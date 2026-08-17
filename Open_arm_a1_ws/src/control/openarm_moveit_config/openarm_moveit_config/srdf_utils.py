@@ -69,6 +69,36 @@ def load_srdf_for_ee_type(srdf_path: str, ee_type: str, body_type: str = None) -
             '  <passive_joint name="openarm_right_finger_joint1"/>\n\n'
             "  <!-- Virtual joints -->"
         )
+    elif ee_type == "none":
+        # No end effector attached at all (hand:=false in the URDF, per
+        # v10.urdf.xacro's `ee_type == 'none'` -> hand=false branch) - NO
+        # hand_tcp link exists for either side (both openarm_hand.xacro's
+        # and amazing_hand's hand_tcp creation are gated on `hand`), so
+        # left_arm/right_arm's <chain tip_link="..._hand_tcp"/> would fail
+        # to build ("Group '...' not found in model") unless retargeted to
+        # link7 - the last link that exists on a bare arm. "Motor 8"
+        # (finger_joint1) also doesn't exist without a hand (it's declared
+        # inside the same hand-gated xacro blocks), so no passive_joint
+        # workaround is needed here the way amazing_hand needs one.
+        content = (
+            content
+            .replace('tip_link="openarm_left_hand_tcp"', 'tip_link="openarm_left_link7"')
+            .replace('tip_link="openarm_right_hand_tcp"', 'tip_link="openarm_right_link7"')
+        )
+        # Strip both hand types' groups/group_states - neither exists.
+        content = re.sub(
+            r'  <group name="(?:left|right)_(?:gripper|hand_fingers)">.*?</group>\n\n',
+            '', content, flags=re.DOTALL)
+        content = re.sub(
+            r'  <group_state name="(?:open|close|home)" group="(?:left|right)_(?:gripper|hand_fingers)">.*?</group_state>\n\n',
+            '', content, flags=re.DOTALL)
+        content = re.sub(
+            r'  <end_effector name="(?:left|right)_hand"[^\n]*/>\n', '', content)
+        content = '\n'.join(
+            line for line in content.split('\n')
+            if 'ahand' not in line
+            and not re.search(r'openarm_(?:left|right)_(?:hand"|left_finger|right_finger)', line)
+        )
     elif ee_type == "openarm_hand":
         # Mirror image: strip the amazing_hand-only groups/group_states and
         # any disable_collisions line for its ahand_* links. The
@@ -130,9 +160,16 @@ def load_moveit_controllers_for_ee_type(yaml_path: str, ee_type: str) -> dict:
     params = raw["/**"]["ros__parameters"]
     scm = params["moveit_simple_controller_manager"]
 
-    keep = _CONTROLLERS_BY_EE_TYPE.get(ee_type)
-    drop = _CONTROLLERS_BY_EE_TYPE.get(
-        "amazing_hand" if ee_type == "openarm_hand" else "openarm_hand", ())
+    if ee_type == "none":
+        # No hand at all - neither controller pair is spawned (bringup's
+        # is_openarm_hand/is_amazing_hand spawner conditions are both
+        # false), so drop both rather than leaving either dangling.
+        keep, drop = (), (*_CONTROLLERS_BY_EE_TYPE["openarm_hand"],
+                          *_CONTROLLERS_BY_EE_TYPE["amazing_hand"])
+    else:
+        keep = _CONTROLLERS_BY_EE_TYPE.get(ee_type)
+        drop = _CONTROLLERS_BY_EE_TYPE.get(
+            "amazing_hand" if ee_type == "openarm_hand" else "openarm_hand", ())
     if keep is not None:
         scm["controller_names"] = [n for n in scm["controller_names"] if n not in drop]
         for name in drop:

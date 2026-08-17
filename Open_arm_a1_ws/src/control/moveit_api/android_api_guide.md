@@ -3,6 +3,24 @@
 Base URL `http://<robot-ip>:5050`, `Content-Type: application/json`.
 Everything is CORS-open, no auth.
 
+## 0. Safety
+
+* **Power loss**: if the robot loses electrical power while a sequence is
+  running, hit the physical emergency-stop button first. Once power is
+  confirmed off, the arms have no holding torque and can be moved freely —
+  pull each arm by hand back to its home position before power is restored,
+  so the robot doesn't boot up with an unexpected pose as its "current"
+  state.
+* **Startup**: after every bringup (power-on or app reconnect), run
+  `builtin:action_01` ("Home both arms") first, before anything else in the
+  sequence list. Do not assume the arm is already at a known pose just
+  because the app is showing `IDLE`.
+* **Before switching actions**: always run `builtin:action_01` again before
+  starting a *different* action or sequence, not just at startup. Every
+  other action/sequence assumes it starts from home - going straight from
+  one action into another without homing in between can plan a valid but
+  unexpected path between two arbitrary poses.
+
 There are three groups of endpoints:
 
 | Group | What it does | Served by |

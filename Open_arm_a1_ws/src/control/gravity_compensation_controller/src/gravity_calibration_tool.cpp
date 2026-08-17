@@ -65,6 +65,12 @@ namespace
 const std::vector<std::string> kArmJoints = {
   "openarm_left_joint1", "openarm_left_joint2", "openarm_left_joint3", "openarm_left_joint4",
   "openarm_left_joint5", "openarm_left_joint6", "openarm_left_joint7",
+  // Motor 8 (amazing_hand connector rotation) is a real revolute joint on
+  // the base_link->tip_link chain now (see the ahand_connector comment in
+  // openarm_robot.xacro) - must be listed here to match, same fix/reason as
+  // left_gravity_comp_controller's `joints` param in bimanual_controllers
+  // .yaml.
+  "openarm_left_finger_joint1",
 };
 constexpr const char* kBaseLink = "openarm_body_link0";
 constexpr const char* kTipLink = "openarm_left_hand_tcp";

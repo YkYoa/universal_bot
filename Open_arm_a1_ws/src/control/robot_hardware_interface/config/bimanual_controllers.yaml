@@ -1,6 +1,16 @@
 controller_manager:
   ros__parameters:
-    update_rate: 100  # Hz (Giữ nguyên 100Hz từ cấu hình cũ của bạn)
+    # 100Hz (reverted 2026-08-17 - briefly tried 50Hz to reduce combined
+    # bimanual CAN load on the shared can0/can1 USB-CAN adapter, PEAK
+    # PCAN-USB Pro FD, but that turned out not to fix action_02's right-arm
+    # issue anyway - see openarm_bimanual action_02 history - and 50Hz
+    # caused visible jerk at low velocity/acceleration scaling (0.1/0.1) on
+    # single-arm actions: at low speed each trajectory point's position
+    # delta shrinks toward the joint's static-friction/deadband threshold,
+    # and the coarser 20ms update period made that worse. action_02 is
+    # being replaced with a single-arm-only approach instead of chasing the
+    # bimanual bus-sharing issue further.)
+    update_rate: 100  # Hz
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
@@ -10,6 +20,38 @@ controller_manager:
 
     right_arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
+
+    # Raw ForwardCommandController pair per side, matching upstream
+    # (enactic/openarm_ros2's openarm_bimanual_moveit_controllers.yaml) -
+    # alternative to left_arm_controller/right_arm_controller's trajectory
+    # interpolation, for streaming a single position or velocity target
+    # directly. Not auto-spawned (inactive controller_manager entries only,
+    # like left_gravity_comp_controller below) - load/activate explicitly
+    # when wanted, and don't run one of these and *_arm_controller active on
+    # the same joints simultaneously (duplicate command interface claim).
+    #
+    # CAVEAT (2026-08-16): *_forward_velocity_controller's velocity command
+    # only actually reaches the motors when control_mode: mit is set in
+    # hardware_config.yaml - OpenArm_v10HW::write()'s MIT branch is the only
+    # one that reads vel_commands_ (as MITParam's dq, alongside pos_commands_
+    # and the tuned per-joint kp_/kd_ - see control_gains.yaml). Under
+    # control_mode: position, vel_commands_ is never read (posvel_control_all
+    # always uses the fixed position_mode_velocity_ from hardware_config.yaml
+    # instead), and control_mode: velocity is an explicit no-op stub in
+    # hardware_interface.cpp ("not implemented against the current
+    # libopenarm-can - no commands sent"). *_forward_position_controller
+    # works under any control_mode, same as *_arm_controller.
+    left_forward_position_controller:
+      type: forward_command_controller/ForwardCommandController
+
+    left_forward_velocity_controller:
+      type: forward_command_controller/ForwardCommandController
+
+    right_forward_position_controller:
+      type: forward_command_controller/ForwardCommandController
+
+    right_forward_velocity_controller:
+      type: forward_command_controller/ForwardCommandController
 
     # Free-drive/hand-guiding (see gravity_compensation_controller package).
     # Only meaningful when control_mode: torque is set in hardware_config.yaml
@@ -97,6 +139,70 @@ right_arm_controller:
       - position
       - velocity
 
+left_forward_position_controller:
+  ros__parameters:
+    joints:
+      - openarm_left_joint1
+      - openarm_left_joint2
+      - openarm_left_joint3
+      - openarm_left_joint4
+      - openarm_left_joint5
+      - openarm_left_joint6
+      - openarm_left_joint7
+    interface_name: position
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+
+left_forward_velocity_controller:
+  ros__parameters:
+    joints:
+      - openarm_left_joint1
+      - openarm_left_joint2
+      - openarm_left_joint3
+      - openarm_left_joint4
+      - openarm_left_joint5
+      - openarm_left_joint6
+      - openarm_left_joint7
+    interface_name: velocity
+    command_interfaces:
+      - velocity
+    state_interfaces:
+      - velocity
+
+right_forward_position_controller:
+  ros__parameters:
+    joints:
+      - openarm_right_joint1
+      - openarm_right_joint2
+      - openarm_right_joint3
+      - openarm_right_joint4
+      - openarm_right_joint5
+      - openarm_right_joint6
+      - openarm_right_joint7
+    interface_name: position
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+
+right_forward_velocity_controller:
+  ros__parameters:
+    joints:
+      - openarm_right_joint1
+      - openarm_right_joint2
+      - openarm_right_joint3
+      - openarm_right_joint4
+      - openarm_right_joint5
+      - openarm_right_joint6
+      - openarm_right_joint7
+    interface_name: velocity
+    command_interfaces:
+      - velocity
+    state_interfaces:
+      - velocity
+
 left_gravity_comp_controller:
   ros__parameters:
     joints:
@@ -107,17 +213,28 @@ left_gravity_comp_controller:
       - openarm_left_joint5
       - openarm_left_joint6
       - openarm_left_joint7
+      - openarm_left_finger_joint1
     base_link: openarm_body_link0
-    # hand_tcp (not link7) so the gripper's mass (0.35kg "hand" link, fixed-
-    # jointed straight onto link7 - adds zero DOF to the KDL chain) is
-    # included in the gravity model. Only valid when launched with
-    # ee_type:=openarm_hand hand:=true (what this workspace normally runs) -
-    # revert to openarm_left_link7 if launched without the gripper attached,
-    # or on_configure() will fail to find this link in the URDF. Left/right
-    # fingers (~0.036kg each) are NOT included - they're a side branch off
-    # "hand", not on the direct base->tip path a KDL chain can follow.
     tip_link: openarm_left_hand_tcp
     ramp_duration_sec: 2.0
+    # One value per `joints` entry above, in order (joint1..7, finger_joint1).
+    # joint7 raised to 1.0 (2026-08-17): it holds worse than the others -
+    # its gravity torque is ~0 across its whole range (mass near its own
+    # rotation axis), so it has no equilibrium point of its own and relies
+    # entirely on this damping to kill drift/momentum after release.
+    joint_damping_nm_per_rad_s: [0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 1.0, 0.45]
+    # Virtual detent (2026-08-17): damping alone only slows joint7's drift,
+    # it can't stop it (no gravity equilibrium of its own to slow toward -
+    # see joint_damping_nm_per_rad_s comment). This adds a light spring back
+    # to wherever the joint was last released (see the controller header's
+    # class doc comment - slew-rate-limited anchor, NOT a velocity
+    # threshold, after the threshold version failed to ever lock onto slow
+    # continuous drift on real hardware). Conservative starting values -
+    # increase joint7's detent_kp entry if it still creeps once the anchor
+    # is catching the drift; increase detent_max_slew_rad_s if slow
+    # deliberate hand motion feels resisted.
+    detent_kp_nm_per_rad: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0]
+    detent_max_slew_rad_s: 0.02
 
 right_gravity_comp_controller:
   ros__parameters:
@@ -129,10 +246,11 @@ right_gravity_comp_controller:
       - openarm_right_joint5
       - openarm_right_joint6
       - openarm_right_joint7
+      - openarm_right_finger_joint1
     base_link: openarm_body_link0
-    # See left_gravity_comp_controller's tip_link comment above.
     tip_link: openarm_right_hand_tcp
     ramp_duration_sec: 2.0
+    joint_damping_nm_per_rad_s: [0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 1.0, 0.45]
 
 left_gripper_controller:
   ros__parameters:
@@ -144,7 +262,6 @@ left_gripper_controller:
     state_interfaces:
       - position
       - velocity
-    # Hold last commanded position after trajectory finishes (prevents auto-close)
     allow_partial_joints_goal: true
     open_loop_control: false
     allow_integration_in_goal_trajectories: true
@@ -168,11 +285,6 @@ right_gripper_controller:
     goal_time: 5.0
     stopped_velocity_tolerance: 0.01
 
-# "Motor 8" repurposed for amazing_hand: see left_hand_rotate_controller's
-# declaration comment above. Same joint (openarm_<side>_finger_joint1), same
-# real CAN motor as left_gripper_controller/right_gripper_controller above -
-# only one of the two controller pairs is ever spawned at a time, gated by
-# ee_type in the launch file.
 left_hand_rotate_controller:
   ros__parameters:
     joints:
@@ -203,9 +315,6 @@ right_hand_rotate_controller:
     goal_time: 5.0
     stopped_velocity_tolerance: 0.01
 
-# amazing_hand: j1<i> = yaw, j2<i> = flexion of finger i (i=1..3, 4=thumb).
-# State interface is position-only (topic_based_ros2_control hardware, same
-# as the standalone control_amazing_hand.launch.py setup).
 left_hand_j1_controller:
   ros__parameters:
     joints: [openarm_left_j11, openarm_left_j12, openarm_left_j13, openarm_left_j14]

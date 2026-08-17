@@ -17,13 +17,20 @@ profiles:
   # ── Pilz planners (deterministic, industrial-grade) ──────────────────────
 
   fast_ptp:
-    description: "Fast point-to-point. No obstacle avoidance. Best for retract/home moves."
+    # Slowed 0.8/0.6 -> 0.4/0.5 (2026-08-17, name kept for the two
+    # sequence.yaml sequences and qvic_actions.cpp's kWaveProfile that
+    # already reference it by this name) - smoothness prioritized over
+    # speed for these wave/loop/ellipse actions per real-hardware jerk
+    # reports; planning_time/num_attempts raised too since more planning
+    # time is an explicit tradeoff worth making for a better/smoother
+    # result, not just a speed cap.
+    description: "Smooth point-to-point. No obstacle avoidance. Best for retract/home/wave moves."
     pipeline_id: pilz_industrial_motion_planner
     planner_id: PTP
-    velocity_scaling: 0.8
-    acceleration_scaling: 0.6
-    planning_time: 2.0
-    num_attempts: 1
+    velocity_scaling: 0.4
+    acceleration_scaling: 0.5
+    planning_time: 5.0
+    num_attempts: 5
 
   linear_approach:
     description: "Straight-line approach to grasp pose. Predictable and precise."
@@ -49,8 +56,8 @@ profiles:
     description: "Default obstacle-aware planning. Good balance of speed and path quality."
     pipeline_id: ompl
     planner_id: RRTConnectkConfigDefault
-    velocity_scaling: 0.3
-    acceleration_scaling: 0.3
+    velocity_scaling: 0.4
+    acceleration_scaling: 0.4
     planning_time: 5.0
     num_attempts: 10
 

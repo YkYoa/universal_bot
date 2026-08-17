@@ -675,7 +675,22 @@ void SequenceFsm::runBuiltin()
   context.hand = clients_.hand;
   context.scene = clients_.scene;
   context.source = source_;
-  context.cancelled = [this]() { return cancel_requested_; };
+  // Not just cancel_requested_: for a builtin with nothing in flight on
+  // clients_.skill (e.g. headRotate(), which only ever calls hand->setHead()
+  // - cancelActiveGoal() has no skill goal to find), SequenceFsm::cancel()
+  // takes the "!goal_in_flight" branch and calls finish() SYNCHRONOUSLY,
+  // which resets cancel_requested_ back to false as part of its own
+  // cleanup (see finish()'s comment: "run_id_ moves on ... so any late
+  // callback is ignored") - by the time this builtin's own loop next checks
+  // cancelled(), the flag is already false again and it spins forever,
+  // confirmed on real hardware (2026-08-17) as action_03 needing the whole
+  // qvic_2026 process killed to stop. run_id_ is finish()'s actual
+  // "this run is over" signal and is never reset back, so comparing
+  // against the value captured here is the reliable check.
+  const int run_id_at_start = run_id_;
+  context.cancelled = [this, run_id_at_start]() {
+    return cancel_requested_ || run_id_ != run_id_at_start;
+  };
 
   builtin_->run(context, [this](bool ok, const std::string& error) {
     if (!ok) {

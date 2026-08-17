@@ -1,5 +1,6 @@
 #include "motion_planner/moveit_cpp_planner_manager.hpp"
 #include <algorithm>
+#include <cstdlib>
 #include <moveit/robot_state/conversions.hpp>
 #include <moveit/robot_state/cartesian_interpolator.hpp>
 #include <moveit/robot_trajectory/robot_trajectory.hpp>
@@ -17,7 +18,11 @@ namespace {
 
 const double TOLERANCE = 0.001;
 
-const std::string PLAN_DIR = "/home/hans/universal_bot/plan";
+// Was hardcoded to one developer's laptop home directory - failed with
+// "Permission denied" (silently non-fatal, just skips saving) on any other
+// checkout, e.g. the real robot's own ubuntu@IQ9075 account (confirmed
+// 2026-08-17). $HOME resolves per-machine instead.
+const std::string PLAN_DIR = std::string(std::getenv("HOME") ? std::getenv("HOME") : "/tmp") + "/.ros/plans";
 
 // moveit::core::RobotState::setJointGroupPositions() asserts (SIGABRT, taking
 // down the whole robot_skills_node - every in-flight goal, not just this one)
@@ -185,7 +190,16 @@ std::vector<moveit::core::RobotStatePtr> blendJointSequenceCorners(
     const std::vector<moveit::core::RobotStatePtr>& states, const std::vector<size_t>& corner_indices,
     const std::string& group_name)
 {
-    constexpr size_t kBlendWindow = 5;  // points on each side of a corner, before clamping
+    // Points on each side of a corner, before clamping. Lowered from 5 to 2
+    // (2026-08-17): if a segment between two consecutive user waypoints
+    // produces fewer interior trajectory states than 2*kBlendWindow, the
+    // window/2 clamp below hits 0 and that corner is silently skipped
+    // (falls straight through to the unblended path) - confirmed on real
+    // hardware as violent stop-start motion at every waypoint on a
+    // closely-spaced ~20-point arc (action_02/waveEllipse), where each
+    // inter-waypoint OMPL/Pilz segment is short enough to not clear the
+    // old window=5 threshold at almost any corner.
+    constexpr size_t kBlendWindow = 2;
 
     std::vector<moveit::core::RobotStatePtr> blended = states;
 
@@ -265,11 +279,16 @@ bool MoveItCppPlannerManager::initialize(const std::shared_ptr<rclcpp::Node>& no
 
 std::string MoveItCppPlannerManager::ee_link_for_group(const std::string& group) const
 {
-    if (group == "left_arm") {
-        return "openarm_left_hand_tcp";
-    } else if (group == "right_arm") {
-        return "openarm_right_hand_tcp";
-    }
+    // No hardcoded per-group link names here on purpose: left_arm/right_arm's
+    // actual tip link depends on ee_type (openarm_left_hand_tcp normally,
+    // openarm_left_link7 when ee_type:=none has no hand_tcp at all - see
+    // srdf_utils.py's load_srdf_for_ee_type). A hardcoded "...hand_tcp"
+    // fast-path here used to silently return a dangling link name for
+    // ee_type:=none instead of falling through to the dynamic lookup below,
+    // which every caller already null-checks correctly - moveit::core::
+    // RobotState::getGlobalLinkTransform() on that dangling name threw
+    // "Invalid link" and crashed robot_skills_node (confirmed on real
+    // hardware, 2026-08-17).
 
     // Dynamic fallback using JointModelGroup end effector tips
     if (moveit_cpp_ && moveit_cpp_->getRobotModel()) {
@@ -306,6 +325,24 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
     }
 
     std::string filename = get_plan_filename(request);
+    // A cache key built only from group name + joint values collides across
+    // robot topologies that happen to share both: e.g. "left_arm" is 7-DOF
+    // under ee_type:=openarm_hand but 8-DOF under ee_type:=amazing_hand (see
+    // checkJointVectorSize's comment), and openarm_hand's own gripper reuses
+    // the literal joint name "openarm_left_finger_joint1" for a completely
+    // different mechanism (see amazing_hand_connector's joint comment in
+    // openarm_robot.xacro) - so the joint-name/value check below, which only
+    // confirms the cached trajectory's joint names exist *somewhere* in the
+    // current robot model, does not catch the mismatch. A plan cached for one
+    // topology then gets "successfully loaded" and fails at *execution* under
+    // the other (no controller covers that joint set there). Folding the
+    // group's live DOF count into the filename forces a fresh plan whenever
+    // the topology actually differs, without having to solve the general
+    // cross-topology validation problem here.
+    if (const moveit::core::JointModelGroup* jmg =
+            moveit_cpp_ ? moveit_cpp_->getRobotModel()->getJointModelGroup(request.getGroupName()) : nullptr) {
+        filename = "dof" + std::to_string(jmg->getVariableCount()) + "_" + filename;
+    }
     std::filesystem::path plan_filepath = std::filesystem::path(PLAN_DIR) / filename;
 
     // Check if the plan is already cached. std::filesystem::exists() (the

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <future>
 #include <sstream>
 
@@ -20,6 +21,12 @@ controller_interface::CallbackReturn GravityCompensationController::on_init()
   base_link_ = node->declare_parameter<std::string>("base_link", "openarm_body_link0");
   tip_link_ = node->declare_parameter<std::string>("tip_link", "");
   ramp_duration_sec_ = node->declare_parameter<double>("ramp_duration_sec", 2.0);
+  joint_damping_ = node->declare_parameter<std::vector<double>>(
+    "joint_damping_nm_per_rad_s", std::vector<double>{});
+  detent_kp_ = node->declare_parameter<std::vector<double>>(
+    "detent_kp_nm_per_rad", std::vector<double>{});
+  detent_max_slew_ = node->declare_parameter<double>(
+    "detent_max_slew_rad_s", 0.02);
 
   if (joint_names_.empty()) {
     RCLCPP_ERROR(node->get_logger(), "'joints' parameter is empty");
@@ -49,6 +56,7 @@ controller_interface::InterfaceConfiguration GravityCompensationController::stat
   config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
   for (const auto& joint : joint_names_) {
     config.names.push_back(joint + "/position");
+    config.names.push_back(joint + "/velocity");
   }
   return config;
 }
@@ -124,9 +132,31 @@ controller_interface::CallbackReturn GravityCompensationController::on_configure
     return controller_interface::CallbackReturn::ERROR;
   }
 
+  if (joint_damping_.empty()) {
+    joint_damping_.assign(joint_names_.size(), 0.0);
+  } else if (joint_damping_.size() != joint_names_.size()) {
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "'joint_damping_nm_per_rad_s' has %zu entries, expected %zu (one per 'joints' entry)",
+      joint_damping_.size(), joint_names_.size());
+    return controller_interface::CallbackReturn::ERROR;
+  }
+
+  if (detent_kp_.empty()) {
+    detent_kp_.assign(joint_names_.size(), 0.0);
+  } else if (detent_kp_.size() != joint_names_.size()) {
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "'detent_kp_nm_per_rad' has %zu entries, expected %zu (one per 'joints' entry)",
+      detent_kp_.size(), joint_names_.size());
+    return controller_interface::CallbackReturn::ERROR;
+  }
+
   dyn_param_ = std::make_unique<KDL::ChainDynParam>(kdl_chain_, KDL::Vector(0.0, 0.0, -9.81));
   q_ = KDL::JntArray(kdl_chain_.getNrOfJoints());
+  qd_ = KDL::JntArray(kdl_chain_.getNrOfJoints());
   gravity_torques_ = KDL::JntArray(kdl_chain_.getNrOfJoints());
+  hold_position_ = KDL::JntArray(kdl_chain_.getNrOfJoints());
 
   RCLCPP_INFO(
     node->get_logger(), "Configured gravity compensation for %zu joints ('%s' -> '%s'), ramp=%.1fs",
@@ -140,6 +170,7 @@ controller_interface::CallbackReturn GravityCompensationController::on_activate(
 {
   enable_requested_ = false;
   current_scale_ = 0.0;
+  hold_initialized_ = false;
 
   auto node = get_node();
   enable_service_ = node->create_service<std_srvs::srv::SetBool>(
@@ -174,12 +205,33 @@ controller_interface::return_type GravityCompensationController::update(
   const rclcpp::Time& /*time*/, const rclcpp::Duration& period)
 {
   for (std::size_t i = 0; i < joint_names_.size(); ++i) {
-    const auto position = state_interfaces_[i].get_optional<double>();
+    // state_interface_configuration() lists position then velocity per
+    // joint, in that order, so they land at consecutive indices here.
+    const auto position = state_interfaces_[2 * i].get_optional<double>();
     if (position.has_value()) {
       q_(i) = position.value();
     }
     // else: keep the previous q_(i) - a single missed read shouldn't zero
     // out the gravity model for that joint.
+    const auto velocity = state_interfaces_[2 * i + 1].get_optional<double>();
+    qd_(i) = velocity.value_or(0.0);
+  }
+
+  if (!hold_initialized_) {
+    // First cycle after activation - anchor the detent to wherever the arm
+    // actually is right now, not some stale/zero default.
+    for (std::size_t i = 0; i < joint_names_.size(); ++i) hold_position_(i) = q_(i);
+    hold_initialized_ = true;
+  }
+  {
+    // Anchor chases q_ every cycle, capped at detent_max_slew_ rad/s - see
+    // the class doc comment for why this replaced a velocity-threshold
+    // snap-freeze (that failed to ever lock onto slow continuous drift).
+    const double max_step = detent_max_slew_ * period.seconds();
+    for (std::size_t i = 0; i < joint_names_.size(); ++i) {
+      const double error = q_(i) - hold_position_(i);
+      hold_position_(i) += std::clamp(error, -max_step, max_step);
+    }
   }
 
   dyn_param_->JntToGravity(q_, gravity_torques_);
@@ -196,7 +248,9 @@ controller_interface::return_type GravityCompensationController::update(
   }
 
   for (std::size_t i = 0; i < joint_names_.size(); ++i) {
-    static_cast<void>(command_interfaces_[i].set_value<double>(gravity_torques_(i) * current_scale_));
+    const double tau_detent = detent_kp_[i] * (hold_position_(i) - q_(i));
+    const double tau = (gravity_torques_(i) + tau_detent - joint_damping_[i] * qd_(i)) * current_scale_;
+    static_cast<void>(command_interfaces_[i].set_value<double>(tau));
   }
 
   return controller_interface::return_type::OK;

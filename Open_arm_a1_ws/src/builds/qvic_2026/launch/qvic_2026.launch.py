@@ -18,12 +18,18 @@ ARM_TO_SEQUENCE = {
 }
 
 # This workspace's actual source tree, not the install-space copy (which
-# colcon build only refreshes when explicitly rebuilt) - hardcoded because
-# this launch file, like the rest of this in-development repo, is only ever
-# run from this one checkout. sequence_executor_node reads this path live
-# at startup, so editing the YAML and relaunching is enough - no separate
-# regen or colcon build step.
-SRC_SEQUENCE_YAML = "/home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/config/sequence.yaml"
+# colcon build only refreshes when explicitly rebuilt) - computed relative
+# to this launch file's own location (not hardcoded to one developer's home
+# directory) since this in-development repo is checked out under different
+# paths on different machines (e.g. /home/hans/... on the laptop,
+# /home/ubuntu/... on the real robot) - a hardcoded absolute path here
+# silently failed to find the file on whichever machine didn't match it,
+# falling back to the sequence store's stale contents with only a printed
+# warning (see the try/except below). sequence_executor_node reads this
+# path live at startup, so editing the YAML and relaunching is enough - no
+# separate regen or colcon build step.
+SRC_SEQUENCE_YAML = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "config", "sequence.yaml")
 
 
 def launch_setup(context, *args, **kwargs):
@@ -92,6 +98,8 @@ def launch_setup(context, *args, **kwargs):
             "use_api": LaunchConfiguration("use_api"),
             "ee_type": ee_type,
             "isaacsim": LaunchConfiguration("isaacsim"),
+            "use_fake_hardware": LaunchConfiguration("use_fake_hardware"),
+            "head": LaunchConfiguration("head"),
         }.items(),
     )
 
@@ -141,5 +149,15 @@ def generate_launch_description():
                         "(amazing_hand for arm:=both or sequence:=hand_open_close, openarm_hand otherwise).",
         ),
         DeclareLaunchArgument("isaacsim", default_value="false"),
+        DeclareLaunchArgument(
+            "use_fake_hardware", default_value="true",
+            description="Whether to run the arms/base with fake/mock hardware (true, default) "
+                        "or real hardware (false).",
+        ),
+        DeclareLaunchArgument(
+            "head", default_value="false",
+            description="Whether the head/neck board is physically present and wired (true) or "
+                        "not (false, default) - independent of use_fake_hardware.",
+        ),
         OpaqueFunction(function=launch_setup),
     ])
