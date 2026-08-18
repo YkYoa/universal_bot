@@ -635,6 +635,68 @@ def control_gripper():
 
 
 # ─────────────────────────────────────────────
+# Head Control
+# ─────────────────────────────────────────────
+
+_HEAD_ROTATE_RAD = 0.1745  # ~10 deg, matches builtin:action_03's current angle
+
+@app.route('/api/head', methods=['POST'])
+def control_head():
+    """
+    Rotate the head. Not MoveIt-planned (head is not a planning group) -
+    goes straight to head_controller, so it's fast and always available
+    regardless of ee_type.
+
+    Request body (JSON), shortcut:
+    {
+        "action": "left"                // or "right" / "home"
+    }
+
+    Request body (JSON), raw:
+    {
+        "pan": 0.0,                     // openarm_body_neck_joint, radians
+        "tilt": 0.1745,                 // openarm_body_head_joint, radians -
+                                          // this is the left/right axis on
+                                          // this rig, despite the name
+        "duration": 0.4                 // optional
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'message': 'JSON body required'}), 400
+
+    duration = float(data.get('duration', 0.4))
+    action = data.get('action')
+
+    if action is not None:
+        if action == 'left':
+            pan, tilt = 0.0, _HEAD_ROTATE_RAD
+        elif action == 'right':
+            pan, tilt = 0.0, -_HEAD_ROTATE_RAD
+        elif action == 'home':
+            pan, tilt = 0.0, 0.0
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'action must be "left", "right", or "home"'
+            }), 400
+    else:
+        pan = data.get('pan')
+        tilt = data.get('tilt')
+        if pan is None or tilt is None:
+            return jsonify({
+                'success': False,
+                'message': 'action ("left"/"right"/"home") or pan+tilt (radians) required'
+            }), 400
+
+    try:
+        result = controller.move_head(float(pan), float(tilt), duration)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ─────────────────────────────────────────────
 # amazing_hand Control (5-finger hand)
 # ─────────────────────────────────────────────
 

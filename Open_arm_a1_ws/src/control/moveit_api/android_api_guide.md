@@ -3,6 +3,28 @@
 Base URL `http://<robot-ip>:5050`, `Content-Type: application/json`.
 Everything is CORS-open, no auth.
 
+## 0.a Connecting
+
+The backend now runs as a systemd service (`openarm-robot.service`) — it
+starts automatically on power-on and restarts itself on failure. **You don't
+need anyone to SSH in and launch anything.** After power-on, give it
+30–60s to bring up MoveIt before expecting `200` from the API.
+
+Which IP to use depends on the network:
+
+| Scenario | Robot IP | Base URL |
+|---|---|---|
+| Shared WiFi (office/dev network) | `192.168.1.226` | `http://192.168.1.226:5050` |
+| Pure local network, no WiFi/internet at all — tablet wired/switched to `end0` alongside the Jetson | `192.168.10.1` | `http://192.168.10.1:5050` |
+
+If you don't know which network the tablet is on, try `GET /api/fsm/state`
+against both; whichever returns `200` (not "connection refused"/timeout) is
+the right one. A `503` means the service is up but the robot backend inside
+it isn't ready yet — retry, don't treat it as a network error.
+
+If the API is unreachable for more than ~2 minutes after power-on, that's a
+real fault (not a "still booting" situation) — flag it, don't retry forever.
+
 ## 0. Safety
 
 * **Power loss**: if the robot loses electrical power while a sequence is
@@ -112,8 +134,27 @@ The web viewer at `/dashboard/fsm.html` is a worked example.
 Returns as soon as the goal is accepted. **Progress comes over the socket**,
 not in this response. A `409` means the robot is busy, faulted, or teaching.
 
-`GET /api/actions` lists the ten hardcoded actions. Run one the same way,
+`GET /api/actions` lists the hardcoded actions. Run one the same way,
 with `{"name": "builtin:action_01"}`.
+
+| id | label | what it does |
+|---|---|---|
+| `action_01` | Home both arms | always run this first, and before switching to a different action |
+| `action_02` | (left ellipse wave) | loops until cancelled |
+| `action_03` | Head rotate | loops left/right until cancelled |
+| `action_04` | Wave left arm | loops until cancelled |
+| `action_05` | Wave right arm | loops until cancelled |
+| `action_06` | Loop right arm | loops until cancelled |
+| `action_07` | Loop left arm | loops until cancelled (mirror of action_06) |
+| `action_08` | (right ellipse wave) | loops until cancelled |
+| `action_09` | Show | both arms to the show pose, one move, then done |
+| `action_10` | Head rotate left | head to +10°, one move, then done |
+| `action_11` | Head rotate right | head to -10°, one move, then done |
+| `action_12` | Head rotate home | head to 0°, one move, then done |
+
+`action_10`/`11`/`12` are the ones to use for discrete left/right/home
+buttons in the app - `action_03` is a different thing (an endless sweep,
+only stoppable with `cancel`).
 
 ---
 
@@ -307,9 +348,9 @@ without the app driving it step by step.
 
 ## 5. Direct control (settings / calibration screens)
 
-Unchanged from before. Groups: `left_arm` (7), `right_arm` (7), `both_arms`
-(14), `left_hand_fingers` (8), `right_hand_fingers` (8), `head` (2).
-Joint names and order: `GET /api/docs` → `planning_groups`.
+Groups: `left_arm` (7), `right_arm` (7), `both_arms` (14),
+`left_hand_fingers` (8), `right_hand_fingers` (8). Joint names and order:
+`GET /api/docs` → `planning_groups`.
 
 * `POST /api/move/joint` — one joint, e.g.
   `{"group":"left_arm","joint":"openarm_left_joint4","value":45,"unit":"deg"}`
@@ -319,6 +360,17 @@ Joint names and order: `GET /api/docs` → `planning_groups`.
 * `POST /api/move/pose`, `POST /api/move/workspace` — Cartesian
 * `POST /api/gripper`, `POST /api/hand` — end effectors
 * `GET /api/status`, `GET /api/pose/<group>` — read back
+
+**`head` is NOT a usable group in `/api/move/joints`** (confirmed 2026-08-18
+— fails with `PLANNING_FAILED`): the head is driven directly by
+`head_controller`, not through a MoveIt planning group at all. Use its own
+endpoint instead:
+
+`POST /api/head` — `{"action": "left"}` / `{"action": "right"}` /
+`{"action": "home"}`, or raw `{"pan": 0.0, "tilt": 0.1745, "duration": 0.4}`.
+This is what the discrete left/right/home buttons should call — same effect
+as `builtin:action_10`/`11`/`12`, just without going through the FSM/sequence
+layer, so use whichever fits how the button is wired.
 
 Values are radians unless you add `"unit": "deg"`.
 Live joint angles stream over Socket.IO: emit `subscribe_joint_states`, listen

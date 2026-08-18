@@ -135,7 +135,15 @@ class MoveItEEController(Node):
             '/right_gripper_controller/follow_joint_trajectory',
             callback_group=self._cb_group,
         )
-        
+        # Head is not a MoveIt planning group (confirmed 2026-08-18 -
+        # /compute_ik-based moves fail with PLANNING_FAILED for it), so it
+        # goes straight to its controller like the grippers do.
+        self._head_client = ActionClient(
+            self, FollowJointTrajectory,
+            '/head_controller/follow_joint_trajectory',
+            callback_group=self._cb_group,
+        )
+
         # ── FK/IK service clients ──
         self._fk_client = self.create_client(
             GetPositionFK, '/compute_fk',
@@ -678,6 +686,44 @@ class MoveItEEController(Node):
         self._wait_for_future(result_future, timeout_sec=duration + 5.0)
         
         return {'success': True, 'message': f'{side} gripper moved to {position:.3f}'}
+
+    def move_head(self, pan: float, tilt: float, duration: float = 0.4) -> dict:
+        """
+        Move the head directly (bypasses MoveIt - see _head_client's comment).
+
+        Args:
+            pan: openarm_body_neck_joint, radians (tilt axis on this rig -
+                 left/right rotation is actually the second joint below)
+            tilt: openarm_body_head_joint, radians (this is the left/right
+                  rotation axis on this rig, despite the name - matches
+                  qvic_2026's headRotate()/action_03 convention)
+            duration: execution time in seconds
+        """
+        if not self._head_client.wait_for_server(timeout_sec=5.0):
+            return {'success': False, 'message': 'head controller not available'}
+
+        goal_msg = FollowJointTrajectory.Goal()
+        goal_msg.trajectory.joint_names = [
+            'openarm_body_neck_joint', 'openarm_body_head_joint']
+
+        point = JointTrajectoryPoint()
+        point.positions = [float(pan), float(tilt)]
+        point.time_from_start.sec = int(duration)
+        point.time_from_start.nanosec = int((duration - int(duration)) * 1e9)
+        goal_msg.trajectory.points = [point]
+
+        self.get_logger().info(f'Moving head to pan={pan:.3f} tilt={tilt:.3f}')
+
+        send_future = self._head_client.send_goal_async(goal_msg)
+        goal_handle = self._wait_for_future(send_future, timeout_sec=5.0)
+
+        if not goal_handle or not goal_handle.accepted:
+            return {'success': False, 'message': 'head goal rejected'}
+
+        result_future = goal_handle.get_result_async()
+        self._wait_for_future(result_future, timeout_sec=duration + 5.0)
+
+        return {'success': True, 'message': f'head moved to pan={pan:.3f} tilt={tilt:.3f}'}
 
     # ──────────────────────────────────────────────
     # amazing_hand Control (5-finger hand, ee_type:=amazing_hand)

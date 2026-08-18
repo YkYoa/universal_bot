@@ -61,19 +61,6 @@ namespace {
 
 constexpr const char* kMotion = sequence_executor::kModeMotion;
 
-BuiltinAction placeholder(const std::string& id, const std::string& label)
-{
-  BuiltinAction action;
-  action.id = id;
-  action.label = label;
-  action.description = "Not implemented yet - fill in " + id + " in qvic_actions.cpp.";
-  action.required_control_mode = sequence_executor::kModeAny;
-  action.run = [id](BuiltinContext&, BuiltinAction::DoneCallback done) {
-    done(false, "builtin action '" + id + "' has no body yet");
-  };
-  return action;
-}
-
 // ── action_01: worked example ────────────────────────────────────────────────
 BuiltinAction homeBothArms()
 {
@@ -309,7 +296,7 @@ BuiltinAction waveRightArmEllipse()
 
 // ── action_03: head rotate ───────────────────────────────────────────────
 
-constexpr double kHeadRotateDeg = 20.0;
+constexpr double kHeadRotateDeg = 10.0;
 constexpr double kHeadRotateRad = kHeadRotateDeg * M_PI / 180.0;
 constexpr double kHeadRotateDurationSec = 0.84;
 
@@ -318,7 +305,7 @@ BuiltinAction headRotate()
   BuiltinAction action;
   action.id = "action_03";
   action.label = "Head rotate";
-  action.description = "Sweep the head between -20 and +20 degrees, until cancelled.";
+  action.description = "Sweep the head between -10 and +10 degrees, until cancelled.";
   // No arm involved - head_controller runs independently of the arm's
   // position/mit control mode.
   action.required_control_mode = sequence_executor::kModeAny;
@@ -336,8 +323,8 @@ BuiltinAction headRotate()
         done(false, "cancelled");
         return;
       }
-      RCLCPP_INFO(logger, "action_03: sweep %d (%s)", ++(*cycle),
-                  to_positive ? "+20deg" : "-20deg");
+      RCLCPP_INFO(logger, "action_03: sweep %d (%s%.0fdeg)", ++(*cycle),
+                  to_positive ? "+" : "-", kHeadRotateDeg);
 
       hand->setHead(0.0, to_positive ? kHeadRotateRad : -kHeadRotateRad,
         kHeadRotateDurationSec,
@@ -358,13 +345,6 @@ BuiltinAction headRotate()
 
 // ── action_04: wave left arm ─────────────────────────────────────────────
 constexpr double kDeg = M_PI / 180.0;
-// NOTE (2026-08-17): trimmed from 8 to 7 values (dropped the trailing
-// hand-joint placeholder) for testing under ee_type:=none, where
-// left_arm/right_arm have no 8th (finger_joint1/hand) variable at all - see
-// srdf_utils.py's load_srdf_for_ee_type "none" branch. Restore the trailing
-// 0.0 if running with ee_type:=openarm_hand/amazing_hand again (hand
-// attached), or these will fail moveToJoint's group-size validation the
-// other way.
 const std::vector<double> kWaveLeftArmStart = {
   -40.0 * kDeg, -10.0 * kDeg, -20.0 * kDeg, 90.0 * kDeg, 88.0 * kDeg, 0.0, 0.0};
 const std::vector<double> kWaveLeftArmEnd = {
@@ -651,6 +631,96 @@ BuiltinAction loopLeftArm()
 
 }  // namespace
 
+// ── action_09: show pose ─────────────────────────────────────────────────
+// Static both-arms pose (no sweep/loop) - one move, then done. Order matches
+// the "both_arms" SRDF group (<group name="left_arm"/><group name="right_arm"/>):
+// 7 left joints followed by 7 right joints.
+const std::vector<double> kShowPose = {
+  0.0, -12.0 * kDeg, 0.0, 48.0 * kDeg, 0.0, 0.0, 0.0,
+  0.0, 12.0 * kDeg, 0.0, 48.0 * kDeg, 0.0, 0.0, 0.0};
+
+BuiltinAction showPose()
+{
+  BuiltinAction action;
+  action.id = "action_09";
+  action.label = "Show";
+  action.description = "Move both arms to the show pose (joint2/joint4 raised).";
+  action.required_control_mode = kMotion;
+
+  action.run = [](BuiltinContext& ctx, BuiltinAction::DoneCallback done) {
+    auto skill = ctx.skill;
+
+    // "safe_rrt" (OMPL), not "fast_ptp" (Pilz PTP) - see homeBothArms' note
+    // above, Pilz PTP fails to plan for the composite "both_arms" group.
+    skill->moveToJoint(
+      "both_arms", kShowPose, "safe_rrt", 0.0, 0.0,
+      [done](bool ok, const std::string& error) {
+        if (!ok) {
+          done(false, "show move failed: " + error);
+          return;
+        }
+        done(true, "");
+      });
+  };
+
+  return action;
+}
+
+// ── action_10/11/12: head rotate left / right / home (single-shot) ───────
+// Same tilt-joint convention as headRotate() (action_03) - see that
+// function's comment for why the "tilt" arg carries the left/right angle
+// on this rig. Unlike action_03, these move once and finish (no sweep),
+// matching /api/head's "left"/"right"/"home" shortcuts and duration.
+constexpr double kHeadMoveDurationSec = 0.4;
+
+BuiltinAction headRotateLeft()
+{
+  BuiltinAction action;
+  action.id = "action_10";
+  action.label = "Head rotate left";
+  action.description = "Move the head to +10 degrees.";
+  action.required_control_mode = sequence_executor::kModeAny;
+
+  action.run = [](BuiltinContext& ctx, BuiltinAction::DoneCallback done) {
+    ctx.hand->setHead(0.0, kHeadRotateRad, kHeadMoveDurationSec,
+      [done](bool ok, const std::string& error) { done(ok, error); });
+  };
+
+  return action;
+}
+
+BuiltinAction headRotateRight()
+{
+  BuiltinAction action;
+  action.id = "action_11";
+  action.label = "Head rotate right";
+  action.description = "Move the head to -10 degrees.";
+  action.required_control_mode = sequence_executor::kModeAny;
+
+  action.run = [](BuiltinContext& ctx, BuiltinAction::DoneCallback done) {
+    ctx.hand->setHead(0.0, -kHeadRotateRad, kHeadMoveDurationSec,
+      [done](bool ok, const std::string& error) { done(ok, error); });
+  };
+
+  return action;
+}
+
+BuiltinAction headRotateHome()
+{
+  BuiltinAction action;
+  action.id = "action_12";
+  action.label = "Head rotate home";
+  action.description = "Move the head back to 0 degrees.";
+  action.required_control_mode = sequence_executor::kModeAny;
+
+  action.run = [](BuiltinContext& ctx, BuiltinAction::DoneCallback done) {
+    ctx.hand->setHead(0.0, 0.0, kHeadMoveDurationSec,
+      [done](bool ok, const std::string& error) { done(ok, error); });
+  };
+
+  return action;
+}
+
 }  // namespace
 
 void registerQvicActions(BuiltinActionRegistry& registry)
@@ -663,9 +733,10 @@ void registerQvicActions(BuiltinActionRegistry& registry)
   registry.add(loopRightArm());
   registry.add(loopLeftArm());
   registry.add(waveRightArmEllipse());
-
-  registry.add(placeholder("action_09", "Action 09"));
-  registry.add(placeholder("action_10", "Action 10"));
+  registry.add(showPose());
+  registry.add(headRotateLeft());
+  registry.add(headRotateRight());
+  registry.add(headRotateHome());
 }
 
 }  // namespace qvic_2026

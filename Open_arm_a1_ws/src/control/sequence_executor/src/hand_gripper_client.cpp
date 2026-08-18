@@ -38,7 +38,22 @@ void HandGripperClient::sendFourJointGoal(
   }
 
   auto client = clientFor(action_name);
-  if (!client->wait_for_action_server(std::chrono::seconds(15))) {
+  // action_server_is_ready() (instant, non-blocking), NOT
+  // wait_for_action_server() (blocking): this callback runs on the
+  // sequence_executor's SingleThreadedExecutor thread (see
+  // executor_app.cpp), so a blocking wait here freezes the WHOLE node -
+  // including its ability to accept new RunSequence goals or FSM commands -
+  // for the full timeout. Confirmed on real hardware (2026-08-18): every
+  // action_01 run under ee_type:=none hits this path for both hands
+  // sequentially (controllers that will never exist), stalling the node for
+  // up to 15s x 2 = 30s and causing the Python bridge's 5s goal-send timeout
+  // to fire as "the executor did not answer the goal request in time" for
+  // anything sent during that window. A controller that actually exists is
+  // already visible via normal DDS graph discovery by the time action_01
+  // runs (well after node/controller startup), so an instant readiness
+  // check is not a regression for the ee_type:=amazing_hand/openarm_hand
+  // case - only the "controller doesn't exist at all" case gets faster.
+  if (!client->action_server_is_ready()) {
     RCLCPP_ERROR(logger_, "%s not available", action_name.c_str());
     callback(false, action_name + " not available");
     return;
@@ -87,7 +102,9 @@ void HandGripperClient::sendTrajectory(
   }
 
   auto client = clientFor(action_name);
-  if (!client->wait_for_action_server(std::chrono::seconds(5))) {
+  // See sendFourJointGoal's comment above - non-blocking check, this runs on
+  // the executor's single thread.
+  if (!client->action_server_is_ready()) {
     RCLCPP_ERROR(logger_, "%s not available", action_name.c_str());
     callback(false, action_name + " not available - is that controller spawned?");
     return;
@@ -126,7 +143,9 @@ void HandGripperClient::sendSingleJointGoal(
   ResultCallback callback)
 {
   auto client = clientFor(action_name);
-  if (!client->wait_for_action_server(std::chrono::seconds(15))) {
+  // See sendFourJointGoal's comment above - non-blocking check, this runs on
+  // the executor's single thread.
+  if (!client->action_server_is_ready()) {
     RCLCPP_ERROR(logger_, "%s not available", action_name.c_str());
     callback(false, action_name + " not available");
     return;

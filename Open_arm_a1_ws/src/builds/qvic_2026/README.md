@@ -151,3 +151,11 @@ single `sequences:` entry already covers "run this once, then cycle
 through these." Only reach for a new `.cpp` here if you need runtime logic
 (pick sequence A vs B, react to sensor state) beyond what the flat schema
 expresses.
+
+
+ssh ubuntu@192.168.1.226 "source /opt/ros/jazzy/setup.bash && source ~/arm_ws/install/setup.bash && export ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && ros2 action send_goal /head_controller/follow_joint_trajectory control_msgs/action/FollowJointTrajectory \"{trajectory: {joint_names: [openarm_body_neck_joint, openarm_body_head_joint], points: [{positions: [0.0, 0.1745], time_from_start: {sec: 0, nanosec: 400000000}}]}}\""
+---------------
+ssh ubuntu@192.168.1.226 "source /opt/ros/jazzy/setup.bash && source ~/arm_ws/install/setup.bash && export ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && ros2 action send_goal /head_controller/follow_joint_trajectory control_msgs/action/FollowJointTrajectory \"{trajectory: {joint_names: [openarm_body_neck_joint, openarm_body_head_joint], points: [{positions: [0.0, -0.1745], time_from_start: {sec: 0, nanosec: 400000000}}]}}\""
+----------------
+ssh ubuntu@192.168.1.226 "source /opt/ros/jazzy/setup.bash && source ~/arm_ws/install/setup.bash && export ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && ros2 action send_goal /head_controller/follow_joint_trajectory control_msgs/action/FollowJointTrajectory \"{trajectory: {joint_names: [openarm_body_neck_joint, openarm_body_head_joint], points: [{positions: [0.0, 0.0], time_from_start: {sec: 0, nanosec: 400000000}}]}}\""
+
