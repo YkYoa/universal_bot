@@ -78,12 +78,16 @@ def reset_robot(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
     env._steps_hovering_in_grasp[env_ids] = 0
     env._steps_in_contact[env_ids] = 0
     env._steps_in_grasp[env_ids] = 0
+    env._steps_since_latch[env_ids] = 0
+    env._steps_in_reach[env_ids] = 0
     if hasattr(env, "_grasp_descent_ref_dist"):
         env._grasp_descent_ref_dist[env_ids] = 1.0
-    if hasattr(env, "_pre_lift_hold_steps"):
-        env._pre_lift_hold_steps[env_ids] = 0
-    if hasattr(env, "_lift_armed"):
-        env._lift_armed[env_ids] = False
+    if hasattr(env, "_lift_phase"):
+        env._lift_phase[env_ids] = 0  # LIFT_IDLE
+    if hasattr(env, "_lift_ready_steps"):
+        env._lift_ready_steps[env_ids] = 0
+    if hasattr(env, "_lift_slip_steps"):
+        env._lift_slip_steps[env_ids] = 0
     if hasattr(env, "_lift_slip_pause"):
         env._lift_slip_pause[env_ids] = False
     if hasattr(env, "_prev_lift_z_f"):

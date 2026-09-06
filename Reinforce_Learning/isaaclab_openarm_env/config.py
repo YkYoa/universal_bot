@@ -31,7 +31,7 @@ import isaaclab.envs.mdp as isaaclab_mdp
 from .mdp.actions import AssistedBinaryGripperActionCfg, AssistedOperationalSpaceControllerActionCfg
 from isaaclab.managers import ActionTermCfg as ActionTerm, SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 from isaaclab.managers import (
     ObservationGroupCfg,
     ObservationTermCfg,
@@ -45,6 +45,23 @@ from .scene import spawn_qvic_with_physics
 
 # ── Asset paths ───────────────────────────────────────────────────────────────
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def _identity_quat() -> tuple:
+    """(1,0,0,0) wxyz trên IsaacLab <3.0, (0,0,0,1) xyzw trên >=3.0.
+
+    KHÔNG dùng nhầm hằng số: trên bản kia, bộ số của bản này là XOAY 180° QUANH
+    Z, không phải identity — lỗi này KHÔNG crash, chỉ âm thầm gắp lệch ~164mm.
+    """
+    try:
+        import isaaclab
+        major = int(isaaclab.__version__.split(".")[0])
+    except Exception:
+        major = 3  # mặc định giả định bản mới nếu không đọc được version
+    return (0.0, 0.0, 0.0, 1.0) if major >= 3 else (1.0, 0.0, 0.0, 0.0)
+
+
+_IDENTITY_QUAT = _identity_quat()
+
 # Reinforce_Learning/ package root directory
 _RL_DIR = os.path.abspath(os.path.join(_THIS_DIR, ".."))
 
@@ -130,14 +147,27 @@ class OpenArmSceneCfg(InteractiveSceneCfg):
                 stiffness=80.0,
                 damping=8.0,
             ),
-            # v10.usd gripper is a MIMIC mechanism: only finger_joint1 has a drive;
-            # finger_joint2 is a PhysxMimicJoint follower (gearing -1). Driving j2
-            # with its own implicit actuator FIGHTS the mimic constraint → j1 slams
-            # shut instantly while j2 lags, shoving the bottle out of the pinch.
+            # v10.usd gripper is a MIMIC mechanism (finger_joint2 mirrors joint1).
+            # Earlier attempt: added joint2 here WITHOUT also updating the gripper
+            # action to write it an explicit target (see gripper_action below) —
+            # joint2's target buffer was never touched, so its own damping fought
+            # the mimic's pull during the ramp (confirmed via loadtest.py: joint2
+            # stuck at ~7.5mm; confirmed via eval: lift_start_rate 0.40→0.08).
+            # Reverted, then checked the official reference (enactic/
+            # openarm_isaac_lab, source/.../assets/openarm_unimanual.py): they
+            # drive BOTH finger joints via one ImplicitActuatorCfg
+            # (joint_names_expr=["openarm_finger_joint.*"], stiffness=2e3,
+            # damping=1e2, effort_limit_sim=333.33) AND their gripper action
+            # (unimanual/lift/config/joint_pos_env_cfg.py) uses a plain
+            # mdp.BinaryJointPositionActionCfg with joint_names=
+            # ["openarm_finger_joint.*"] — i.e. BOTH joints get the SAME explicit
+            # target every step, not one driven + one left to the mimic. Matching
+            # that here (joint2 added below, gains matched to the reference) with
+            # the corresponding gripper_action fix.
             "gripper": ImplicitActuatorCfg(
-                joint_names_expr=["openarm_left_finger_joint1"],
-                stiffness=1500.0,
-                damping=60.0,
+                joint_names_expr=["openarm_left_finger_joint1", "openarm_left_finger_joint2"],
+                stiffness=2000.0,
+                damping=100.0,
             ),
         },
     )
@@ -148,7 +178,7 @@ class OpenArmSceneCfg(InteractiveSceneCfg):
         spawn=None,
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(0.53, 0.40, 0.638),
-            rot=(1.0, 0.0, 0.0, 0.0),
+            rot=_IDENTITY_QUAT,  # xyzw (>=3.0) hoặc wxyz (<3.0) — xem _identity_quat()
         ),
     )
 
@@ -158,7 +188,7 @@ class OpenArmSceneCfg(InteractiveSceneCfg):
         spawn=None,
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(0.58, 0.22, 0.67),
-            rot=(1.0, 0.0, 0.0, 0.0),
+            rot=_IDENTITY_QUAT,  # xyzw (>=3.0) hoặc wxyz (<3.0) — xem _identity_quat()
         ),
     )
 
@@ -231,13 +261,25 @@ def _make_osc_actions_cfg(
             position_scale=position_scale,
             orientation_scale=orientation_scale,
         ),
-        # Mimic gripper: chỉ drive joint1 — joint2 là PhysxMimic follower (gearing -1).
-        # Drive cả hai joint → tranh chấp mimic → một ngón đóng trước, đẩy chai lệch.
+        # Cả 2 khớp ngón đều nhận target tường minh mỗi bước — khớp cách làm
+        # trong repo tham khảo chính thức enactic/openarm_isaac_lab (dùng
+        # mdp.BinaryJointPositionActionCfg chuẩn với joint_names="openarm_finger_
+        # joint.*" cho cả 2 khớp). open_command_expr/close_command_expr map CÙNG
+        # giá trị cho cả 2 tên khớp nên self._open_command/_close_command trong
+        # AssistedBinaryGripperAction tự động bằng nhau theo cột → apply_actions()
+        # ghi targets giống hệt nhau cho cả 2 khớp, không còn khớp nào "trôi" theo
+        # target cũ (nguyên nhân gây lệch khi chỉ drive joint1 riêng).
         gripper_action=AssistedBinaryGripperActionCfg(
             asset_name="robot",
-            joint_names=["openarm_left_finger_joint1"],
-            open_command_expr={"openarm_left_finger_joint1": 0.044},
-            close_command_expr={"openarm_left_finger_joint1": 0.0},
+            joint_names=["openarm_left_finger_joint1", "openarm_left_finger_joint2"],
+            open_command_expr={
+                "openarm_left_finger_joint1": 0.044,
+                "openarm_left_finger_joint2": 0.044,
+            },
+            close_command_expr={
+                "openarm_left_finger_joint1": 0.0,
+                "openarm_left_finger_joint2": 0.0,
+            },
         ),
     )
 
@@ -259,6 +301,16 @@ class RewardsCfg:
     """Reward manager configuration."""
     curriculum_reward = RewardTermCfg(
         func=mdp.compute_curriculum_reward,
+        weight=1.0,
+    )
+    # Term riêng để có sẵn tổng per-term trong extras["log"] → thấy ngay bonus có
+    # thật sự được trả hay không, thay vì phải suy từ ep_rew_mean.
+    success_bonus = RewardTermCfg(
+        func=mdp.terminal_success_bonus,
+        weight=1.0,
+    )
+    tipped_penalty = RewardTermCfg(
+        func=mdp.terminal_tipped_penalty,
         weight=1.0,
     )
 
@@ -393,6 +445,9 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     #   size (0.0433, 0.0433, 0.0768), mesh center − root = (−0.0816, −0.0220), bottom = root z
     bottle_height_m: float = 0.0768        # chiều cao toàn chai (đáy → nắp), mét — đo từ USD
     bottle_root_at_base: bool = True       # root USD ở đáy (bbox min z == root z)
+    # Chai spawn cao hơn mặt bàn ~12mm rồi rơi xuống; đo lại z thật trong N bước
+    # đầu episode để bottle_lift = 0 lúc chai nằm yên (xem _update_bottle_rest_baseline).
+    bottle_rest_settle_steps: int = 15
     bottle_cap_height_ratio: float = 1.0   # 0=đáy, 1=nắp — chỉnh nếu marker lệch nắp (thử 0.92–1.0)
     bottle_use_usd_mesh_xy: bool = False   # True = đo USD lúc setup (không gọi trong step)
     bottle_grasp_local_xy_x: float = -0.082  # trục chai vs root (local frame), đo từ USD bbox
@@ -429,6 +484,32 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     grasp_reward_lift_scale: float = 1.0
     grasp_reward_lift_hold_scale: float = 1.0
     grasp_lift_hold_steps: int = 5
+    # ── Giai đoạn 2: kinh tế học của phần thưởng ────────────────────────────
+    # γ=0.99, step_dt=1/60 → chân trời ~100 bước. Với các giá trị dưới đây:
+    #   V(camping)  ≈ −11.7   (shaping suy giảm về 0 + phạt thời gian)
+    #   V(lật chai) ≈ −30.0
+    #   V(nhấc)     ≈ +72.8   (rise + hold + bonus chiết khấu)
+    # Lợi thế của nhấc so với camping: từ −134 thành +84.5 (đổi dấu).
+    grasp_success_bonus: float = 60.0      # thưởng một lần khi success
+    grasp_tipped_penalty: float = 30.0     # phạt một lần khi lật chai
+    # Neo vào _steps_in_grasp (đơn điệu, từ lúc VÀO GRASP) chứ không phải từ lúc
+    # latch — nên cần cửa sổ dài hơn để không phạt oan chuỗi hạ+căn+khép hợp lệ
+    # (close ramp riêng đã ~80 bước). 200 bước ≈ 3.3s ở 60Hz.
+    grasp_camp_decay_steps: int = 200
+    # grasp_camp_time_penalty (phạt tích luỹ) đã BỎ — tạo lối thoát "lật chai
+    # để né phạt" rẻ hơn kiên trì. Suy giảm về 0 là đủ, xem _compute_grasp_reward.
+
+    # Họ exploit REACH-camping (#5/#5b/#5c, xem _compute_reach_reward) — mỗi
+    # cách vá "surgical" theo vị trí/trạng thái cụ thể đều bị lách bằng một
+    # trạng thái mới. Fix: suy giảm TOÀN BỘ reward REACH theo tổng thời gian
+    # ở STAGE_REACH cả episode, bất biến với vị trí.
+    # ĐÃ ĐO THẬT (assist scale=1.0, log episode_length_buf lúc advance): REACH
+    # thật chỉ mất 21-59 bước — lần đầu đặt onset=1000 (dựa trên comment cũ
+    # chưa từng đo, sai 15-30 lần) khiến camping vẫn cực lời. Onset=200 (biên
+    # độ an toàn ~3.5x so với 59 đo được), decay=100 → về 0 ở step 300, còn
+    # 900/1200 bước (75% episode) hoàn toàn không reward nếu vẫn đang camp.
+    reach_reward_decay_onset_steps: int = 200
+    reach_reward_decay_steps: int = 100
     grasp_success_max_dist_finger: float = 0.10   # ngón vẫn gần thân chai
     grasp_success_max_dist_ee: float = 0.12        # TCP vẫn gần chai
     grasp_success_max_lateral: float = 0.10
@@ -462,7 +543,12 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     grasp_lift_freeze_arm: bool = True       # đứng yên XY/xoay khi đã kẹp, chỉ nhấc Z
     grasp_pregrasp_freeze_arm: bool = True   # GRASP đã align: đứng yên, chỉ đóng gripper
     grasp_lift_world_up: bool = True         # nhấc dọc world +Z (không theo trục EE nghiêng)
-    grasp_lift_world_m: float = 0.012        # mét/bước env (trước osc_position_scale)
+    grasp_lift_world_m: float = 0.045        # mét/bước env (trước osc_position_scale)
+    # Ramp tuyến tính lực nhấc từ 0 lên full trong N bước đầu của RISING —
+    # tránh giật đột ngột (lift_world_m bị đẩy lên rất nhanh để đủ tốc, xem
+    # phase2_overrides.py, nhưng full lực NGAY bước đầu có thể vượt ma sát
+    # tĩnh dù ma sát đủ giữ trọng lượng tĩnh). 15 bước ≈ 0.25s ở 60Hz.
+    grasp_lift_onset_ramp_steps: int = 15
     grasp_grip_arm_damp: float = 0.05        # khi freeze_arm=False: giảm drift sau khi kẹp
     grasp_close_min_z_finger: float = -0.01  # chặn auto-close khi ngón dưới thân
     grasp_close_ramp_steps: int = 0          # 0=đóng tức; >0=khép từ từ (demo ~50)
@@ -470,6 +556,10 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     grasp_close_squeeze_start: float = 0.80  # chỉ squeeze khi gc >= 80%
     grasp_lift_settle_steps: int = 5          # bước ổn định sau khép trước khi nhấc
     grasp_lift_start_max_tilt_deg: float = 8.0
+    # Lift state machine: RISING→HOLDING dùng hysteresis để không rung ở ngưỡng;
+    # slip phải liên tiếp N bước mới hủy nhấc (1 bước đơn lẻ là nhiễu).
+    grasp_lift_hold_hysteresis_m: float = 0.008
+    grasp_lift_abort_slip_steps: int = 8
     grasp_lift_max_lat_f: float = 0.09
     grasp_lift_max_dist_f: float = 0.10
     grasp_open_until_dist: float = 0.15      # giữ gripper mở khi ngón xa thân chai
@@ -512,13 +602,65 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     grasp_close_exhaust_max_tilt_deg: float = 7.0
     grasp_lift_slip_z_finger: float = 0.022
     grasp_lift_slip_bottle_m: float = 0.004
-    grasp_lift_contact_z_finger: float = 0.022
+    grasp_lift_contact_z_finger: float = 0.014
     grasp_lift_contact_dist_f: float = 0.040
     grasp_lift_contact_min_follow: float = 0.72
     grasp_lift_pad_balance_blend: float = 0.0
+    # Đường kính chai = 0.0433m (bbox USD). Mọi ngưỡng span PHẢI nhỏ hơn con số
+    # này, nếu không hệ thống tuyên bố "đã kẹp" khi kẹp còn mở rộng hơn cả chai —
+    # lift arm sớm, tay đi lên, chai ở lại trên bàn.
+    bottle_diameter_m: float = 0.0433
     grasp_lift_max_span_xy: float = 0.065
     grasp_phys_close_max_span: float = 0.062
     grasp_phys_close_max_joint_ratio: float = 0.40
+    # Ép thật: khớp bị chặn cao hơn lệnh bao nhiêu thì coi là đang giữ vật.
+    # Kẹp không khí ~0.0015m, kẹp chai ~0.0126m → 0.005 tách sạch hai trường hợp
+    # (SỐ CŨ, không khớp thực đo trên chai/gripper hiện tại — xem dưới).
+    #
+    # CẬP NHẬT (đo trực tiếp qua DEBUG_STALL sau khi vá mimic): baseline "chưa
+    # chạm gì" trong lúc ramp còn chạy nhanh đo được ~0.0024m (lag của actuator
+    # đuổi theo target di chuyển nhanh, KHÔNG phải lực chạm) — cao hơn hẳn 1.5mm
+    # cũ. Đỉnh lực chạm thật (env1, lần chạm đầu tiên) chỉ ~0.0034m — thấp hơn
+    # hẳn 12.6mm cũ. min_stall=0.005 vốn CAO HƠN đỉnh chạm thật đo được → gần
+    # như không bao giờ đạt (lift_start_rate tụt xuống 0.03, đo được).
+    #
+    # BUG HIỆU CHỈNH (đã sửa): lần đầu đặt freeze_stall (0.003) THẤP HƠN
+    # min_stall (0.005) với lý lẽ "hai mục đích khác nhau" — nhưng ramp ĐÃ
+    # DỪNG HẲN khi đạt freeze_stall nên KHÔNG BAO GIỜ leo tiếp lên tới
+    # min_stall được nữa — tự mâu thuẫn, y hệt hiện tượng vừa đo (lift_start
+    # vẫn kẹt ở 0.03 sau khi thêm freeze-theo-lực). Phải đặt HAI NGƯỠNG BẰNG
+    # NHAU (freeze ngay khi đạt đúng mức cho phép nhấc, không thấp hơn).
+    gripper_open_m: float = 0.044
+    grasp_press_min_stall_m: float = 0.0028
+    grasp_press_max_dist_f: float = 0.060
+    # Dừng ramp đóng ngay khi phát hiện lực chạm thật, thay vì tiếp tục siết
+    # tới grasp_close_freeze_at_progress bất kể đã chạm hay chưa — ramp cũ đẩy
+    # văng chai ra khỏi kẹp khi siết tiếp SAU điểm chạm (xem apply_actions).
+    # BẰNG grasp_press_min_stall_m (không thấp hơn — xem bug đã sửa ở trên):
+    # ramp dừng ĐÚNG lúc đạt ngưỡng cho phép nhấc, không dừng sớm hơn rồi kẹt.
+    # 3 bước liên tiếp lọc nhiễu tức thời, giống pattern slip_steps.
+    grasp_press_freeze_stall_m: float = 0.0028
+    grasp_press_freeze_hold_steps: int = 3
+    # Cổng hình học bổ sung cho freeze-theo-lực: chỉ tính "đã chạm" khi
+    # finger_span_xy CŨNG đã ở gần đường kính chai — riêng stall dễ bắt nhầm
+    # nhiễu actuator-lag (tăng dần theo gc) thành lực chạm thật, đóng băng ở
+    # gc≈0.62-0.65 (đo được qua DEBUG_LIFT) — SỚM hơn điểm chạm hình học thật
+    # (gc≈0.71 ↔ span≈44mm=đúng đường kính chai 43.3mm).
+    grasp_press_span_margin_m: float = 0.004
+    # Đóng CHẬM LẠI khi ngón đã ở gần chai (near_bottle, dựa vào khoảng cách
+    # hình học — KHÔNG dùng stall để phát hiện "sắp chạm" vì stall còn lẫn lộn
+    # với nhiễu actuator ~2.4mm ngay cả khi chưa chạm gì). griplag.py đo được:
+    # ramp 60 bước → lệch 2 ngón 52mm (tệ nhất), ramp 150 bước → chỉ 7mm — đóng
+    # chậm hơn giúp actuator kịp ổn định, giảm hẳn overshoot-rồi-bật-chai-ra.
+    # Tốc độ đầy đủ khi còn xa (hiệu quả), chậm lại khi gần (an toàn), rồi mới
+    # đóng băng khi lực chạm đã ổn định (grasp_press_freeze_stall_m ở trên).
+    # ĐÃ THỬ 0.15: lift_start_rate tụt hẳn về 0.03 (từ 0.40) — near_bottle
+    # (ngưỡng 6cm) kích hoạt quá sớm, quá xa điểm chạm thật (span≈44mm ở
+    # gc≈0.71), ramp chậm suốt một quãng dài không cần thiết, không kịp đóng
+    # đủ trong 1 episode. Về 1.0 (tắt hẳn slow-zone) — cấu hình đo tốt nhất
+    # cho tới giờ: chỉ đóng băng theo lực (grasp_press_freeze_stall_m ở trên)
+    # là đủ, không cần thêm slow-zone.
+    grasp_press_slow_factor: float = 1.0
     grasp_close_freeze_on_reopen_exhaust: bool = True
     grasp_sym_hold_steps: int = 0          # giữ sym ổn định N bước trước auto-close
 

@@ -2,6 +2,10 @@
 # Copyright 2026 Enactic, Inc.
 #
 # Headless phase-2 evaluation — prints one LIFT_METRICS JSON line.
+#
+# Runs N parallel envs with randomised bottle placement so the episodes are
+# actually independent samples. `--assist-scale` separates "the script lifts"
+# from "the policy lifts": eval at 1.0 / 0.5 / 0.0 and compare.
 
 from __future__ import annotations
 
@@ -21,7 +25,15 @@ if os.path.exists("/usr/share/vulkan/icd.d/nvidia_icd.json"):
 parser = argparse.ArgumentParser(description="Headless lift eval — outputs LIFT_METRICS JSON")
 parser.add_argument("--model-path", "--model_path", dest="model_path", type=str,
                     default=os.path.join(_THIS_DIR, "logs", "active_policy.pt"))
-parser.add_argument("--episodes", type=int, default=5)
+parser.add_argument("--episodes", type=int, default=30)
+parser.add_argument("--num-envs", "--num_envs", dest="num_envs", type=int, default=8,
+                    help="Parallel envs. Episodes are collected across all of them.")
+parser.add_argument("--bottle-noise", "--bottle_noise", dest="bottle_noise", type=float, default=0.05,
+                    help="Bottle spawn XY noise (m). 0.0 makes every episode identical.")
+parser.add_argument("--assist-scale", "--assist_scale", dest="assist_scale", type=float, default=1.0,
+                    help="Scripted assist authority: 1.0 = full script, 0.0 = pure policy.")
+parser.add_argument("--stochastic", action="store_true",
+                    help="Sample from the policy instead of taking the mean action.")
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--run-name", "--run_name", dest="run_name", type=str, default="")
 parser.add_argument("--iteration", type=int, default=0)
@@ -47,7 +59,7 @@ from isaaclab_rl.sb3 import Sb3VecEnvWrapper
 
 from isaaclab_openarm_env.env import ApplePickPlaceEnv
 from isaaclab_openarm_env.config import ApplePickPlaceEnvCfg
-from isaaclab_openarm_env.mdp.helpers import STAGE_GRASP, STAGE_REACH, check_init_buffers, finger_descended_for_close, finger_grasp_ready
+from isaaclab_openarm_env.mdp.helpers import STAGE_GRASP, STAGE_REACH, check_init_buffers
 from isaaclab_openarm_env.phase2_overrides import (
     ENV_CFG_SNAPSHOT_KEYS,
     apply_phase2_demo_gates,
@@ -74,8 +86,12 @@ def _apply_env_cfg_snapshot(env_cfg, model_path: str) -> None:
     cfg_path = _find_env_cfg_snapshot(model_path)
     if cfg_path is None:
         return
-    with open(cfg_path, "rb") as f:
-        saved = pickle.load(f)
+    try:
+        with open(cfg_path, "rb") as f:
+            saved = pickle.load(f)
+    except Exception as e:
+        print(f"  ⚠️  Bỏ qua env_cfg snapshot ({os.path.basename(cfg_path)}): {e}")
+        return
     for key in ENV_CFG_SNAPSHOT_KEYS:
         if hasattr(saved, key):
             setattr(env_cfg, key, getattr(saved, key))
@@ -100,6 +116,8 @@ def _classify_fail_mode(
     is_success: bool,
     is_truncated: bool,
     stage_end: int,
+    latched: bool,
+    lift_cmd_steps: int,
     gripper: float,
     bottle_lift: float,
     bottle_tilt: float,
@@ -109,40 +127,82 @@ def _classify_fail_mode(
     lift_thresh: float,
     tipped_deg: float,
 ) -> str:
+    """Name the failure so a fix is falsifiable.
+
+    `no_lift_command` is the mode this pipeline exhibits today: the bottle is
+    grasped and latched but the lift state machine never armed, so the assist
+    never issued an upward command.
+    """
     if is_success:
         return "success"
     if bottle_tilt >= tipped_deg * 0.9:
         return "tilt"
-    if is_truncated:
-        if stage_end == STAGE_REACH:
-            return "reach"
-        if stage_end == STAGE_GRASP:
-            if gripper < grip_thresh:
-                return "grasp"
-            if bottle_lift < lift_thresh or lift_hold < lift_hold_steps:
-                return "grasp"
-        return "timeout"
     if stage_end == STAGE_REACH:
         return "reach"
-    if stage_end == STAGE_GRASP and gripper < grip_thresh:
+    if not latched:
         return "grasp"
-    if stage_end == STAGE_GRASP and bottle_lift < lift_thresh:
-        return "grasp"
+    if lift_cmd_steps == 0:
+        return "no_lift_command"
+    if bottle_lift < lift_thresh:
+        return "lift_too_low"
+    if lift_hold < lift_hold_steps:
+        return "hold_unstable"
     return "timeout"
+
+
+class _EpisodeAccumulator:
+    """Per-env running peaks, harvested when that env reports done."""
+
+    __slots__ = (
+        "max_stage", "max_lift", "max_lift_hold", "last_gripper", "max_gripper",
+        "last_tilt", "last_z_f", "last_top", "last_lat_f", "last_dist_f",
+        "max_gc", "min_gc_after_exhaust", "min_span", "latched", "steps",
+        "lift_cmd_steps", "first_lift_cmd_step", "abort_reasons",
+    )
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self.max_stage = 0
+        # -999 not 0.0: bottle_lift sits negative when the datum is stale, and a
+        # 0.0 floor would silently clip every real reading to zero.
+        self.max_lift = -999.0
+        self.max_lift_hold = 0
+        self.last_gripper = 0.0
+        self.max_gripper = 0.0
+        self.last_tilt = 0.0
+        self.last_z_f = 0.0
+        self.last_top = 0.0
+        self.last_lat_f = 0.0
+        self.last_dist_f = 0.0
+        self.max_gc = 0.0
+        self.min_gc_after_exhaust = 1.0
+        self.min_span = 999.0
+        self.latched = False
+        self.steps = 0
+        self.lift_cmd_steps = 0
+        self.first_lift_cmd_step = -1
+        self.abort_reasons: dict[str, int] = {}
+
+
+def _percentile(values: list[float], q: float) -> float:
+    return float(np.percentile(values, q)) if values else 0.0
 
 
 def main() -> None:
     model_path = os.path.abspath(args.model_path)
     if not os.path.isfile(model_path):
         print(f"LIFT_METRICS {json.dumps({'error': f'model not found: {model_path}'})}")
-        env = None
         simulation_app.close()
         sys.exit(1)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    num_envs = max(1, args.num_envs)
+
     env_cfg = ApplePickPlaceEnvCfg()
     env_cfg.sim.log_dir = os.path.join(_THIS_DIR, "logs", "sim_logs")
-    env_cfg.scene.num_envs = 1
+    env_cfg.scene.num_envs = num_envs
     env_cfg.sim.render_interval = env_cfg.decimation
     env_cfg.seed = args.seed
     env_cfg.task_phase = args.task_phase
@@ -152,15 +212,14 @@ def main() -> None:
     _apply_env_cfg_snapshot(env_cfg, model_path)
     apply_phase2_demo_gates(env_cfg, model_path, stage=args.stage)
 
-    env_cfg.bottle_pos_noise = 0.0
-    env_cfg.align_log_interval = 999999
+    env_cfg.bottle_pos_noise = args.bottle_noise
+    _show_align = os.environ.get("EVAL_SHOW_ALIGN_LOG") == "1"
+    env_cfg.align_log_interval = 50 if _show_align else 999999
     env_cfg.debug_success_log = False
-    env_cfg.suppress_align_log = True
-    if env_cfg.task_phase >= 2:
-        env_cfg.scene.robot.actuators["gripper"].stiffness = 700.0
-        env_cfg.scene.robot.actuators["gripper"].damping = 35.0
+    env_cfg.suppress_align_log = not _show_align
 
     env = ApplePickPlaceEnv(cfg=env_cfg)
+    env.unwrapped._assist_blend_scale = float(args.assist_scale)
     env = Sb3VecEnvWrapper(env)
     check_init_buffers(env.unwrapped)
 
@@ -171,162 +230,207 @@ def main() -> None:
     lift_thresh = getattr(cfg, "grasp_lift_threshold", 0.03)
     tipped_deg = getattr(cfg, "bottle_tipped_termination_deg", 60.0)
 
-    episodes_done = 0
+    print(
+        f"  [Eval] envs={num_envs} episodes={args.episodes} noise={args.bottle_noise}"
+        f" assist_scale={args.assist_scale} stage={args.stage}"
+    )
+
     results: list[dict] = []
+    acc = [_EpisodeAccumulator() for _ in range(num_envs)]
     obs = env.reset()
 
-    # SB3 VecEnv auto-resets on done — capture per-episode peaks before state is cleared.
-    ep_max_stage = 0
-    ep_max_lift = 0.0
-    ep_max_lift_hold = 0
-    ep_last_gripper = 0.0
-    ep_max_gripper = 0.0
-    ep_last_tilt = 0.0
-    ep_last_z_f = 0.0
-    ep_last_top = 0.0
-    ep_last_lat_f = 0.0
-    ep_last_dist_f = 0.0
-    ep_max_gc = 0.0
-    ep_min_gc_after_exhaust = 1.0
-    ep_saw_lift_assist = False
-    ep_max_span = 999.0
+    term_gripper = env.unwrapped.action_manager._terms.get("gripper_action")
+    reopen_max = int(getattr(cfg, "grasp_reopen_max_count", 3))
 
-    while simulation_app.is_running() and episodes_done < args.episodes:
+    while simulation_app.is_running() and len(results) < args.episodes:
         with torch.no_grad():
-            action, _ = model.predict(obs, deterministic=True)
+            action, _ = model.predict(obs, deterministic=not args.stochastic)
             action = np.clip(action, -1.0, 1.0)
 
         obs, _, dones, infos = env.step(action)
+        u = env.unwrapped
+        ls = u._last_state
 
-        ls = env.unwrapped._last_state
-        # SB3 auto-resets on done — skip ls on done step (stale reset pose poisons peaks).
-        if ls is not None and not dones[0]:
-            stage_now = int(env.unwrapped._stage[0].item())
-            lift_now = float(ls["bottle_lift"][0].item())
-            grip_now = float(ls["gripper_state"][0].item())
-            tilt_now = float(ls.get("bottle_tilt_deg", torch.zeros(1))[0].item())
-            hold_now = int(env.unwrapped._steps_bottle_lifted[0].item())
-            ep_max_stage = max(ep_max_stage, stage_now)
-            ep_max_lift = max(ep_max_lift, lift_now)
-            ep_max_lift_hold = max(ep_max_lift_hold, hold_now)
-            ep_last_gripper = grip_now
-            ep_max_gripper = max(ep_max_gripper, grip_now)
-            ep_last_tilt = tilt_now
-            ep_last_z_f = float(ls["z_error_finger"][0].item())
-            ep_last_top = float(ls["top_down_align"][0].item())
-            ep_last_lat_f = float(ls["lateral_finger_xy"][0].item())
-            ep_last_dist_f = float(ls["dist_finger_body"][0].item())
-            term = env.unwrapped.action_manager._terms.get("gripper_action")
-            if term is not None and hasattr(term, "_close_progress"):
-                gc_now = float(term._close_progress[0].item())
-                ep_max_gc = max(ep_max_gc, gc_now)
-                reopen_max = int(getattr(cfg, "grasp_reopen_max_count", 3))
-                if hasattr(term, "_reopen_count") and int(term._reopen_count[0].item()) >= reopen_max:
-                    ep_min_gc_after_exhaust = min(ep_min_gc_after_exhaust, gc_now)
-            if hasattr(env.unwrapped, "_assist_want_lift"):
-                if bool(env.unwrapped._assist_want_lift[0].item()):
-                    ep_saw_lift_assist = True
-            if "finger_span_xy" in ls:
-                ep_max_span = min(ep_max_span, float(ls["finger_span_xy"][0].item()))
+        # Harvest live state for every env that did NOT just reset; the post-reset
+        # pose would poison the peaks.
+        if ls is not None:
+            stage_t = u._stage.detach().cpu().numpy()
+            lift_t = ls["bottle_lift"].detach().cpu().numpy()
+            grip_t = ls["gripper_state"].detach().cpu().numpy()
+            tilt_t = ls["bottle_tilt_deg"].detach().cpu().numpy() if "bottle_tilt_deg" in ls else np.zeros(num_envs)
+            hold_t = u._steps_bottle_lifted.detach().cpu().numpy()
+            z_f_t = ls["z_error_finger"].detach().cpu().numpy()
+            top_t = ls["top_down_align"].detach().cpu().numpy()
+            lat_t = ls["lateral_finger_xy"].detach().cpu().numpy()
+            dist_t = ls["dist_finger_body"].detach().cpu().numpy()
+            span_t = ls["finger_span_xy"].detach().cpu().numpy() if "finger_span_xy" in ls else None
+            gc_t = (
+                term_gripper._close_progress.detach().cpu().numpy()
+                if term_gripper is not None and hasattr(term_gripper, "_close_progress")
+                else None
+            )
+            reopen_t = (
+                term_gripper._reopen_count.detach().cpu().numpy()
+                if term_gripper is not None and hasattr(term_gripper, "_reopen_count")
+                else None
+            )
+            latch_t = (
+                term_gripper._grasp_latched.detach().cpu().numpy()
+                if term_gripper is not None and hasattr(term_gripper, "_grasp_latched")
+                else None
+            )
+            want_lift_t = (
+                u._assist_want_lift.detach().cpu().numpy()
+                if hasattr(u, "_assist_want_lift")
+                else None
+            )
+            abort_t = getattr(u, "_lift_abort_reason", None)
 
-        if not dones[0]:
+            for i in range(num_envs):
+                if dones[i]:
+                    continue
+                a = acc[i]
+                a.steps += 1
+                a.max_stage = max(a.max_stage, int(stage_t[i]))
+                a.max_lift = max(a.max_lift, float(lift_t[i]))
+                a.max_lift_hold = max(a.max_lift_hold, int(hold_t[i]))
+                a.last_gripper = float(grip_t[i])
+                a.max_gripper = max(a.max_gripper, float(grip_t[i]))
+                a.last_tilt = float(tilt_t[i])
+                a.last_z_f = float(z_f_t[i])
+                a.last_top = float(top_t[i])
+                a.last_lat_f = float(lat_t[i])
+                a.last_dist_f = float(dist_t[i])
+                if span_t is not None:
+                    a.min_span = min(a.min_span, float(span_t[i]))
+                if gc_t is not None:
+                    a.max_gc = max(a.max_gc, float(gc_t[i]))
+                    if reopen_t is not None and int(reopen_t[i]) >= reopen_max:
+                        a.min_gc_after_exhaust = min(a.min_gc_after_exhaust, float(gc_t[i]))
+                if latch_t is not None and bool(latch_t[i]):
+                    a.latched = True
+                if want_lift_t is not None and bool(want_lift_t[i]):
+                    a.lift_cmd_steps += 1
+                    if a.first_lift_cmd_step < 0:
+                        a.first_lift_cmd_step = a.steps
+                if abort_t is not None:
+                    reason = abort_t[i] if isinstance(abort_t, (list, tuple)) else None
+                    if reason:
+                        a.abort_reasons[reason] = a.abort_reasons.get(reason, 0) + 1
+
+        if not np.any(dones):
             continue
 
-        if ls is not None:
-            print(
-                f"  [EvalDbg] last z_f:{ep_last_z_f:+.3f} top↓:{ep_last_top:.2f} lat_f:{ep_last_lat_f:.3f}"
-                f" dist_f:{ep_last_dist_f:.3f} grip:{ep_last_gripper:.3f} max_grip:{ep_max_gripper:.3f}"
-                f" stage:{ep_max_stage}"
+        # `success` / `time_outs` buffers persist through the auto-reset, so they
+        # still describe the transition that produced `dones`.
+        try:
+            success_t = u.termination_manager.get_term("success").detach().cpu().numpy()
+        except (KeyError, ValueError, AttributeError):
+            success_t = np.zeros(num_envs, dtype=bool)
+        try:
+            timeout_t = u.termination_manager.time_outs.detach().cpu().numpy()
+        except AttributeError:
+            timeout_t = np.zeros(num_envs, dtype=bool)
+
+        for i in range(num_envs):
+            if not dones[i] or len(results) >= args.episodes:
+                continue
+            a = acc[i]
+            if a.max_lift <= -998.0:
+                a.max_lift = 0.0  # episode produced no state samples
+            is_success = bool(success_t[i]) or (
+                a.max_lift_hold >= lift_hold_steps and cfg.task_phase >= 2
             )
-
-        info = infos[0] if isinstance(infos, (list, tuple)) else infos
-        is_truncated = bool(
-            info.get("TimeLimit.truncated", info.get("time_outs", info.get("terminated", False)))
-        )
-        # Timeout episodes usually lack explicit truncated flag — treat non-success as timeout.
-        if not is_truncated and cfg.task_phase >= 2:
-            is_truncated = True
-
-        stage_end = ep_max_stage
-        gripper = ep_max_gripper
-        bottle_lift = ep_max_lift
-        bottle_tilt = ep_last_tilt
-        lift_hold = ep_max_lift_hold
-        is_success = lift_hold >= lift_hold_steps if cfg.task_phase >= 2 else False
-
-        fail_mode = _classify_fail_mode(
-            is_success=is_success,
-            is_truncated=is_truncated,
-            stage_end=stage_end,
-            gripper=gripper,
-            bottle_lift=bottle_lift,
-            bottle_tilt=bottle_tilt,
-            lift_hold=lift_hold,
-            lift_hold_steps=lift_hold_steps,
-            grip_thresh=grip_thresh,
-            lift_thresh=lift_thresh,
-            tipped_deg=tipped_deg,
-        )
-
-        results.append({
-            "success": is_success,
-            "lift_m": bottle_lift,
-            "lift_hold": lift_hold,
-            "gripper": gripper,
-            "tilt_deg": bottle_tilt,
-            "stage": stage_end,
-            "fail_mode": fail_mode,
-            "max_gc": ep_max_gc,
-            "min_gc_after_exhaust": ep_min_gc_after_exhaust if ep_min_gc_after_exhaust < 1.0 else None,
-            "saw_lift_assist": ep_saw_lift_assist,
-            "min_span_m": ep_max_span if ep_max_span < 999.0 else None,
-        })
-        episodes_done += 1
-        ep_max_stage = 0
-        ep_max_lift = 0.0
-        ep_max_lift_hold = 0
-        ep_last_gripper = 0.0
-        ep_last_tilt = 0.0
-        ep_max_gc = 0.0
-        ep_min_gc_after_exhaust = 1.0
-        ep_saw_lift_assist = False
-        ep_max_span = 999.0
+            fail_mode = _classify_fail_mode(
+                is_success=is_success,
+                is_truncated=bool(timeout_t[i]),
+                stage_end=a.max_stage,
+                latched=a.latched,
+                lift_cmd_steps=a.lift_cmd_steps,
+                gripper=a.max_gripper,
+                bottle_lift=a.max_lift,
+                bottle_tilt=a.last_tilt,
+                lift_hold=a.max_lift_hold,
+                lift_hold_steps=lift_hold_steps,
+                grip_thresh=grip_thresh,
+                lift_thresh=lift_thresh,
+                tipped_deg=tipped_deg,
+            )
+            results.append({
+                "success": is_success,
+                "truncated": bool(timeout_t[i]),
+                "lift_m": a.max_lift,
+                "lift_hold": a.max_lift_hold,
+                "gripper": a.max_gripper,
+                "tilt_deg": a.last_tilt,
+                "stage": a.max_stage,
+                "latched": a.latched,
+                "lift_cmd_steps": a.lift_cmd_steps,
+                "first_lift_cmd_step": a.first_lift_cmd_step,
+                "fail_mode": fail_mode,
+                "max_gc": a.max_gc,
+                "min_gc_after_exhaust": a.min_gc_after_exhaust if a.min_gc_after_exhaust < 1.0 else None,
+                "min_span_m": a.min_span if a.min_span < 999.0 else None,
+                "abort_reasons": a.abort_reasons or None,
+                "steps": a.steps,
+            })
+            a.reset()
 
     env.close()
 
-    n = max(len(results), 1)
+    if not results:
+        print(f"LIFT_METRICS {json.dumps({'error': 'no episodes collected'})}", flush=True)
+        simulation_app.close()
+        return
+
+    n = len(results)
     successes = sum(1 for r in results if r["success"])
-    fail_modes: dict[str, int] = {"reach": 0, "grasp": 0, "tilt": 0, "timeout": 0}
+    fail_modes: dict[str, int] = {}
+    abort_hist: dict[str, int] = {}
     for r in results:
         if r["fail_mode"] != "success":
             fail_modes[r["fail_mode"]] = fail_modes.get(r["fail_mode"], 0) + 1
+        for reason, cnt in (r.get("abort_reasons") or {}).items():
+            abort_hist[reason] = abort_hist.get(reason, 0) + cnt
+
+    lifts = [r["lift_m"] for r in results]
+    lift_cmd = [r["lift_cmd_steps"] for r in results]
+    first_cmd = [r["first_lift_cmd_step"] for r in results if r["first_lift_cmd_step"] >= 0]
 
     run_name = args.run_name or os.path.basename(model_path)
     if run_name.startswith("best_policy_"):
         run_name = run_name[len("best_policy_") : -3] if run_name.endswith(".pt") else run_name
 
-    smoke_pass = all(
-        (r.get("max_gc", 0) >= 0.65 or (r.get("min_span_m") is not None and r["min_span_m"] < 0.05))
-        for r in results
-    ) if results else False
-    any_lift = any(r["lift_m"] > 0.03 for r in results)
-    any_lift_assist = any(r.get("saw_lift_assist") for r in results)
-
     metrics = {
-        "success_rate": successes / len(results) if results else 0.0,
-        "mean_lift_m": float(np.mean([r["lift_m"] for r in results])) if results else 0.0,
-        "mean_lift_hold": float(np.mean([r["lift_hold"] for r in results])) if results else 0.0,
-        "grasp_rate": float(np.mean([1.0 if r["stage"] >= STAGE_GRASP else 0.0 for r in results])) if results else 0.0,
+        "success_rate": successes / n,
+        "grasp_rate": float(np.mean([1.0 if r["stage"] >= STAGE_GRASP else 0.0 for r in results])),
+        "latch_rate": float(np.mean([1.0 if r["latched"] else 0.0 for r in results])),
+        "lift_start_rate": float(np.mean([1.0 if r["lift_cmd_steps"] > 0 else 0.0 for r in results])),
+        "mean_lift_m": float(np.mean(lifts)),
+        "p50_max_lift_m": _percentile(lifts, 50),
+        "p90_max_lift_m": _percentile(lifts, 90),
+        "mean_lift_commanded_steps": float(np.mean(lift_cmd)),
+        "mean_steps_to_first_lift_cmd": float(np.mean(first_cmd)) if first_cmd else None,
+        "mean_lift_hold": float(np.mean([r["lift_hold"] for r in results])),
         "fail_modes": fail_modes,
-        "episodes": len(results),
+        "abort_reasons": abort_hist or None,
+        "episodes": n,
+        "num_envs": num_envs,
+        "assist_scale": args.assist_scale,
+        "bottle_noise": args.bottle_noise,
+        "seed": args.seed,
         "per_episode": results,
-        "smoke_no_deadlock": smoke_pass,
-        "smoke_any_lift": any_lift,
-        "smoke_saw_lift_assist": any_lift_assist,
         "run": run_name,
         "iteration": args.iteration,
         "model": os.path.basename(model_path),
     }
+
+    print(
+        f"  [Eval] success={metrics['success_rate']:.2f} grasp={metrics['grasp_rate']:.2f}"
+        f" latch={metrics['latch_rate']:.2f} lift_start={metrics['lift_start_rate']:.2f}"
+        f" p50_lift={metrics['p50_max_lift_m']:+.4f} lift_cmd_steps={metrics['mean_lift_commanded_steps']:.1f}"
+    )
+    print(f"  [Eval] fail_modes={fail_modes}")
     # flush: Isaac's close() hard-exits and drops buffered stdout when piped.
     print(f"LIFT_METRICS {json.dumps(metrics)}", flush=True)
     simulation_app.close()

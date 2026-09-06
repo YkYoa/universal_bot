@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import torch
 from isaaclab.envs import ManagerBasedRLEnv
 from .helpers import (
@@ -183,12 +184,14 @@ def _update_contact_and_stages(env: ManagerBasedRLEnv, s: dict, hold_steps: int)
         if env.num_envs <= 16 and not getattr(env.cfg, "suppress_align_log", False) and advance[0]:
             print(
                 f"  [Stage] REACH → GRASP @ step {env.step_counter}"
+                f" ep_step:{int(env.episode_length_buf[0])}"
                 f" | z_f:{float(s['z_error_finger'][0]):+.3f}"
                 f" lat_f:{float(s['lateral_finger_xy'][0]):.3f}"
                 f" top↓:{float(s['top_down_align'][0]):.2f}"
             )
         env._stage[advance] = STAGE_GRASP
         env._steps_in_contact[advance] = 0
+
         if getattr(env.cfg, "debug_success_log", False) and env.num_envs <= 16 and advance.any():
             for idx in advance.nonzero(as_tuple=False).flatten().tolist():
                 if idx == 0:
@@ -198,6 +201,32 @@ def _update_contact_and_stages(env: ManagerBasedRLEnv, s: dict, hold_steps: int)
 
     env._steps_in_grasp[env._stage == STAGE_GRASP] += 1
     env._steps_in_grasp[env._stage != STAGE_GRASP] = 0
+
+    # Số bước kể từ lúc ĐÃ LATCH (không phải từ lúc vào GRASP) — dùng để suy
+    # giảm camp reward CHỈ cho thời gian đứng yên SAU KHI đã kẹp xong, không
+    # phạt nhầm thời gian tiếp cận/đóng kẹp cần thiết trước đó (xem bug ở
+    # _compute_grasp_reward: đo thật bằng DEBUG_DECAY cho thấy latch chỉ xảy
+    # ra ở steps_in_grasp=136-371, tức decay cũ (neo vào steps_in_grasp,
+    # decay_n=200) đã gần hết hạn NGAY TẠI thời điểm latch — giết tín hiệu
+    # thưởng vị trí/hướng trong suốt cả quá trình nhấc sau đó, đúng lúc cần
+    # nhất). `_grasp_latched` là bộ tích luỹ OR (chỉ False khi reopen thật sự
+    # xảy ra, có cooldown/max-count riêng) nên không dao động nhanh như
+    # `latched` tức thời — an toàn để neo trực tiếp mà không tái tạo lỗ hổng
+    # dao động biên đã gặp ở v1/v2.
+    gripper_term = env.action_manager._terms.get("gripper_action")
+    latched_now = (
+        gripper_term._grasp_latched
+        if gripper_term is not None and hasattr(gripper_term, "_grasp_latched")
+        else torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    )
+    env._steps_since_latch[latched_now] += 1
+    env._steps_since_latch[~latched_now] = 0
+
+    # Tổng thời gian ở STAGE_REACH cả episode — dùng cho suy giảm reward REACH
+    # (xem _compute_reach_reward). Đơn điệu, không phụ thuộc khoảng cách/trạng
+    # thái tức thời nào nên không có "vùng an toàn" nào để né.
+    env._steps_in_reach[env._stage == STAGE_REACH] += 1
+    env._steps_in_reach[env._stage != STAGE_REACH] = 0
 
     return in_contact
 
@@ -279,12 +308,41 @@ def _compute_reach_reward(
 
     env._prev_dist_ee_bottle = dist_ee_bottle.detach()
 
-    return (
+    # Họ exploit REACH-camping (3 biến thể xác nhận qua các run 5M bước thật):
+    #   #5  — đứng yên đúng ở ngưỡng advance (đủ hold nhưng cố tình lệch align)
+    #   #5b — "bơm": ra/vào vùng hysteresis contact liên tục để reset counter
+    #   #5c — đứng ngoài vùng hysteresis (0.07 < dist < 0.10) — không bao giờ
+    #         trigger `_in_contact_zone` nên né được MỌI cơ chế khoá theo vị
+    #         trí/trạng thái tức thời (grasp_rate=0 suốt ~1 triệu bước trong
+    #         khi ep_rew_mean tăng đều lên hơn 1000).
+    # Mỗi lần vá theo kiểu "surgical" (chỉ suy giảm khi ở một vùng/trạng thái
+    # cụ thể) đều bị lách bằng một trạng thái khác không bị khoá. Fix: suy
+    # giảm TOÀN BỘ reward REACH theo TỔNG thời gian ở STAGE_REACH cả episode.
+    #
+    # BUG HIỆU CHỈNH LẦN 1 (xác nhận qua run 5M local thật): đặt onset=1000,
+    # decay=200 → về 0 đúng tại step 1200 — TRÙNG KHÍT `env.max_episode_length`
+    # (episode_length_s=20s / step_dt=1/60 = 1200 bước), dựa trên comment cũ
+    # CHƯA TỪNG ĐO THẬT ("REACH cần ~700-1000 bước"). Exploit #5c vẫn sống
+    # (grasp_rate sụp về 0.3, ep_rew_mean lên 810 ở step 3M).
+    #
+    # ĐÃ ĐO THẬT bằng log `ep_step` (episode_length_buf lúc advance, chạy với
+    # assist đầy đủ scale=1.0 — script luôn làm đúng): REACH thật chỉ mất
+    # **21-59 bước**, không phải 700-1000 — sai lệch 15-30 LẦN, đó là lý do
+    # camping vẫn cực lời dù có "suy giảm". Thời gian REACH do động lực học
+    # cánh tay quyết định, KHÔNG tỉ lệ với episode_length_s, nên dùng số bước
+    # tuyệt đối (biên độ an toàn ~3-5 lần so với 59 đo được) thay vì tỉ lệ
+    # theo max_episode_length.
+    reach_steps = env._steps_in_reach.float()
+    onset = float(getattr(env.cfg, "reach_reward_decay_onset_steps", 200))
+    decay_n = float(getattr(env.cfg, "reach_reward_decay_steps", 100))
+    reach_decay = (1.0 - (reach_steps - onset).clamp(min=0.0) / max(decay_n, 1.0)).clamp(0.0, 1.0)
+
+    total = (
         r_reach + r_lateral + r_z_descent + r_z_floor
-        + r_close + r_progress + milestones + r_stall + r_hold
-        + r_top_down + r_finger_level + r_descent + r_tilt_penalty
-        + table_penalty + vel_penalty
+        + r_progress + milestones + r_close + r_top_down + r_finger_level + r_descent + r_hold
+        + r_stall + r_tilt_penalty + table_penalty + vel_penalty
     )
+    return total * reach_decay
 
 
 def _compute_grasp_reward(env: ManagerBasedRLEnv, s: dict, in_contact: torch.Tensor) -> torch.Tensor:
@@ -366,7 +424,9 @@ def _compute_grasp_reward(env: ManagerBasedRLEnv, s: dict, in_contact: torch.Ten
     # Penalise closing on empty air
     r_air_grasp = torch.where((gripper_state > 0.5) & ~finger_ready, -30.0, 0.0)
 
-    r_lift = torch.clamp(bottle_lift / lift_threshold, max=1.5) * 30.0
+    # min=0.0: the gripper pressing down produces small negative lifts, and an
+    # unclamped negative here pays a standing penalty for a bottle at rest.
+    r_lift = torch.clamp(bottle_lift / lift_threshold, min=0.0, max=1.5) * 30.0
     r_lift = r_lift + (bottle_lift > lift_threshold).float() * 25.0
     lift_scale = float(getattr(env.cfg, "grasp_reward_lift_scale", 1.0))
     r_lift = r_lift * lift_scale
@@ -391,16 +451,137 @@ def _compute_grasp_reward(env: ManagerBasedRLEnv, s: dict, in_contact: torch.Ten
     r_lift_motion = torch.where(gripped, ee_vel_z.clamp(min=0.0) * 15.0, 0.0)
     r_up_before_grip = torch.where(in_grasp & ~gripped, ee_vel_z.clamp(min=0.0) * (-10.0), 0.0)
 
+    # ── Camping annuity decay (v3 — bỏ ngoại lệ lifted) ─────────────────────
+    # Trước đây các số hạng shaping dưới đây được trả MÃI MÃI sau khi đã kẹp
+    # xong, tổng ~+121 raw/bước cho việc không làm gì. Cộng với việc thành công
+    # kết thúc episode (V=0, không bootstrap, không bonus), đứng yên có giá trị
+    # gấp 5.8 lần hoàn thành nhiệm vụ — agent tối ưu đúng theo tín hiệu đó.
+    #
+    # v1 neo vào `latched`, v2 neo vào `finger_ready|latched` — CẢ HAI bị lợi
+    # dụng qua dao động biên (policy noise flick qua lại điều kiện tức thời,
+    # reset bộ đếm về 0 mỗi lần). v2b đổi sang `_steps_in_grasp` (đơn điệu, chỉ
+    # reset khi episode reset thật — miễn nhiễm dao động, ĐÚNG hướng) nhưng vẫn
+    # sụp (latch 0.73→0.27 trong 280k bước) vì lỗ hổng THẬT SỰ nằm chỗ khác:
+    # `camp_factor` có ngoại lệ "trừ khi lifted", mà `lifted = bottle_lift >
+    # 0.03m` chỉ là NGƯỠNG VỊ TRÍ THÔ, không kiểm tra có đang kẹp không — chai
+    # 95g chỉ cần bị cánh tay hất nảy lên >3cm (không cần kẹp) là đủ bật "miễn
+    # suy giảm" trở lại VĨNH VIỄN. Không phải lỗi ở anchor `_steps_in_grasp`
+    # (nó vẫn đúng và miễn nhiễm dao động) — lỗi ở việc THÊM một lối thoát mới
+    # (giả lift) sau khi đã bịt lối thoát cũ (dao động biên).
+    #
+    # v3: BỎ hẳn ngoại lệ lifted. Phần thưởng nhấc thật đã có r_lift/
+    # r_lift_hold/terminal_success_bonus riêng (không nằm trong static_shaping)
+    # nên không cần "miễn suy giảm" ở đây nữa — suy giảm áp dụng đều cho MỌI
+    # trạng thái trong GRASP, không phân biệt lifted giả hay thật.
+    # v4: BỎ HẲN r_camp (phạt tích luỹ theo bước). Tính bằng số cho thấy phạt
+    # lật chai một-lần (-30) LUÔN rẻ hơn phạt camp dồn tới hết episode (−600
+    # đến −4200 tuỳ lúc vào GRASP sớm/muộn) — agent học cách CỐ TÌNH lật chai
+    # để kết thúc episode sớm, né phạt camp. Đây là lỗi cấu trúc: bất kỳ phạt
+    # một-lần nào rẻ hơn phạt-tích-luỹ đang chạy đều biến thành lối thoát.
+    #
+    # Sửa gốc: suy giảm static_shaping về 0 là ĐỦ để triệt tiêu động cơ camping
+    # (không còn gì để farm) — không cần thêm phạt escalating tạo ra "chi phí
+    # cần trốn". Động lực tiến tới lift giờ đến từ CHI PHÍ CƠ HỘI (bỏ lỡ
+    # r_lift/r_lift_hold/+60 bonus), không phải từ áp lực né một hình phạt.
+    # tipped_penalty (-30, terminal, xem terminal_tipped_penalty) vẫn giữ
+    # nguyên vai trò răn đe — giờ nó bị thống trị hoàn toàn bởi "không làm gì"
+    # (0 phạt) vì không còn phạt camp dồn để so sánh rẻ hơn nữa.
+    # v5: neo vào _steps_since_latch (bước kể từ lúc ĐÃ LATCH), không phải
+    # _steps_in_grasp (bước kể từ lúc VÀO GRASP). Đo thật bằng DEBUG_DECAY
+    # (2026-09-06, sau khi sửa gripper actuator đối xứng — grasp/lift lần đầu
+    # hoạt động đủ tốt để lộ ra bug này): latch thật xảy ra ở steps_in_grasp=
+    # 136-371 — với anchor cũ, decay (decay_n=200, KHÔNG có onset) đã gần/
+    # bằng 0 NGAY TẠI thời điểm latch, giết static_shaping (align/descend/
+    # grip_close/track/orient) trong suốt toàn bộ quá trình nhấc sau đó
+    # (lift là sub-mode của STAGE_GRASP nên _steps_in_grasp tiếp tục tăng
+    # xuyên suốt). Xác nhận bằng training thật 5M bước: latch_rate giảm ĐỀU
+    # 0.28→0.00 trong ~500k bước trong khi ep_rew_mean TĂNG 202→228 — chữ ký
+    # kinh điển của "bỏ dở giữa chừng lời hơn đi trọn" khi phần thưởng cho
+    # đi trọn đã bị decay giết trước khi kịp tính. `_steps_since_latch` reset
+    # về 0 khi CHƯA latch (full reward suốt thời gian tiếp cận/đóng kẹp cần
+    # thiết) và chỉ bắt đầu đếm SAU KHI latch — đúng ý định gốc trong comment
+    # bên dưới ("trả MÃI MÃI SAU KHI ĐÃ KẸP XONG").
+    grasp_steps = env._steps_since_latch.float()
+    decay_n = float(getattr(env.cfg, "grasp_camp_decay_steps", 200))
+    decay = (1.0 - grasp_steps / max(decay_n, 1.0)).clamp(0.0, 1.0)
+
+    if os.environ.get("DEBUG_DECAY") == "1" and env.num_envs <= 16:
+        term = env.action_manager._terms.get("gripper_action")
+        latched_now = term._grasp_latched if term is not None and hasattr(term, "_grasp_latched") else torch.zeros_like(in_grasp)
+        just_latched = latched_now & ~getattr(env, "_dbg_prev_latched", torch.zeros_like(latched_now))
+        env._dbg_prev_latched = latched_now.clone()
+        lift_phase = getattr(env, "_lift_phase", None)
+        for i in just_latched.nonzero(as_tuple=False).flatten().tolist():
+            print(
+                f"  [DecayDbg] env{i} LATCH tại steps_since_latch={int(grasp_steps[i])} "
+                f"decay={float(decay[i]):.3f} (decay_n={decay_n:.0f})",
+                flush=True,
+            )
+        just_holding = (lift_phase == 2) & (getattr(env, "_dbg_prev_lift_phase", torch.full_like(lift_phase, -1)) != 2) if lift_phase is not None else torch.zeros_like(in_grasp)
+        if lift_phase is not None:
+            for i in just_holding.nonzero(as_tuple=False).flatten().tolist():
+                print(
+                    f"  [DecayDbg] env{i} HOLDING (lift ổn định) tại steps_since_latch={int(grasp_steps[i])} "
+                    f"decay={float(decay[i]):.3f}",
+                    flush=True,
+                )
+            env._dbg_prev_lift_phase = lift_phase.clone()
+
+    static_shaping = (
+        r_align + r_descend + r_hover + r_grip_close + r_grip_cmd + r_track + r_orient
+    ) * decay
+
     return (
-        r_align + r_descend + r_hover + r_z_floor + r_grip_close + r_grip_cmd + r_lift + r_track + r_lift_hold
-        + r_lift_motion + r_orient + r_bad_grip + r_lift_no_grip + r_air_grasp + r_up_before_grip
+        static_shaping
+        + r_lift + r_lift_hold + r_lift_motion
+        + r_z_floor + r_bad_grip + r_lift_no_grip + r_air_grasp + r_up_before_grip
         + table_penalty + vel_penalty
     )
+
+
+def _update_bottle_rest_baseline(env: ManagerBasedRLEnv) -> None:
+    """Track the bottle's settled resting height during the post-reset drop.
+
+    ``_bottle_rest_z`` seeds from the config spawn z, which sits ~12mm above the
+    table surface — the reset writes the *commanded* teleport target, before
+    physics has run, so the bottle then free-falls onto the table and every
+    subsequent ``bottle_lift`` reads a constant -0.012m. That silently inflates
+    the success threshold by 40% and makes ``r_lift`` pay a standing fine for a
+    stationary bottle.
+
+    Re-measuring while the episode is young (still in REACH, hundreds of steps
+    before any grasp) pins the datum to where physics actually put the bottle.
+    Tracking continuously across the window — rather than snapshotting once —
+    keeps ``bottle_lift`` near zero throughout the drop, so no transient leaks
+    into the gates.
+    """
+    settle_n = int(getattr(env.cfg, "bottle_rest_settle_steps", 15))
+    if settle_n <= 0:
+        return
+    warm = (env.episode_length_buf <= settle_n) & (env._stage == STAGE_REACH)
+    if not warm.any():
+        return
+    root_pos = env._bottle.data.root_pos_w
+    root_pos = getattr(root_pos, "torch", root_pos)  # IsaacLab 3.0 ProxyArray
+    env._bottle_rest_z[warm] = root_pos[warm, 2] - env.scene.env_origins[warm, 2]
+
+    if not getattr(env, "_dbg_logged_rest_z", False) and env.num_envs <= 16:
+        if int(env.episode_length_buf[0].item()) == settle_n:
+            env._dbg_logged_rest_z = True
+            spawn_z = float(env._bottle_nominal_pos[2].item())
+            rest_z = float(env._bottle_rest_z[0].item())
+            print(
+                f"  [RestZ] bottle settled at z={rest_z:.4f} (spawn cfg {spawn_z:.4f},"
+                f" table {getattr(env, '_table_z', 0.626):.4f}, drop {spawn_z - rest_z:+.4f}m)"
+            )
 
 
 def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Curriculum reward: Phase 1 reach, Phase 2 grasp+lift (same episode)."""
     check_init_buffers(env)
+    # Must run before compute_state: bottle_lift is derived from this datum, and
+    # the observation path recomputes state from the same buffer later this step.
+    _update_bottle_rest_baseline(env)
     s = compute_state(env)
 
     hold_steps = getattr(env.cfg, "success_hold_steps", 5)
@@ -428,3 +609,41 @@ def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
         print(f"  total_reward      : mean={total_reward.mean():.4f}")
 
     return total_reward
+
+
+def terminal_success_bonus(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Thưởng một lần khi episode kết thúc vì THÀNH CÔNG.
+
+    ``success`` được đăng ký KHÔNG có ``time_out=True`` nên SB3 coi là termination
+    thật → ``V(s_cuối) = 0``, không bootstrap. Trước đây không có bonus nào, nên
+    hoàn thành nhiệm vụ tự xoá toàn bộ giá trị tương lai: đứng yên ôm chai đáng
+    giá ~162, nhấc thành công chỉ ~28. Agent tối ưu đúng theo tín hiệu đó.
+
+    Chia ``step_dt`` để RewardManager (nhân lại ``dt``) cho ra đúng con số cấu
+    hình, tức ``grasp_success_bonus`` đọc thẳng là "cộng bấy nhiêu vào return".
+    """
+    if getattr(env.cfg, "task_phase", 1) < 2:
+        return torch.zeros(env.num_envs, device=env.device)
+    try:
+        done = env.termination_manager.get_term("success")
+    except (KeyError, ValueError, AttributeError):
+        return torch.zeros(env.num_envs, device=env.device)
+    bonus = float(getattr(env.cfg, "grasp_success_bonus", 60.0))
+    return done.float() * (bonus / env.step_dt)
+
+
+def terminal_tipped_penalty(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Phạt một lần khi episode kết thúc vì LẬT CHAI.
+
+    KHÔNG phải tuỳ chọn: khi camping đã có giá trị âm, ``V(lật) = 0`` sẽ biến
+    việc cố tình gạt đổ chai thành hành động TỐT NHẤT — lỗi tự huỷ kinh điển,
+    và nó sẽ trông y hệt triệu chứng hiện tại nhưng ở tầng sâu hơn.
+    """
+    if getattr(env.cfg, "task_phase", 1) < 2:
+        return torch.zeros(env.num_envs, device=env.device)
+    try:
+        done = env.termination_manager.get_term("tipped_bottle")
+    except (KeyError, ValueError, AttributeError):
+        return torch.zeros(env.num_envs, device=env.device)
+    pen = float(getattr(env.cfg, "grasp_tipped_penalty", 30.0))
+    return -done.float() * (pen / env.step_dt)

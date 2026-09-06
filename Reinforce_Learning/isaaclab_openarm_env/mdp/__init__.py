@@ -14,7 +14,7 @@
 
 from .actions import OpenArmActionTerm, OpenArmActionTermCfg
 from .observations import get_apple_pick_place_obs
-from .rewards import compute_curriculum_reward
+from .rewards import compute_curriculum_reward, terminal_success_bonus, terminal_tipped_penalty
 from .terminations import success_termination, tipped_bottle_termination, reset_robot, reset_bottle, reset_bowl
 
 __all__ = [
@@ -22,6 +22,8 @@ __all__ = [
     "OpenArmActionTermCfg",
     "get_apple_pick_place_obs",
     "compute_curriculum_reward",
+    "terminal_success_bonus",
+    "terminal_tipped_penalty",
     "success_termination",
     "tipped_bottle_termination",
     "reset_robot",

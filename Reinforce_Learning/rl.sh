@@ -262,27 +262,31 @@ EOF
 
 # ── Local commands ─────────────────────────────────────────────────────────────
 cmd_local_train() {
-    local envs=16 steps=1000000 headless="--headless" resume="" progress=""
-    local log_dir="./logs/train" task_phase="" stage="" assist="" checkpoint=""
+    local envs=16 steps=1000000 headless="--visualizer none" resume="" progress=""
+    local log_dir="./logs/train" task_phase="" stage="" assist="" checkpoint="" extra_args=""
 
     while [ $# -gt 0 ]; do
         case "$1" in
             --envs) envs=$2; shift 2 ;;
             --steps) steps=$2; shift 2 ;;
-            --gui) headless=""; shift ;;
+            --gui) headless="--visualizer kit"; shift ;;
             --resume) resume="--resume"; shift ;;
             --progress) progress="--progress"; shift ;;
             --phase) task_phase="--task_phase $2"; shift 2 ;;
             --stage) stage="--stage $2"; shift 2 ;;
             --assist-schedule) assist="--assist-schedule"; shift ;;
             --checkpoint) checkpoint="--checkpoint $2"; shift 2 ;;
+            --lr-start) extra_args="$extra_args --lr-start $2"; shift 2 ;;
+            --lr-end) extra_args="$extra_args --lr-end $2"; shift 2 ;;
+            --clip-range) extra_args="$extra_args --clip-range $2"; shift 2 ;;
+            --ent-coef) extra_args="$extra_args --ent-coef $2"; shift 2 ;;
             *) echo "Option không rõ: $1"; exit 1 ;;
         esac
     done
 
     PYTHONPATH="$RL_ROOT" "$ISAAC_SIM_PYTHON" ./isaaclab_train.py \
         --num_envs "$envs" --timesteps "$steps" --log_dir "$log_dir" \
-        $headless $resume $progress $task_phase $stage $assist $checkpoint
+        $headless $resume $progress $task_phase $stage $assist $checkpoint $extra_args
 }
 
 cmd_demo() {
@@ -299,7 +303,7 @@ cmd_demo() {
     done
     [ -n "$stage" ] && extra+=(--stage "$stage")
     PYTHONPATH="$RL_ROOT" "$ISAAC_SIM_PYTHON" ./isaaclab_demo.py \
-        --model_path "$model" --num_envs "$envs" --no-bottle-rand "${extra[@]}"
+        --model_path "$model" --num_envs "$envs" --no-bottle-rand --visualizer kit "${extra[@]}"
 }
 
 # ── Main ───────────────────────────────────────────────────────────────────────

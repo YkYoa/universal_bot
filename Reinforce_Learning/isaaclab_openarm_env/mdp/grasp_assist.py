@@ -15,6 +15,7 @@
 """Phase 2 action assists — optional bootstrap (training curriculum or demo)."""
 
 import torch
+import os
 from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.utils.math import quat_apply
 
@@ -31,6 +32,13 @@ from .helpers import (
     reach_descent_ready,
     uses_grasp_lift,
 )
+
+
+# Lift state machine (xem _update_lift_state). Lift là sub-mode của STAGE_GRASP,
+# không phải một stage riêng — env._stage vẫn chỉ đi REACH → GRASP.
+LIFT_IDLE = 0      # chưa đủ điều kiện, hoặc vừa bị hủy
+LIFT_RISING = 1    # đang phát lệnh nhấc lên, KHÔNG đánh giá lại điều kiện khởi động
+LIFT_HOLDING = 2   # đã vượt ngưỡng — giữ yên cho chai ổn định để tính thành công
 
 
 def _assist_scale(env: ManagerBasedRLEnv) -> float:
@@ -63,132 +71,242 @@ def _grip_physically_closed(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
     return span_ok
 
 
+def _grip_pressing(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """Ngón đang ÉP vào vật — bằng chứng thật sự của việc đang giữ chai.
+
+    ``finger_span_xy`` được SUY RA từ góc khớp, nên khi khớp bị vật chặn lại thì
+    span vẫn báo "đang mở" dù kẹp đang ép rất mạnh. Đo được: khớp kẹt ở 0.0231
+    trong khi lệnh 0.0105 → chênh 12.6mm × stiffness 1500 = 18.9N ép vào chai,
+    mà span lại báo 0.0583 (rộng hơn cả chai 0.0433).
+
+    Độ chênh khớp-so-với-lệnh là tín hiệu đúng: kẹp không khí thì chênh ~1.5mm,
+    kẹp chai thì ~12.6mm.
+    """
+    term = env.action_manager._terms.get("gripper_action")
+    if term is None or not hasattr(term, "_close_progress") or not hasattr(env, "_gripper_joint_ids"):
+        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    joint = env._robot.data.joint_pos[:, env._gripper_joint_ids].mean(dim=1)
+    open_m = float(getattr(env.cfg, "gripper_open_m", 0.044))
+    target = open_m * (1.0 - term._close_progress)
+    stall = joint - target
+    min_stall = float(getattr(env.cfg, "grasp_press_min_stall_m", 0.005))
+    near_bottle = s["dist_finger_body"] < float(getattr(env.cfg, "grasp_press_max_dist_f", 0.060))
+    if os.environ.get("DEBUG_STALL") == "1" and env.num_envs <= 16 and int(env.step_counter) % 15 == 0:
+        latched = _grip_latched(env)
+        for i in latched.nonzero(as_tuple=False).flatten().tolist():
+            print(
+                f"  [Stall] env{i} step_ct={int(env.step_counter)} gc={float(term._close_progress[i]):.3f} "
+                f"joint={float(joint[i])*1000:.2f}mm target={float(target[i])*1000:.2f}mm "
+                f"stall={float(stall[i])*1000:.2f}mm near={bool(near_bottle[i])} "
+                f"span={float(s['finger_span_xy'][i])*1000:.2f}mm",
+                flush=True,
+            )
+    return (stall > min_stall) & near_bottle
+
+
 def _grip_close_done(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
-    """Gripper đã khép xong — khi ramp: chờ progress, không tin lệnh binary."""
+    """Gripper đã khép xong — khi ramp: chờ progress, không tin lệnh binary.
+
+    ``grasp_close_done_progress`` (0.96) đứng trên ``grasp_close_freeze_at_progress``
+    (0.75), mà ramp bị chặn cứng ở cap đó trong actions.py → điều kiện cũ vĩnh viễn
+    False, kéo theo cổng tilt lift tụt 6.0° → 4.0° và giết luôn đường reopen.
+    Lấy min với cap để "khép xong" nghĩa là "đã chạm trần cho phép", tự nhất quán
+    với mọi giá trị freeze_at về sau.
+    """
     term = env.action_manager._terms.get("gripper_action")
     ramp_steps = int(getattr(env.cfg, "grasp_close_ramp_steps", 0))
     if ramp_steps > 0 and term is not None and hasattr(term, "_close_progress"):
-        done_gc = float(getattr(env.cfg, "grasp_close_done_progress", 0.96))
+        freeze_at = float(getattr(env.cfg, "grasp_close_freeze_at_progress", 0.0))
+        cap = freeze_at if freeze_at > 0.0 else 1.0
+        done_gc = min(float(getattr(env.cfg, "grasp_close_done_progress", 0.96)), cap)
         return term._close_progress >= done_gc
     grip_thresh = getattr(env.cfg, "grasp_grip_threshold", 0.4)
     return s["gripper_state"] > grip_thresh
 
 
-def _grip_partial_lift_ok(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
-    """Mimic kẹt gc~75% sau hết reopen — cho nhấc sớm nếu tilt còn thấp."""
-    if not getattr(env.cfg, "grasp_lift_partial_enabled", False):
-        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
-    term = env.action_manager._terms.get("gripper_action")
-    if term is None or not hasattr(term, "_close_progress"):
-        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
-    min_gc = float(getattr(env.cfg, "grasp_lift_partial_min_gc", 0.68))
-    max_tilt = float(getattr(env.cfg, "grasp_lift_partial_max_tilt_deg", 5.0))
-    exhausted = _grip_reopen_exhausted(env)
-    grip_thresh = getattr(env.cfg, "grasp_grip_threshold", 0.4)
-    sym_ok = (
-        finger_symmetric_ready(env, s)
-        if getattr(env.cfg, "grasp_partial_lift_require_sym", True)
-        and getattr(env.cfg, "grasp_symmetry_gate_enabled", False)
-        else torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
-    )
-    gc_ok = term._close_progress >= min_gc
-    phys_ok = _grip_physically_closed(env, s)
-    close_ok = gc_ok | (exhausted & phys_ok)
-    return (
-        exhausted
-        & close_ok
-        & (s["bottle_tilt_deg"] < max_tilt)
-        & (s["gripper_state"] > grip_thresh)
-        & _grip_latched(env)
-        & sym_ok
+def _grip_secure(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """Kẹp đã latch VÀ thực sự khép chặt — điều kiện duy nhất để được phép nhấc.
+
+    Thay cho _grip_committed cũ, vốn phụ thuộc _grip_partial_lift_ok (chỉ mở
+    khoá sau khi grasp đã hỏng 3 lần) và _grip_close_done (bất khả thi trước
+    khi sửa cap).
+
+    BUG đã sửa (đo trực tiếp qua DEBUG_LIFT sau khi vá mimic gripper): 3 điều
+    kiện cũ nối bằng OR, trong đó `_grip_physically_closed` CHỈ kiểm tra vị
+    trí hình học (span/joint đã gần nhau) — KHÔNG kiểm tra có lực ép thật hay
+    không. Lift được phép bắt đầu ngay khi stall (chênh khớp-so-với-lệnh, tỉ
+    lệ thuận lực ép) mới chỉ 2.69mm — quá yếu so với mốc kẹp chắc thật sự đo
+    được (~12.6mm). Kết quả: ngón trượt êm dọc thân chai ngay trong 2-3mm đầu
+    tiên khi tay bắt đầu nhấc (stall tụt về 0 dần, không phải đột ngột — bộ
+    phát hiện trượt vốn chỉ bắt delta-1-bước cũng không kịp phản ứng), tay
+    bay lên khoảng không hàng trăm bước mà không hề biết đã gắp hụt.
+
+    Fix: `_grip_pressing` (lực ép thật) giờ là điều kiện BẮT BUỘC, không còn
+    tuỳ chọn — chỉ dùng `_grip_close_done`/`_grip_physically_closed` làm bằng
+    chứng hình học BỔ SUNG, không thay thế được yêu cầu về lực.
+    """
+    return _grip_latched(env) & _grip_pressing(env, s) & (
+        _grip_close_done(env, s) | _grip_physically_closed(env, s)
     )
 
 
-def _grip_committed(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
-    """Đã latch + gripper khép xong (ramp 99% — không tin gripper_state sớm)."""
-    latched = _grip_latched(env)
-    done = _grip_close_done(env, s)
-    partial = _grip_partial_lift_ok(env, s)
-    ramp_steps = int(getattr(env.cfg, "grasp_close_ramp_steps", 0))
-    if ramp_steps > 0:
-        phys_ok = _grip_physically_closed(env, s)
-        sym_ok = (
-            finger_symmetric_ready(env, s)
-            if getattr(env.cfg, "grasp_symmetry_gate_enabled", False)
-            else torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
-        )
-        phys_commit = phys_ok
-        return latched & (done | partial | phys_commit)
-    grip_thresh = getattr(env.cfg, "grasp_grip_threshold", 0.4)
-    return latched & (done | partial | (s["gripper_state"] > grip_thresh))
-
-
-def _grasp_stable_for_lift(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
-    """Chai thẳng + ngón còn ôm sát thân trước khi nhấc."""
-    max_tilt = getattr(env.cfg, "grasp_lift_start_max_tilt_deg", 8.0)
-    # Dùng cùng biên grasp_close — lat_f ~0.077 khi kẹp ổn là bình thường
-    max_lat = getattr(
-        env.cfg, "grasp_lift_max_lat_f",
-        getattr(env.cfg, "grasp_close_max_lat", 0.08) + 0.01,
-    )
-    max_dist_f = getattr(
-        env.cfg, "grasp_lift_max_dist_f",
-        getattr(env.cfg, "grasp_success_max_dist_finger", 0.10),
-    )
-    partial = _grip_partial_lift_ok(env, s)
-    phys_ok = _grip_physically_closed(env, s) & _grip_latched(env)
-    contact_z = float(getattr(env.cfg, "grasp_lift_contact_z_finger", 0.022))
-    phys_contact = phys_ok & (s["z_error_finger"] < contact_z)
-    lift_armed = getattr(env, "_lift_armed", None)
-    if lift_armed is None:
-        lift_armed = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
-    # Arm nhấc mà chai chưa theo → z_f/dist tăng; không reset settle khi đang lift
-    skip_contact = partial | lift_armed | phys_contact
-    sym_ok = (
-        finger_symmetric_ready(env, s)
-        if getattr(env.cfg, "grasp_symmetry_gate_enabled", False)
-        else torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
-    )
-    sym_ok = sym_ok | skip_contact
-    max_z_f = float(getattr(env.cfg, "grasp_lift_max_z_finger", 0.030))
-    max_dist_f_eff = max_dist_f
-    max_tilt_eff = max_tilt
-    if partial.any():
-        max_z_f = float(getattr(env.cfg, "grasp_lift_partial_max_z_finger", 0.045))
-        max_dist_f_eff = float(getattr(env.cfg, "grasp_lift_partial_max_dist_f", 0.075))
-        max_tilt_eff = float(getattr(env.cfg, "grasp_lift_partial_max_tilt_deg", 8.0))
-    z_ok = (s["z_error_finger"] < max_z_f) | skip_contact
-    dist_ok = (s["dist_finger_body"] < max_dist_f_eff) | skip_contact
-    lat_ok = (s["lateral_finger_xy"] < max_lat) | skip_contact
-    return (
-        (s["bottle_tilt_deg"] < max_tilt_eff)
-        & lat_ok
-        & dist_ok
-        & z_ok
-        & sym_ok
-    )
-
-
-def _update_lift_settle(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
-    """Đếm bước ổn định sau khi khép xong — reset nếu chai nghiêng / trượt."""
-    if not hasattr(env, "_lift_settle_steps"):
-        env._lift_settle_steps = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+def _lift_can_start(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """Điều kiện ARM lệnh nhấc. Chỉ đánh giá khi đang IDLE."""
     in_grasp = env._stage == STAGE_GRASP
-    ok = _grip_committed(env, s) & _grasp_stable_for_lift(env, s) & in_grasp
-    env._lift_settle_steps[ok] += 1
-    env._lift_settle_steps[~ok] = 0
-    return env._lift_settle_steps
+    max_tilt = float(getattr(env.cfg, "grasp_lift_start_max_tilt_deg", 6.0))
+    contact_z = float(getattr(env.cfg, "grasp_lift_contact_z_finger", 0.022))
+    max_span = float(getattr(env.cfg, "grasp_lift_max_span_xy", 0.065))
+    return (
+        in_grasp
+        & _grip_secure(env, s)
+        & (s["bottle_tilt_deg"] < max_tilt)
+        & (s["z_error_finger"] < contact_z)
+        & (s["finger_span_xy"] < max_span)
+    )
 
 
-def _lift_ready(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
-    """Sẵn sàng nhấc: đã khép + ổn định đủ N bước."""
-    partial = _grip_partial_lift_ok(env, s)
-    phys_ok = _grip_physically_closed(env, s) & _grip_latched(env)
-    settle_req = int(getattr(env.cfg, "grasp_lift_settle_steps", 8))
-    if partial.any() or phys_ok.any():
-        settle_req = int(getattr(env.cfg, "grasp_lift_partial_settle_steps", 1))
-    steps = _update_lift_settle(env, s)
-    return _grip_committed(env, s) & _grasp_stable_for_lift(env, s) & (steps >= settle_req)
+def _lift_must_abort(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """Điều kiện HỦY lệnh nhấc đang chạy — chỉ những lỗi thật sự.
+
+    Cố tình KHÔNG bao gồm các ngưỡng tiếp xúc (z_f/dist/lat): khi cánh tay đi
+    lên mà chai còn quán tính, chúng dao động và sẽ hủy nhấc oan.
+    """
+    in_grasp = env._stage == STAGE_GRASP
+    abort_tilt = float(getattr(env.cfg, "grasp_grasp_abort_tilt_deg", 18.0))
+    slip_max = int(getattr(env.cfg, "grasp_lift_abort_slip_steps", 8))
+    slip_steps = getattr(env, "_lift_slip_steps", None)
+    if slip_steps is None:
+        slip_steps = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+    return (
+        ~in_grasp
+        | ~_grip_latched(env)
+        | (s["bottle_tilt_deg"] > abort_tilt)
+        | (slip_steps >= slip_max)
+    )
+
+
+def _update_lift_state(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """State machine nhấc: IDLE → RISING → HOLDING.
+
+    Tính chất quyết định: RISING KHÔNG đánh giá lại _lift_can_start. Logic cũ
+    kiểm tra lại toàn bộ điều kiện mỗi bước rồi reset cứng bộ đếm khi lỗi 1
+    bước, nên lệnh nhấc chỉ tồn tại được vài chục ms. Giờ đã armed thì chạy liên
+    tục tới khi có lỗi thật.
+
+    Trả về mask các env đang RISING (cần lệnh nhấc lên).
+    """
+    n = env.num_envs
+    if not hasattr(env, "_lift_phase"):
+        env._lift_phase = torch.zeros(n, dtype=torch.long, device=env.device)
+    if not hasattr(env, "_lift_ready_steps"):
+        env._lift_ready_steps = torch.zeros(n, dtype=torch.long, device=env.device)
+    if not hasattr(env, "_lift_rising_steps"):
+        env._lift_rising_steps = torch.zeros(n, dtype=torch.long, device=env.device)
+
+    phase = env._lift_phase
+    lift_thresh = float(getattr(env.cfg, "grasp_lift_threshold", 0.03))
+    hyst = float(getattr(env.cfg, "grasp_lift_hold_hysteresis_m", 0.008))
+    settle_req = int(getattr(env.cfg, "grasp_lift_settle_steps", 3))
+
+    can_start = _lift_can_start(env, s)
+    must_abort = _lift_must_abort(env, s)
+    above = s["bottle_lift"] >= lift_thresh
+
+    is_idle = phase == LIFT_IDLE
+    is_rising = phase == LIFT_RISING
+    is_holding = phase == LIFT_HOLDING
+
+    # IDLE: tích luỹ số bước đủ điều kiện liên tiếp rồi arm
+    env._lift_ready_steps[is_idle & can_start] += 1
+    env._lift_ready_steps[is_idle & ~can_start] = 0
+    to_rising = is_idle & (env._lift_ready_steps >= settle_req)
+
+    # RISING: chỉ rời khi abort thật, hoặc khi đã vượt ngưỡng → HOLDING
+    rise_abort = is_rising & must_abort
+    rise_done = is_rising & above & ~must_abort
+
+    # HOLDING: tụt dưới ngưỡng (trừ hysteresis) thì nhấc tiếp; abort thì về IDLE
+    hold_abort = is_holding & must_abort
+    hold_resume = is_holding & (s["bottle_lift"] < (lift_thresh - hyst)) & ~must_abort
+
+    new_phase = phase.clone()
+    new_phase[to_rising] = LIFT_RISING
+    new_phase[rise_abort] = LIFT_IDLE
+    new_phase[rise_done] = LIFT_HOLDING
+    new_phase[hold_abort] = LIFT_IDLE
+    new_phase[hold_resume] = LIFT_RISING
+    env._lift_phase = new_phase
+    env._lift_ready_steps[new_phase != LIFT_IDLE] = 0
+    # Số bước liên tiếp đang RISING — dùng để ramp lực nhấc từ từ (xem
+    # apply_grasp_arm_assist), tránh giật đột ngột ngay lúc bắt đầu nhấc.
+    env._lift_rising_steps[new_phase == LIFT_RISING] += 1
+    env._lift_rising_steps[new_phase != LIFT_RISING] = 0
+
+    if os.environ.get("DEBUG_APPROACH") == "1" and env.num_envs <= 16:
+        just_latched = _grip_latched(env) & (env._lift_ready_steps == 1) & (phase == LIFT_IDLE)
+        for i in just_latched.nonzero(as_tuple=False).flatten().tolist():
+            print(
+                f"  [ApproachDbg] env{i} step_ct={int(env.step_counter)} "
+                f"z_error_finger={float(s['z_error_finger'][i])*1000:.2f}mm "
+                f"top_down_align={float(s['top_down_align'][i]):.3f} "
+                f"lateral_finger_xy={float(s['lateral_finger_xy'][i])*1000:.2f}mm "
+                f"finger_span_xy={float(s['finger_span_xy'][i])*1000:.2f}mm "
+                f"dist_left_body={float(s['dist_left_body'][i])*1000:.2f}mm "
+                f"dist_right_body={float(s['dist_right_body'][i])*1000:.2f}mm "
+                f"bottle_tilt_deg={float(s['bottle_tilt_deg'][i]):.2f} "
+                f"finger_level={float(s['finger_level'][i]):.3f}",
+                flush=True,
+            )
+
+    if os.environ.get("DEBUG_LIFT") == "1" and env.num_envs <= 16:
+        changed = to_rising | rise_abort | rise_done | hold_abort
+        if changed.any():
+            names = {0: "IDLE", 1: "RISING", 2: "HOLDING"}
+            slip_steps = getattr(env, "_lift_slip_steps", None)
+            term = env.action_manager._terms.get("gripper_action")
+            latched_all = _grip_latched(env)
+            for i in changed.nonzero(as_tuple=False).flatten().tolist():
+                ss = int(slip_steps[i]) if slip_steps is not None else -1
+                gc = float(term._close_progress[i]) if term is not None and hasattr(term, "_close_progress") else -1.0
+                reason = "slip" if (slip_steps is not None and int(slip_steps[i]) >= int(getattr(env.cfg, "grasp_lift_abort_slip_steps", 8))) else (
+                    "tilt" if float(s["bottle_tilt_deg"][i]) > float(getattr(env.cfg, "grasp_grasp_abort_tilt_deg", 18.0)) else (
+                        "unlatched" if not bool(latched_all[i]) else "-"
+                    )
+                )
+                print(
+                    f"  [LiftDbg] env{i} step_ct={int(env.step_counter)} "
+                    f"{names[int(phase[i])]}→{names[int(new_phase[i])]} "
+                    f"| lift_m={float(s['bottle_lift'][i])*1000:.2f}mm "
+                    f"tilt={float(s['bottle_tilt_deg'][i]):.1f} slip_steps={ss} "
+                    f"gc={gc:.3f} latched={bool(latched_all[i])} reason={reason}",
+                    flush=True,
+                )
+
+    # Lý do abort cho telemetry (đọc bởi eval/demo, không ảnh hưởng điều khiển)
+    aborted = rise_abort | hold_abort
+    if aborted.any():
+        reasons: list[str | None] = [None] * n
+        in_grasp = env._stage == STAGE_GRASP
+        abort_tilt = float(getattr(env.cfg, "grasp_grasp_abort_tilt_deg", 18.0))
+        latched_now = _grip_latched(env)
+        slip_steps = getattr(env, "_lift_slip_steps", torch.zeros(n, dtype=torch.long, device=env.device))
+        slip_max = int(getattr(env.cfg, "grasp_lift_abort_slip_steps", 8))
+        for idx in aborted.nonzero(as_tuple=False).flatten().tolist():
+            if not bool(in_grasp[idx]):
+                reasons[idx] = "stage"
+            elif not bool(latched_now[idx]):
+                reasons[idx] = "unlatched"
+            elif float(s["bottle_tilt_deg"][idx]) > abort_tilt:
+                reasons[idx] = "tilt"
+            elif int(slip_steps[idx]) >= slip_max:
+                reasons[idx] = "slip"
+            else:
+                reasons[idx] = "other"
+        env._lift_abort_reason = reasons
+    else:
+        env._lift_abort_reason = [None] * n
+
+    return env._lift_phase == LIFT_RISING
 
 
 def _osc_tool_z_descend(
@@ -281,39 +399,37 @@ def _align_vertical_rot_action(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
 def _osc_world_up_lift(
     env: ManagerBasedRLEnv, s: dict, mask: torch.Tensor, arm_actions: torch.Tensor, scale: float = 1.0
 ) -> torch.Tensor:
-    """OSC pose_rel: nhấc thẳng world +Z (delta vị trí trong base frame)."""
+    """OSC pose_rel: nhấc thẳng world +Z (delta vị trí trong base frame).
+
+    Trước đây magnitude đi qua một bộ gain thích ứng ``follow`` đọc
+    ``env._prev_lift_bottle``. Nhưng ``_update_lift_slip`` chạy TRƯỚC hàm này và
+    ghi đè chính buffer đó bằng giá trị hiện tại → ``moved`` luôn bằng 0 → gain
+    kẹt vĩnh viễn ở sàn 0.45. Không hành vi nào từng quan sát được phụ thuộc vào
+    nó, nên bỏ hẳn: magnitude hằng số, suy ra trực tiếp từ config.
+    """
     pos_scale = float(getattr(env.cfg, "osc_position_scale", 0.06))
     lift_m = float(getattr(env.cfg, "grasp_lift_world_m", 0.012))
-    lift_m_p = float(getattr(env.cfg, "grasp_lift_partial_world_m", lift_m))
-    partial = _grip_partial_lift_ok(env, s)
-    phys_partial = _grip_physically_closed(env, s) & _grip_latched(env)
-    if term := env.action_manager._terms.get("gripper_action"):
-        if hasattr(term, "_close_progress"):
-            gc_p = term._close_progress >= float(getattr(env.cfg, "grasp_lift_partial_min_gc", 0.52))
-            phys_partial = phys_partial | (gc_p & (s["finger_span_xy"] < 0.062))
-    lift_vec = torch.full((env.num_envs,), lift_m, device=env.device)
-    lift_vec = torch.where(partial | phys_partial, torch.full_like(lift_vec, lift_m_p), lift_vec)
-    # Span chặt → nhấc mạnh hơn (kẹp đủ lực)
-    tight_span = s["finger_span_xy"] < 0.055
-    lift_vec = torch.where(tight_span & (partial | phys_partial), lift_vec * 1.25, lift_vec)
-    mag = lift_vec / max(pos_scale, 1e-4) * scale
-    # Contact tốt (z_f ổn) → nhấc mạnh hơn; chai chưa theo → vẫn giữ tối thiểu
-    prev_b = getattr(env, "_prev_lift_bottle", None)
-    z_f_ok = s["z_error_finger"] < float(getattr(env.cfg, "grasp_lift_contact_z_finger", 0.022))
-    dist_ok = s["dist_finger_body"] < float(getattr(env.cfg, "grasp_lift_contact_dist_f", 0.040))
-    contact_good = z_f_ok & dist_ok
-    if prev_b is not None:
-        moved = (s["bottle_lift"] - prev_b).clamp(min=0.0)
-        follow = (moved / 0.002).clamp(0.45, 1.0)
-        min_follow = float(getattr(env.cfg, "grasp_lift_contact_min_follow", 0.72))
-        partial_lift = partial | phys_partial
-        follow = torch.where(contact_good, follow.clamp(min=min_follow), follow)
-        follow = torch.where(partial_lift, follow.clamp(min=0.88), follow)
-        mag = mag * follow
-    mag = mag.clamp(max=1.0)
+    full_mag = min(lift_m / max(pos_scale, 1e-4) * scale, 1.0)
+
+    # Ramp từ từ theo số bước đã RISING — grasp_lift_world_m bị đẩy lên 0.055
+    # (17x tốc độ gốc) để nhấc đủ nhanh trong ngân sách episode, nhưng full
+    # magnitude NGAY BƯỚC ĐẦU là một lệnh bước-nhảy (step input) tạo giật đột
+    # ngột. Đo được (lift_too_low, DEBUG_STALL): chai theo tay đúng 1.5mm rồi
+    # trượt hẳn — đúng thời điểm giật khởi động. Ma sát đo được rất cao (μ
+    # 1.4-1.8), đủ giữ TRỌNG LƯỢNG tĩnh (0.93N) dễ dàng, nhưng có thể không đủ
+    # cho GIA TỐC đột ngột (lực quán tính cộng thêm) ở bước đầu. Ramp tuyến
+    # tính lên full_mag trong grasp_lift_onset_ramp_steps bước để lực ma sát
+    # có thời gian "bắt kịp" thay vì bị vượt ngay tức thì.
+    onset_steps = int(getattr(env.cfg, "grasp_lift_onset_ramp_steps", 15))
+    rising_steps = getattr(env, "_lift_rising_steps", None)
+    if rising_steps is not None and onset_steps > 0:
+        ramp_frac = (rising_steps.float() / float(onset_steps)).clamp(0.0, 1.0)
+    else:
+        ramp_frac = torch.ones(env.num_envs, device=env.device)
+
     out = arm_actions.clone()
     out[mask] = 0.0
-    out[mask, 2] = mag[mask]
+    out[mask, 2] = full_mag * ramp_frac[mask]
     return out
 
 
@@ -343,8 +459,29 @@ def _update_lift_slip(env: ManagerBasedRLEnv, s: dict, armed: torch.Tensor) -> t
         firm = firm_gc & firm_phys
         slip = slip & ~firm
     env._lift_slip_pause = slip
-    if hasattr(env, "_lift_armed"):
-        env._lift_armed[slip] = False
+    # Hạ cấp thành bộ đếm: 1 bước trượt đơn lẻ không còn hủy nhấc ngay (logic cũ
+    # làm vậy và đó là một nguồn nhấp nháy). State machine đòi N bước liên tiếp.
+    if not hasattr(env, "_lift_slip_steps"):
+        env._lift_slip_steps = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+    env._lift_slip_steps[slip] += 1
+    env._lift_slip_steps[~slip] = 0
+
+    if os.environ.get("DEBUG_LIFT") == "1" and env.num_envs <= 16 and int(env.step_counter) % 20 == 0:
+        term2 = env.action_manager._terms.get("gripper_action")
+        joint = env._robot.data.joint_pos[:, env._gripper_joint_ids].mean(dim=1) if hasattr(env, "_gripper_joint_ids") else None
+        open_m = float(getattr(env.cfg, "gripper_open_m", 0.044))
+        for i in armed.nonzero(as_tuple=False).flatten().tolist():
+            tgt = open_m * (1.0 - float(term2._close_progress[i])) if term2 is not None and hasattr(term2, "_close_progress") else -1.0
+            stall = float(joint[i]) - tgt if joint is not None else -1.0
+            print(
+                f"  [LiftSlip] env{i} step_ct={int(env.step_counter)} "
+                f"lift_m={float(s['bottle_lift'][i])*1000:.2f}mm dz_f={float(dz_f[i])*1000:+.3f}mm "
+                f"db={float(db[i])*1000:+.3f}mm slip={bool(slip[i])} slip_steps={int(env._lift_slip_steps[i])} "
+                f"joint={float(joint[i])*1000:.2f}mm tgt={tgt*1000:.2f}mm stall={stall*1000:.2f}mm "
+                f"z_f={float(s['z_error_finger'][i])*1000:.2f}mm tilt={float(s['bottle_tilt_deg'][i]):.1f}",
+                flush=True,
+            )
+
     env._prev_lift_z_f = s["z_error_finger"].clone()
     env._prev_lift_bottle = s["bottle_lift"].clone()
     if not armed.any():
@@ -394,6 +531,40 @@ def apply_grasp_arm_assist(env: ManagerBasedRLEnv, arm_actions: torch.Tensor) ->
         return arm_actions
 
     actions = arm_actions.clone()
+
+    # Giảm chấn hover REACH khi assist đã TẮT HẲN (scale<=1e-6) — nhánh
+    # scale-gated phía dưới (giữ nguyên, không đổi) sẽ tự lo việc này khi
+    # scale>0, nên khối này CHỈ chạy khi nhánh dưới sẽ return sớm và bỏ qua
+    # hoàn toàn. Ban đầu viết khối này chạy VÔ ĐIỀU KIỆN (kể cả scale>0) —
+    # gây damp ÁP HAI LẦN chồng lên nhánh gốc (0.12×0.12=0.0144), làm hồi quy
+    # ngay cả ở scale=1.0 (top_down_align kẹt ~0.44 dù trước đó ready trong
+    # 21-59 bước — xem eval_after_mimic_align.log). Chỉ nên chạy đúng lúc
+    # code gốc sẽ bỏ qua.
+    #
+    # Phát hiện qua đo thật (assist_scale=0.0, --stage all): dist_ee_bottle
+    # đạt mean=0.026m (rất gần) nhưng top_down_align kẹt ở 0.47-0.53 (cần
+    # ≥0.58), CÒN GIẢM DẦN theo thời gian hold — mọi tiêu chí khác (lat_f,
+    # z, z_f, finger_level) đều đạt. Đây KHÔNG phải "làm hộ" nhiệm vụ — chỉ
+    # là bộ lọc nhiễu cho chính output thô của policy khi đang hover chờ
+    # gate căn chỉnh. Nhiễu tự nhiên của các dim xoay cổ tay đủ lớn để phá
+    # hỏng việc GIỮ ỔN ĐỊNH hướng úp xuống, dù giá trị TRUNG BÌNH của policy
+    # đã đúng hướng.
+    if (
+        _assist_scale(env) <= 1e-6
+        and getattr(env.cfg, "grasp_descent_assist_enabled", False)
+        and getattr(env.cfg, "grasp_descent_in_reach", True)
+    ):
+        # Ở nhánh này scale<=1e-6 nên code gốc bên dưới sẽ return ngay sau khi
+        # tính `scale` — nghĩa là `need_down` (lệnh hạ chủ động) sẽ KHÔNG bao
+        # giờ được tính/áp dụng trong cùng bước này. Do đó không cần loại trừ
+        # `need_down` ở đây: nó luôn False trong nhánh scale=0.
+        _in_reach0 = env._stage == STAGE_REACH
+        _in_contact0 = getattr(env, "_in_contact_zone", torch.zeros(env.num_envs, dtype=torch.bool, device=env.device))
+        _hold_ok0 = env._steps_in_contact >= getattr(env.cfg, "reach_stage_hold_steps", 5)
+        _reach_hover0 = _in_reach0 & _in_contact0 & _hold_ok0 & ~reach_align_ready(env, s, soft=False)
+        if _reach_hover0.any():
+            actions[_reach_hover0] *= float(getattr(env.cfg, "grasp_grip_arm_damp", 0.12))
+
     scale = _assist_scale(env)
     if scale <= 1e-6:
         return actions
@@ -418,7 +589,7 @@ def apply_grasp_arm_assist(env: ManagerBasedRLEnv, arm_actions: torch.Tensor) ->
     )
     latched = _grip_latched(env)
     close_ramping = grip_close_ramp_active(env)
-    partial_active = _grip_partial_lift_ok(env, s)
+    partial_active = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
     term = env.action_manager._terms.get("gripper_action")
     reopen_max = int(getattr(env.cfg, "grasp_reopen_max_count", 3))
     partial_min_gc = float(getattr(env.cfg, "grasp_lift_partial_min_gc", 0.55))
@@ -426,10 +597,12 @@ def apply_grasp_arm_assist(env: ManagerBasedRLEnv, arm_actions: torch.Tensor) ->
     if term is not None and hasattr(term, "_reopen_count") and hasattr(term, "_close_progress"):
         reopen_done = (term._reopen_count >= reopen_max) & (term._close_progress >= partial_min_gc)
     lift_thresh = getattr(env.cfg, "grasp_lift_threshold", 0.03)
-    lift_ready = _lift_ready(env, s)
+    # Lift state machine chạy mỗi bước (kể cả khi assist tắt) để telemetry và
+    # các freeze bên dưới luôn có _lift_phase nhất quán.
+    rising = _update_lift_state(env, s)
+    lift_ready = rising | (env._lift_phase == LIFT_HOLDING)
     top_down = s["top_down_align"]
 
-    lift_cmd = float(getattr(env.cfg, "grasp_lift_action", -0.45))
     descend_cmd = float(getattr(env.cfg, "grasp_descent_action", 0.3))
 
     z_stop = getattr(
@@ -441,6 +614,9 @@ def apply_grasp_arm_assist(env: ManagerBasedRLEnv, arm_actions: torch.Tensor) ->
     top_ok = top_down >= getattr(env.cfg, "grasp_descent_min_top_down", 0.50)
 
     need_down = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    # Khai báo trước: chỉ được gán trong nhánh assist_grasp, nhưng idle_hold ở
+    # cuối hàm đọc nó vô điều kiện.
+    center_mask = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
 
     if assist_reach and getattr(env.cfg, "grasp_descent_in_reach", True):
         reach_hold = getattr(env.cfg, "reach_stage_hold_steps", 5)
@@ -526,21 +702,20 @@ def apply_grasp_arm_assist(env: ManagerBasedRLEnv, arm_actions: torch.Tensor) ->
     sym_for_freeze = sym_ok if getattr(env.cfg, "grasp_symmetry_gate_enabled", False) else torch.ones(
         env.num_envs, dtype=torch.bool, device=env.device
     )
-    hold_pose = (
+    # Freeze TRƯỚC latch. Sau latch việc đóng băng do idle_hold ở cuối hàm lo,
+    # dựa trên _lift_phase — nên không còn phụ thuộc grasp_lift_assist_enabled
+    # để "mở van" (đó là lý do --stage grasp từng đóng băng cánh tay vĩnh viễn).
+    pregrasp_hold = (
         in_grasp
-        & (s["bottle_lift"] < lift_thresh)
-        & ~lift_ready
+        & ~latched
+        & aligned
         & freeze_arm
         & ~need_down
-        & (aligned | latched)
         & sym_for_freeze
         & ~not_sinkable
     )
-    # Sau latch: để lift assist điều khiển, không zero actions trước đó
-    if getattr(env.cfg, "grasp_lift_assist_enabled", False):
-        hold_pose = hold_pose & ~latched
-    if hold_pose.any():
-        actions[hold_pose] = 0.0
+    if pregrasp_hold.any():
+        actions[pregrasp_hold] = 0.0
 
     if need_down.any():
         env._assist_want_descend = need_down.clone()
@@ -651,113 +826,51 @@ def apply_grasp_arm_assist(env: ManagerBasedRLEnv, arm_actions: torch.Tensor) ->
     want_lift = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
 
     if assist_lift:
-        grip_ok = _grip_committed(env, s)
-        max_lift_tilt = float(getattr(env.cfg, "grasp_lift_start_max_tilt_deg", 6.0))
-        partial_tilt = float(getattr(env.cfg, "grasp_lift_partial_max_tilt_deg", 4.0))
-        close_done = _grip_close_done(env, s)
-        max_tilt_eff = torch.where(close_done, max_lift_tilt, partial_tilt)
-        want_lift = lift_ready & in_grasp & grip_ok & (s["bottle_lift"] < lift_thresh)
-        want_lift = want_lift & (s["bottle_tilt_deg"] < max_tilt_eff)
-        want_lift = want_lift & (~reopen_done | sym_ok | _grip_physically_closed(env, s))
-        max_lift_span = float(getattr(env.cfg, "grasp_lift_max_span_xy", 0.055))
-        want_lift = want_lift & (s["finger_span_xy"] < max_lift_span)
-        contact_z = float(getattr(env.cfg, "grasp_lift_contact_z_finger", 0.022))
-        term = env.action_manager._terms.get("gripper_action")
-        gc_now = term._close_progress if term is not None and hasattr(term, "_close_progress") else None
-        tight_grasp = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
-        if gc_now is not None:
-            tight_grasp = (gc_now >= float(getattr(env.cfg, "grasp_lift_partial_min_gc", 0.65))) & (
-                s["finger_span_xy"] < float(getattr(env.cfg, "grasp_phys_close_max_span", 0.045))
-            )
-        want_lift = want_lift & (
-            (s["z_error_finger"] < contact_z)
-            | _grip_close_done(env, s)
-            | _grip_partial_lift_ok(env, s)
-            | tight_grasp
-        )
-        pre_hold = int(getattr(env.cfg, "grasp_pre_lift_hold_steps", 0))
-        if not hasattr(env, "_pre_lift_hold_steps"):
-            env._pre_lift_hold_steps = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
-        env._pre_lift_hold_steps[want_lift] += 1
-        env._pre_lift_hold_steps[~want_lift] = 0
-        actually_lift = want_lift if pre_hold <= 0 else (want_lift & (env._pre_lift_hold_steps >= pre_hold))
-        if not hasattr(env, "_lift_armed"):
-            env._lift_armed = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
-        armed = env._lift_armed | actually_lift
-        slip = _update_lift_slip(env, s, armed)
-        actually_lift = actually_lift & ~slip
-        env._assist_want_lift = actually_lift.clone()
-        env._lift_armed = env._lift_armed | actually_lift
-        env._lift_armed = env._lift_armed & in_grasp & (s["bottle_lift"] < lift_thresh)
-        if actually_lift.any():
-            if getattr(env.cfg, "grasp_lift_world_up", True):
-                actions = _osc_world_up_lift(env, s, actually_lift, actions, scale)
-                # Gentle straightening only — partial lift: không xoay wrist (top↓ tụt)
-                lift_align = float(getattr(env.cfg, "grasp_lift_align_blend", 0.0))
-                partial_align = float(getattr(env.cfg, "grasp_lift_partial_align_blend", 0.0))
-                partial_m = _grip_partial_lift_ok(env, s)
-                if lift_align > 0.0 or partial_align > 0.0:
-                    rot = _align_vertical_rot_action(env, s)[actually_lift]
-                    eff = torch.where(
-                        partial_m[actually_lift],
-                        torch.full_like(partial_m[actually_lift], partial_align, dtype=torch.float32),
-                        torch.full_like(partial_m[actually_lift], lift_align, dtype=torch.float32),
-                    )
-                    actions[actually_lift, 3:6] = rot.clamp(-0.25, 0.25) * eff.unsqueeze(-1)
-                else:
-                    actions[actually_lift, 3:6] = 0.0
-                # Cân pad L/R trong lúc lift — R d~0.017 hay lệch
-                lift_asym = actually_lift & ~sym_ok
-                lift_bal = float(getattr(env.cfg, "grasp_lift_pad_balance_blend", 0.0))
-                if lift_asym.any() and lift_bal > 0.0 and getattr(
-                    env.cfg, "grasp_symmetry_gate_enabled", False
-                ):
-                    pos_scale = float(getattr(env.cfg, "osc_position_scale", 0.06))
-                    step_cap = float(getattr(env.cfg, "grasp_descent_world_m", 0.010)) / max(
-                        pos_scale, 1e-4
-                    )
-                    xy_balance = _pad_balance_xy_action(env, s, step_cap * 0.65)
-                    actions[lift_asym, 0:2] += xy_balance[lift_asym] * lift_bal * scale
+        # RISING: phát lệnh nhấc thẳng world +Z. State machine đã lọc điều kiện,
+        # ở đây không kiểm tra lại gì nữa (đó chính là nguồn nhấp nháy cũ).
+        want_lift = rising
+        _update_lift_slip(env, s, rising)
+        env._assist_want_lift = rising.clone()
+        if rising.any():
+            # RESIDUAL, không ghi đè. PPO lưu log-prob của action đã SAMPLE rồi
+            # gán advantage cho action đó; nếu env thực thi thứ khác thì gradient
+            # cho việc nhấc bằng 0 (ghi đè) hoặc bị lệch (blend lồi). Cộng thêm
+            # một lượng bias tất định vào trục Z giữ đúng tính chất on-policy.
+            #   w=1 → hành vi hệt như ghi đè (Giai đoạn 1, đã kiểm chứng)
+            #   w=0 → policy toàn quyền
+            pos_scale = float(getattr(env.cfg, "osc_position_scale", 0.06))
+            lift_m = float(getattr(env.cfg, "grasp_lift_world_m", 0.012))
+            bias = min(lift_m / max(pos_scale, 1e-4), 1.0)
+            w = max(min(scale, 1.0), 0.0)
+            if w >= 1.0 - 1e-6:
+                actions = _osc_world_up_lift(env, s, rising, actions, 1.0)
+                actions[rising, 3:6] = 0.0
             else:
-                tool_z_w = s["tool_z_w"]
-                vert = tool_z_w[actually_lift, 2].abs().clamp(min=0.35, max=1.0)
-                scaled_lift = (lift_cmd / vert).clamp(-1.0, 0.0)
-                blend_lift = float(getattr(env.cfg, "grasp_lift_assist_blend", 1.0)) * scale
-                if blend_lift >= 0.99:
-                    actions[actually_lift, 2] = scaled_lift
-                else:
-                    cur = actions[actually_lift, 2]
-                    actions[actually_lift, 2] = (1.0 - blend_lift) * cur + blend_lift * scaled_lift
-        pre_only = want_lift & ~actually_lift
-        if pre_only.any():
-            actions[pre_only] = 0.0
+                actions[rising, 2] = (actions[rising, 2] + w * bias).clamp(-1.0, 1.0)
+                # Các trục khác: giảm chấn theo w chứ không giết — policy vẫn
+                # giữ được quyền điều chỉnh tư thế trong lúc nhấc.
+                damp = 1.0 - 0.8 * w
+                actions[rising, 0:2] = actions[rising, 0:2] * damp
+                actions[rising, 3:6] = actions[rising, 3:6] * damp
 
-    # Đã latch nhưng chưa lift: giữ pose — không freeze khi pad lệch (cần căn/recover)
-    lift_armed = getattr(env, "_lift_armed", torch.zeros(env.num_envs, dtype=torch.bool, device=env.device))
-    latched_hold = (
-        latched
-        & in_grasp
-        & (s["bottle_lift"] < lift_thresh)
-        & ~want_lift
-        & ~lift_armed
-        & ~need_down
-        & sym_ok
-    )
-    if latched_hold.any():
-        actions[latched_hold] = 0.0
+        # HOLDING: đóng băng để chai giảm tốc. grasp_lift_success_ready đòi
+        # ‖vel‖ < grasp_success_max_bottle_speed trong 5 bước liên tiếp; nếu vẫn
+        # đẩy lên thì chai không bao giờ đứng yên đủ lâu để tính thành công.
+        holding = env._lift_phase == LIFT_HOLDING
+        if holding.any():
+            actions[holding] = 0.0
 
-    # Đã kẹp (grip>0.4) nhưng không lift/descend: chặn policy drift (z_f tăng ảo)
-    grip_thresh = getattr(env.cfg, "grasp_grip_threshold", 0.4)
-    gripped_hold = (
+    # Đã latch nhưng lift chưa arm: giữ pose, chặn policy drift (z_f tăng ảo).
+    # Gộp latched_hold + gripped_hold cũ — cả hai đều mô tả cùng một trạng thái.
+    idle_hold = (
         in_grasp
         & latched
-        & (s["gripper_state"] > grip_thresh)
-        & (s["bottle_lift"] < lift_thresh)
-        & ~env._assist_want_lift
+        & (env._lift_phase == LIFT_IDLE)
         & ~need_down
+        & ~center_mask
     )
-    if gripped_hold.any():
-        actions[gripped_hold] = 0.0
+    if idle_hold.any():
+        actions[idle_hold] = 0.0
 
     # GRASP chưa align: giảm drift policy (tránh trôi ngang khi không ép hạ)
     drift_damp = in_grasp & ~aligned & ~latched & ~lift_ready & ~need_down

@@ -21,10 +21,42 @@ from isaaclab.envs.mdp.actions.actions_cfg import (
     OperationalSpaceControllerActionCfg,
 )
 from isaaclab.envs.mdp.actions.task_space_actions import OperationalSpaceControllerAction
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 
 from .grasp_assist import apply_grasp_arm_assist
 from .helpers import STAGE_GRASP, STAGE_REACH, finger_descended_for_close, finger_grasp_ready, finger_pad_asymmetric, finger_pad_severe_asymmetric, finger_ready_for_close, finger_symmetric_ready, uses_grasp_lift
+
+_JOINT_POS_WARNED = False
+
+
+def _joint_pos_mean_safe(asset, joint_ids, device):
+    """Mean joint_pos qua joint_ids, chịu được cả ProxyArray lẫn wp.array thô.
+
+    Ở apply_actions() (trước physics step), asset.data.joint_pos có lúc KHÔNG
+    phải ProxyArray thường gặp ở nơi khác trong codebase (không có .torch),
+    mà là wp.array — cần wp.to_torch() tường minh. Trả None nếu cả hai cách
+    đều thất bại, để gọi nơi tự quyết định bỏ qua thay vì crash cả episode.
+    """
+    global _JOINT_POS_WARNED
+    # self._joint_ids trong IsaacLab 3.0 là wp.array (in ra giống list Python
+    # nhưng KHÔNG PHẢI list) — dùng thẳng làm index vào torch.Tensor khiến
+    # warp tự cố indexing nội bộ ("Item indexing is not supported on
+    # wp.array"). raw.torch tự nó trả về đúng torch.Tensor bình thường — chỉ
+    # cần chuyển joint_ids sang list/tensor thường trước khi index.
+    ids = joint_ids
+    if hasattr(ids, "numpy"):
+        ids = ids.numpy().tolist()
+    elif not isinstance(ids, (list, tuple)):
+        ids = list(ids)
+    try:
+        raw = asset.data.joint_pos
+        joint_pos_t = getattr(raw, "torch", raw)  # ProxyArray (3.0) vs Tensor thường (2.3.2)
+        return joint_pos_t[:, ids].mean(dim=1)
+    except Exception as e:
+        if not _JOINT_POS_WARNED:
+            print(f"  ⚠️ [GripPressFreeze] Không đọc được joint_pos: {type(e).__name__}: {e} — bỏ qua dừng-theo-lực.", flush=True)
+            _JOINT_POS_WARNED = True
+        return None
 
 
 class AssistedOperationalSpaceControllerAction(OperationalSpaceControllerAction):
@@ -48,6 +80,7 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
         self._want_close = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._close_progress = torch.zeros(self.num_envs, device=self.device)
         self._prev_close_tilt = torch.zeros(self.num_envs, device=self.device)
+        self._press_hold_steps = torch.zeros(self.num_envs, dtype=torch.int32, device=self.device)
 
     def reset(self, env_ids: torch.Tensor | None = None):
         if env_ids is None:
@@ -59,6 +92,7 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
             self._want_close[:] = False
             self._close_progress[:] = 0.0
             self._prev_close_tilt[:] = 0.0
+            self._press_hold_steps[:] = 0
         else:
             self._grasp_latched[env_ids] = False
             self._descend_hold[env_ids] = 0
@@ -68,6 +102,7 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
             self._want_close[env_ids] = False
             self._close_progress[env_ids] = 0.0
             self._prev_close_tilt[env_ids] = 0.0
+            self._press_hold_steps[env_ids] = 0
 
     def process_actions(self, actions: torch.Tensor):
         env = self._env
@@ -97,7 +132,15 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                         self._close_progress[slipped] = 0.0
                         self._descend_hold[slipped] = 0
 
-                # Mở lại chỉ sau khi khép xong + lệch nặng / tilt cao (không cắt giữa ramp)
+                # Mở lại chỉ sau khi khép xong + lệch nặng / tilt cao (không cắt giữa ramp).
+                # KHÔNG BAO GIỜ mở khi đang nhấc: reopen là hành vi phục hồi TRƯỚC khi
+                # nhấc; làm giữa không trung thì chai rơi. Lúc nhấc chai đung đưa nhẹ →
+                # khoảng cách 2 pad lệch → severe_asym → mở kẹp → mất latch → hủy nhấc.
+                _lp = getattr(env, "_lift_phase", None)
+                lift_active = (
+                    _lp != 0 if _lp is not None
+                    else torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+                )
                 reopen_asym = float(getattr(env.cfg, "grasp_reopen_asym_dist_delta", 0.0))
                 reopen_tilt = float(getattr(env.cfg, "grasp_reopen_max_tilt_deg", 6.0))
                 if reopen_asym > 0.0:
@@ -107,7 +150,11 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                         )
                     reopen_cooldown = int(getattr(env.cfg, "grasp_reopen_cooldown_steps", 40))
                     reopen_max = int(getattr(env.cfg, "grasp_reopen_max_count", 2))
-                    min_gc = float(getattr(env.cfg, "grasp_reopen_min_close_progress", 0.92))
+                    # Cap-aware: ramp không thể vượt grasp_close_freeze_at_progress,
+                    # nên min_gc cố định 0.92 khiến cả nhánh reopen này thành dead code.
+                    _freeze_at = float(getattr(env.cfg, "grasp_close_freeze_at_progress", 0.0))
+                    _cap = _freeze_at if _freeze_at > 0.0 else 1.0
+                    min_gc = min(float(getattr(env.cfg, "grasp_reopen_min_close_progress", 0.92)), _cap)
                     severe_delta = float(
                         getattr(env.cfg, "grasp_reopen_severe_asym_delta", max(reopen_asym * 1.5, 0.030))
                     )
@@ -127,6 +174,7 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                     can_reopen_tilt = can_reopen_tilt & (self._close_progress < pause_tilt_gc)
                     bad_close = (
                         in_grasp
+                        & ~lift_active
                         & gripped
                         & close_done
                         & (self._reopen_cooldown <= 0)
@@ -153,6 +201,7 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                     )
                     mid_ramp = (
                         in_grasp
+                        & ~lift_active
                         & (self._close_progress > 0.25)
                         & (self._close_progress < min_gc)
                         & (self._want_close | self._grasp_latched)
@@ -359,7 +408,69 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                     freeze_asym = exhausted & ~sym_ok & (self._close_progress >= min_gc)
                     freeze = freeze_cap | freeze_asym
                     can_advance = can_advance & ~freeze
-            self._close_progress[can_advance] += 1.0 / float(ramp_steps)
+
+                # Dừng ramp theo LỰC CHẠM THẬT, không chỉ theo tỉ lệ % cố định.
+                # Đo trực tiếp (DEBUG_STALL): ramp cũ siết tới grasp_close_freeze_at_progress
+                # bất kể đã chạm hay chưa — tại gc≈0.71 (span≈43mm, đúng đường kính
+                # chai) stall (chênh khớp-so-với-lệnh, tỉ lệ thuận lực ép) đạt đỉnh
+                # ~3.4mm, nhưng ramp tiếp tục siết sâu hơn (gc→0.90+) và ĐẨY VĂNG
+                # chai ra khỏi kẹp — lúc đó stall tụt hẳn về 0 dù ngón đã "khép"
+                # theo lệnh. Baseline nhiễu actuator (chưa chạm gì) đo được ~2.4mm,
+                # nên cần ngưỡng rõ ràng cao hơn VÀ đếm nhiều bước liên tiếp (như
+                # slip_steps) để không dừng oan vì nhiễu tức thời.
+                near_bottle = s["dist_finger_body"] < float(
+                    getattr(self._env.cfg, "grasp_press_max_dist_f", 0.060)
+                )
+                # Cổng hình học: span_xy phải THỰC SỰ ở gần đường kính chai mới
+                # cho stall được tính là "đã chạm" — chỉ riêng stall dễ bắt
+                # nhầm nhiễu actuator-lag (tăng dần theo gc kể cả CHƯA chạm gì)
+                # thành lực chạm thật, đóng băng SỚM hơn hẳn điểm chạm hình học
+                # đã đo được (gc≈0.71 ↔ span≈44mm=đường kính chai, xem DEBUG_LIFT
+                # cho thấy các env kẹt ở gc≈0.62-0.65 — trước cả điểm chạm thật).
+                bottle_d = float(getattr(self._env.cfg, "bottle_diameter_m", 0.0433))
+                span_margin = float(getattr(self._env.cfg, "grasp_press_span_margin_m", 0.004))
+                span_ok = s["finger_span_xy"] < (bottle_d + span_margin)
+
+                joint_now = _joint_pos_mean_safe(self._asset, self._joint_ids, self.device)
+                if joint_now is None:
+                    firm_contact = torch.zeros_like(can_advance)
+                else:
+                    open_m = float(getattr(self._env.cfg, "gripper_open_m", 0.044))
+                    target_now = open_m * (1.0 - self._close_progress)
+                    stall_now = joint_now - target_now
+                    min_stall = float(getattr(self._env.cfg, "grasp_press_freeze_stall_m", 0.003))
+                    pressing_now = near_bottle & span_ok & (stall_now > min_stall)
+                    self._press_hold_steps[pressing_now] += 1
+                    self._press_hold_steps[~pressing_now] = 0
+                    hold_req = int(getattr(self._env.cfg, "grasp_press_freeze_hold_steps", 3))
+                    firm_contact = self._press_hold_steps >= hold_req
+                    import os as _os
+                    if _os.environ.get("DEBUG_FREEZE") == "1" and self.num_envs <= 16:
+                        i = 1
+                        if bool(self._want_close[i]) or bool(self._grasp_latched[i]):
+                            print(
+                                f"  [FreezeDbg] env{i} gc={float(self._close_progress[i]):.4f} "
+                                f"stall={float(stall_now[i])*1000:.3f}mm span={float(s['finger_span_xy'][i])*1000:.2f}mm "
+                                f"near={bool(near_bottle[i])} span_ok={bool(span_ok[i])} "
+                                f"pressing={bool(pressing_now[i])} hold={int(self._press_hold_steps[i])} "
+                                f"firm={bool(firm_contact[i])}",
+                                flush=True,
+                            )
+                can_advance = can_advance & ~firm_contact
+
+                # Chậm lại khi đã gần chai — griplag.py đo được ramp chậm hơn
+                # giữ actuator đồng bộ tốt hơn nhiều (7mm lệch ở 150 bước so
+                # với 52mm ở 60 bước), tránh overshoot-rồi-bật-chai-ra trước cả
+                # khi kịp đóng băng theo lực.
+                slow_factor = float(getattr(self._env.cfg, "grasp_press_slow_factor", 1.0))
+                step_size = torch.where(
+                    near_bottle,
+                    torch.full_like(self._close_progress, slow_factor / float(ramp_steps)),
+                    torch.full_like(self._close_progress, 1.0 / float(ramp_steps)),
+                )
+            else:
+                step_size = torch.full_like(self._close_progress, 1.0 / float(ramp_steps))
+            self._close_progress[can_advance] += step_size[can_advance]
             self._close_progress.clamp_(0.0, 1.0)
             stale = ~self._want_close & ~self._grasp_latched
             if s is not None:

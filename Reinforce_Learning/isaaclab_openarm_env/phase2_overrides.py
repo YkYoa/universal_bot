@@ -101,12 +101,26 @@ PHASE2_GRASP = {
     "grasp_lift_partial_max_dist_f": 0.100,
     "grasp_lift_partial_world_m": 0.018,
     "grasp_close_asym_pause_max_gc": 0.50,
+    # Cap % — ĐÃ THỬ tắt hẳn (1.0) để cơ chế dừng-theo-lực (grasp_assist.py/
+    # actions.py, grasp_press_freeze_stall_m) tự quyết định điểm dừng. Kết
+    # luận sau đo trực tiếp (DEBUG_FREEZE): stall KHÔNG PHẢI tín hiệu chạm
+    # sạch — nó là độ trễ bám theo TỐC ĐỘ ĐÓNG KHÔNG ĐỔI, tăng dần liên tục
+    # ngay từ gc=0 (span=100mm, cách xa chai) lên ~2.4mm và DAO ĐỘNG quanh đó
+    # suốt phần còn lại của ramp; tín hiệu chạm thật chỉ là phần tăng thêm
+    # nhỏ (~0.3-0.6mm) chồng lên, dao động lên xuống quanh ngưỡng nên không
+    # bao giờ giữ đủ 3 bước liên tiếp. Tắt cap (1.0) cho thấy max_gc chỉ còn
+    # [0.0, 1.0] (cơ chế lực không bao giờ kích hoạt) nhưng success_rate
+    # KHÔNG ĐỔI — xác nhận cơ chế đóng kẹp không phải nút thắt còn lại. Giữ
+    # nguyên 0.75 (cấu hình đơn giản, đã biết tốt nhất).
     "grasp_close_freeze_at_progress": 0.75,
     "grasp_close_slip_creep_progress": 0.88,
     "grasp_close_exhaust_creep_enabled": False,
     "grasp_close_exhaust_max_tilt_deg": 5.0,
     "grasp_partial_lift_require_sym": True,
-    "grasp_lift_contact_z_finger": 0.022,
+    # 0.022 → 0.008: ngón được phép cao hơn điểm kẹp tới 2.2cm rồi vẫn cho nhấc →
+    # kẹp trúng phần cổ chai thuôn, chai trượt tuột khi nhấc. Siết xuống 8mm để
+    # ngón phải thực sự ở ngang thân chai.
+    "grasp_lift_contact_z_finger": 0.014,
     "grasp_lift_contact_dist_f": 0.040,
     "grasp_lift_contact_min_follow": 0.75,
     "grasp_lift_pad_balance_blend": 0.40,
@@ -123,7 +137,11 @@ PHASE2_LIFT = {
     "grasp_lift_max_lat_f": 0.110,
     "grasp_pre_lift_hold_steps": 2,
     "grasp_lift_settle_steps": 3,
-    "grasp_lift_world_m": 0.018,
+    # 0.018 → 0.055: pose_rel cộng delta vào pose HIỆN TẠI mỗi bước nên sai số
+    # không tích luỹ → lực nhấc = osc_stiffness * delta = 90*0.018 = 1.62N. Trừ
+    # trọng lượng chai 0.94N chỉ còn 0.68N thắng damping → tay bò 2.4mm/s, cần
+    # 12.5s để đạt 30mm mà lift chỉ bắt đầu ~13s. 0.055 → nhanh ~17 lần.
+    "grasp_lift_world_m": 0.055,
     "grasp_lift_align_blend": 0.0,
     "grasp_lift_partial_align_blend": 0.12,
     "grasp_lift_start_max_tilt_deg": 6.0,

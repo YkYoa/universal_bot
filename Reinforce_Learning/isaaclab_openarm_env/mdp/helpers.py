@@ -22,8 +22,13 @@ STAGE_GRASP = 1   # Close gripper and lift bottle
 STAGE_PLACE = 2   # Transport bottle to bowl and release
 
 def uses_grasp_lift(task_phase: int | None = None) -> bool:
-    """Phase 2: reach + grasp + lift in one episode."""
-    return task_phase == 2
+    """Phase 2+: reach + grasp + lift in one episode."""
+    return task_phase is not None and task_phase >= 2
+
+
+def uses_place(task_phase: int | None = None) -> bool:
+    """Phase 3+: reach + grasp + lift + place-in-bowl in one episode."""
+    return task_phase is not None and task_phase >= 3
 
 
 def finger_grasp_ready(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
@@ -124,7 +129,7 @@ def grasp_lift_success_ready(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
     ee_close = s["dist_ee_bottle"] < max_dist_ee
     lat_ok = s["lateral_finger_xy"] < max_lat
     top_ok = s["top_down_align"] > min_top
-    bottle_vel = env._bottle.data.root_lin_vel_w
+    bottle_vel = _t(env._bottle.data.root_lin_vel_w)
     speed_ok = torch.norm(bottle_vel, dim=-1) < max_speed
     tilt_ok = s["bottle_tilt_deg"] < max_tilt
 
@@ -258,6 +263,8 @@ def check_init_buffers(env: ManagerBasedRLEnv):
     env._steps_hovering_in_grasp = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
     env._steps_in_contact = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
     env._steps_in_grasp = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+    env._steps_since_latch = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+    env._steps_in_reach = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
     env._lift_settle_steps = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
 
     env._prev_dist_ee_bottle = torch.full((env.num_envs,), 1.0, device=env.device)
@@ -398,6 +405,16 @@ def _finger_tip_link_offsets(env: ManagerBasedRLEnv) -> tuple[torch.Tensor, torc
     return left, right
 
 
+def _t(x):
+    """IsaacLab 3.0 ProxyArray -> torch.Tensor; đã là Tensor thì trả nguyên.
+
+    Server chạy IsaacLab 2.3.2 (torch.Tensor thường) trong khi laptop chạy 3.0
+    (ProxyArray, cần .torch tường minh). Gọi thẳng .torch trên Tensor sẽ
+    AttributeError ngay lập tức trên 2.3.2 — dùng getattr để chạy được cả hai.
+    """
+    return getattr(x, "torch", x)
+
+
 def _finger_tips_hand_frame(
     env: ManagerBasedRLEnv, hand_pos_w: torch.Tensor, hand_quat_w: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -493,8 +510,12 @@ def reset_action_terms(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
             term._want_close[env_ids] = False
     if hasattr(env, "_lift_settle_steps"):
         env._lift_settle_steps[env_ids] = 0
-    if hasattr(env, "_lift_armed"):
-        env._lift_armed[env_ids] = False
+    if hasattr(env, "_lift_phase"):
+        env._lift_phase[env_ids] = 0  # LIFT_IDLE
+    if hasattr(env, "_lift_ready_steps"):
+        env._lift_ready_steps[env_ids] = 0
+    if hasattr(env, "_lift_slip_steps"):
+        env._lift_slip_steps[env_ids] = 0
     if hasattr(env, "_lift_slip_pause"):
         env._lift_slip_pause[env_ids] = False
     if hasattr(env, "_prev_lift_z_f"):
@@ -517,11 +538,11 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
         ee_world = hand_pos_w + quat_apply(hand_quat_w, tcp_offset)
     ee_pos = ee_world - origins
 
-    bottle_world = env._bottle.data.root_pos_w
-    bottle_quat_w = env._bottle.data.root_quat_w
+    bottle_world = _t(env._bottle.data.root_pos_w)
+    bottle_quat_w = _t(env._bottle.data.root_quat_w)
     bottle_pos = bottle_world - origins
 
-    bowl_world = env._bowl.data.root_pos_w
+    bowl_world = _t(env._bowl.data.root_pos_w)
     bowl_pos = bowl_world - origins
 
     h = env._bottle_height
@@ -636,8 +657,8 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
     up_local = torch.tensor([0.0, 0.0, 1.0], device=env.device).repeat(env.num_envs, 1)
     bottle_up_w = quat_apply(bottle_quat_w, up_local)
     bottle_tilt_deg = torch.rad2deg(torch.acos(bottle_up_w[:, 2].clamp(-1.0, 1.0)))
-    bottle_lin_speed = torch.norm(env._bottle.data.root_lin_vel_w, dim=-1)
-    bottle_ang_speed = torch.norm(env._bottle.data.root_ang_vel_w, dim=-1)
+    bottle_lin_speed = torch.norm(_t(env._bottle.data.root_lin_vel_w), dim=-1)
+    bottle_ang_speed = torch.norm(_t(env._bottle.data.root_ang_vel_w), dim=-1)
 
     # +Z or -Z of tool frame pointing down (handles either URDF convention)
     top_down_pos = (-tool_z_w[:, 2]).clamp(-1.0, 1.0)

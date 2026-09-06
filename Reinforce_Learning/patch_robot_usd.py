@@ -6,7 +6,7 @@ from isaaclab.app import AppLauncher
 import argparse
 parser = argparse.ArgumentParser()
 AppLauncher.add_app_launcher_args(parser)
-args = parser.parse_args(["--headless"])
+args = parser.parse_args(["--visualizer", "none"])
 launcher = AppLauncher(args)
 simulation_app = launcher.app
 

@@ -162,8 +162,13 @@ def _apply_env_cfg_snapshot(env_cfg, model_path: str) -> str | None:
     cfg_path = _find_env_cfg_snapshot(model_path)
     if cfg_path is None:
         return None
-    with open(cfg_path, "rb") as f:
-        saved = pickle.load(f)
+    try:
+        with open(cfg_path, "rb") as f:
+            saved = pickle.load(f)
+    except Exception as e:
+        print(f"  ⚠️  Bỏ qua env_cfg snapshot ({os.path.basename(cfg_path)}): {e}")
+        print("      (thường do pickle được lưu bởi bản isaaclab cũ hơn trên server)")
+        return None
     for key in ENV_CFG_SNAPSHOT_KEYS:
         if hasattr(saved, key):
             setattr(env_cfg, key, getattr(saved, key))
@@ -511,15 +516,18 @@ def main():
                                         line += f"span:{span:.3f}m "
                                         phys = float(gripper_physical_fraction(env.unwrapped)[0].item())
                                         line += f"phys:{phys:.2f} "
-                            if hasattr(env.unwrapped, "_lift_settle_steps"):
-                                settle_req = int(getattr(env.unwrapped.cfg, "grasp_lift_settle_steps", 8))
-                                st = int(env.unwrapped._lift_settle_steps[0].item())
-                                line += f"st:{st}/{settle_req} "
-                            if hasattr(env.unwrapped, "_pre_lift_hold_steps"):
-                                ph_req = int(getattr(env.unwrapped.cfg, "grasp_pre_lift_hold_steps", 0))
-                                if ph_req > 0:
-                                    ph = int(env.unwrapped._pre_lift_hold_steps[0].item())
-                                    line += f"ph:{ph}/{ph_req} "
+                            if hasattr(env.unwrapped, "_lift_phase"):
+                                _lp = int(env.unwrapped._lift_phase[0].item())
+                                line += f"lp:{('IDLE', 'RISE', 'HOLD')[_lp]} "
+                                if _lp == 0 and hasattr(env.unwrapped, "_lift_ready_steps"):
+                                    req = int(getattr(env.unwrapped.cfg, "grasp_lift_settle_steps", 3))
+                                    rdy = int(env.unwrapped._lift_ready_steps[0].item())
+                                    line += f"ready:{rdy}/{req} "
+                                if _lp == 1:
+                                    _pos_scale = float(getattr(env.unwrapped.cfg, "osc_position_scale", 0.06))
+                                    _lift_m = float(getattr(env.unwrapped.cfg, "grasp_lift_world_m", 0.012))
+                                    _scale = float(getattr(env.unwrapped, "_assist_blend_scale", 1.0))
+                                    line += f"dz:{min(_lift_m / max(_pos_scale, 1e-4) * _scale, 1.0):.2f} "
                             if hasattr(env.unwrapped, "_assist_want_descend"):
                                 if bool(env.unwrapped._assist_want_descend[0].item()):
                                     line += "desc↓ "
@@ -532,6 +540,12 @@ def main():
                     line += f"hold:{contact_steps_arr[0]}/{hold_steps} "
                 line += f"V:{values[0]:.1f}\033[K"
                 print(line, end="\r", flush=True)
+
+            # Lift aborts are the thing to explain when the bottle stops rising;
+            # print them on their own line so they survive the \r status line.
+            _abort = getattr(env.unwrapped, "_lift_abort_reason", None)
+            if _abort and _abort[0]:
+                print(f"\n  [Lift] aborted @ step {total_steps}: {_abort[0]}", flush=True)
             
             obs, rewards, dones, infos = env.step(action)
 
@@ -653,7 +667,7 @@ def main():
                 print(f"\n  [INFO] Reached maximum steps limit ({args.max_steps}). Exiting playback loop...")
                 break
                 
-            if not args.headless:
+            if not getattr(app_launcher, "_headless", False):
                 time.sleep(0.01)
                 
     except KeyboardInterrupt:
