@@ -31,4 +31,16 @@ __pycache__/
 # Large USD assets
 *.usda
 
+# VLA - venvs, vendored/cloned repos, model weights, training outputs
+# (giu lai script/.md/dataset that nho, khong giu binary/vendor lon - xem
+# VLA/command.md)
+VLA/.venv_local/
+VLA/Isaac-GR00T_local/
+VLA/lerobot_local/
+VLA/weights_local/
+VLA/outputs/
+*.onnx
+*.npy
+*.safetensors
+
 

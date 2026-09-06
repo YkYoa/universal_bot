@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>camera_bridge</name>
+  <version>1.0.0</version>
+  <description>Nhan frame camera qua HTTP tu Jetson NX (IQ-9075 Type-C camera port bi chay) va republish thanh sensor_msgs/Image tren /camera_front, /camera_left cho VLA pipeline</description>
+  <maintainer email="hans@todo.todo">hans</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-flask</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

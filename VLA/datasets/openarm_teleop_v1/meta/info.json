@@ -1,0 +1,125 @@
+{
+    "codebase_version": "v3.0",
+    "fps": 10,
+    "features": {
+        "action": {
+            "dtype": "float32",
+            "shape": [
+                16
+            ],
+            "names": [
+                "right_joint1.pos",
+                "right_joint2.pos",
+                "right_joint3.pos",
+                "right_joint4.pos",
+                "right_joint5.pos",
+                "right_joint6.pos",
+                "right_joint7.pos",
+                "right_gripper.pos",
+                "left_joint1.pos",
+                "left_joint2.pos",
+                "left_joint3.pos",
+                "left_joint4.pos",
+                "left_joint5.pos",
+                "left_joint6.pos",
+                "left_joint7.pos",
+                "left_gripper.pos"
+            ]
+        },
+        "observation.state": {
+            "dtype": "float32",
+            "shape": [
+                16
+            ],
+            "names": [
+                "right_joint1.pos",
+                "right_joint2.pos",
+                "right_joint3.pos",
+                "right_joint4.pos",
+                "right_joint5.pos",
+                "right_joint6.pos",
+                "right_joint7.pos",
+                "right_gripper.pos",
+                "left_joint1.pos",
+                "left_joint2.pos",
+                "left_joint3.pos",
+                "left_joint4.pos",
+                "left_joint5.pos",
+                "left_joint6.pos",
+                "left_joint7.pos",
+                "left_gripper.pos"
+            ]
+        },
+        "observation.images.front": {
+            "dtype": "video",
+            "shape": [
+                480,
+                640,
+                3
+            ],
+            "names": [
+                "height",
+                "width",
+                "channels"
+            ]
+        },
+        "observation.images.left": {
+            "dtype": "video",
+            "shape": [
+                480,
+                640,
+                3
+            ],
+            "names": [
+                "height",
+                "width",
+                "channels"
+            ]
+        },
+        "timestamp": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "episode_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "task_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        }
+    },
+    "total_episodes": 0,
+    "total_frames": 0,
+    "total_tasks": 0,
+    "chunks_size": 1000,
+    "data_files_size_in_mb": 100,
+    "video_files_size_in_mb": 200,
+    "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+    "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
+    "robot_type": "openarm_bimanual",
+    "splits": {}
+}
