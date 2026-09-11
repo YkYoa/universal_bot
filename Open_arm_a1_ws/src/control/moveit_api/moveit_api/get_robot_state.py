@@ -7,7 +7,11 @@ import math
 import time
 
 class RobotStatePrinter(Node):
+    """One-shot CLI helper: prints the current bimanual joint angles (degrees)
+    and TCP poses in a format ready to paste into sequences.yaml."""
+
     def __init__(self):
+        """Subscribes to /joint_states and sets up the TF buffer/listener."""
         super().__init__('robot_state_printer')
         
         self.joint_state = None
@@ -31,9 +35,12 @@ class RobotStatePrinter(Node):
         ]
 
     def joint_callback(self, msg):
+        """Subscription callback: caches the latest JointState message."""
         self.joint_state = msg
 
     def print_state(self):
+        """Waits for a joint_states message, looks up both arms' TCP poses via
+        TF, and prints joints (deg) + poses formatted for sequences.yaml."""
         self.get_logger().info("Fetching robot state...")
         
         # Wait for joint states
@@ -97,6 +104,8 @@ class RobotStatePrinter(Node):
         print("\n" + "="*60 + "\n")
 
 def main(args=None):
+    """Entry point: spins briefly to let TF/joint_states fill, prints the
+    state once, then exits."""
     rclpy.init(args=args)
     node = RobotStatePrinter()
     

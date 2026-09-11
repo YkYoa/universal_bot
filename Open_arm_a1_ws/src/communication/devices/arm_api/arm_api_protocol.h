@@ -51,6 +51,9 @@ typedef struct {
 extern "C" {
 #endif
 
+/** XOR checksum over the payload's first 9 int32 words (everything except the
+ *  trailing checksum field itself). Used both when packing (PC side) and when
+ *  validating a received payload (MCU side) so the two never drift apart. */
 static inline int32_t calculate_payload_checksum(const ArmApiPayload* payload) {
     const int32_t* raw_ptr = (const int32_t*)payload;
     int32_t sum = 0;

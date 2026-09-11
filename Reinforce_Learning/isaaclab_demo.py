@@ -105,8 +105,8 @@ parser.add_argument("--marker-offset-z", type=float, default=None,
 parser.add_argument("--task-phase", "--task_phase", dest="task_phase", type=int, default=None,
                     help="Curriculum: 1=reach, 2=reach+grasp+lift")
 parser.add_argument("--stage", type=str, default="all",
-                    choices=("reach", "grasp", "lift", "all"),
-                    help="Phase 2 sub-stage: reach | grasp | lift | all (default: all)")
+                    choices=("reach", "grasp", "lift", "place", "all"),
+                    help="Phase 2 sub-stage: reach | grasp | lift | place | all (default: all)")
 
 # Add Isaac Sim AppLauncher args
 from isaaclab.app import AppLauncher

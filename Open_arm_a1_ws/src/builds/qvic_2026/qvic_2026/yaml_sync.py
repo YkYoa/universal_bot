@@ -42,6 +42,8 @@ def _values(raw):
 
 
 def _kind_for(key):
+    """Classifies a waypoint key as hand_yaw/hand_flex/angle/pose by its name
+    (see the module docstring's key-rule legend)."""
     if HAND_YAW_RE.match(key):
         return "hand_yaw"
     if HAND_FLEX_RE.match(key):
@@ -52,6 +54,7 @@ def _kind_for(key):
 
 
 def _prefix_for(key):
+    """Extracts the la/ra/lh/rh/head side prefix from a waypoint key, if any."""
     m = ARM_PREFIX_RE.match(key)
     return m.group(1) if m else ""
 
@@ -143,6 +146,7 @@ def import_yaml(yaml_path, path=None, replace=True):
 
 
 def _parse_speeds(node):
+    """Parses the top-level `speed:` map into {section: (velocity, acceleration)}."""
     out = {}
     for section, raw in (node or {}).items():
         try:

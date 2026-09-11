@@ -20,6 +20,12 @@ import yaml
 
 
 def load_srdf_for_ee_type(srdf_path: str, ee_type: str, body_type: str = None) -> str:
+    """Loads openarm_bimanual.srdf and patches it for one concrete build:
+    retargets/strips the other end-effector type's groups, group_states, and
+    disable_collisions entries (amazing_hand/openarm_hand/none each need a
+    different patch - see the branches below), and injects the `head`
+    planning group when `body_type` is "v2". Returns the patched SRDF as a
+    string, ready to pass as robot_description_semantic."""
     with open(srdf_path, "r") as f:
         content = f.read()
 
@@ -155,6 +161,10 @@ _CONTROLLERS_BY_EE_TYPE = {
 
 
 def load_moveit_controllers_for_ee_type(yaml_path: str, ee_type: str) -> dict:
+    """Loads moveit_controllers.yaml and drops whichever "motor 8" controller
+    pair (gripper vs. hand-rotate) isn't actually spawned for `ee_type`, so
+    MoveIt never tries to route a trajectory to a controller that isn't
+    running. Returns the ros__parameters dict, ready to pass to move_group."""
     with open(yaml_path, "r") as f:
         raw = yaml.safe_load(f)
     params = raw["/**"]["ros__parameters"]

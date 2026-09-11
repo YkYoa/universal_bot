@@ -38,6 +38,11 @@ from openarm_moveit_config.srdf_utils import load_srdf_for_ee_type
 
 
 def launch_setup(context, *args, **kwargs):
+    """OpaqueFunction body: builds the URDF/SRDF from hardware_config.yaml +
+    ee_type, then starts the full stack listed in the module docstring
+    (robot_state_publisher, ros2_control + spawners, move_group, robot_skills,
+    sequence_executor, optional REST API/dashboard, optional RViz) - skipping
+    the ros2_control-side nodes entirely when isaacsim:=true."""
     moveit_cfg = get_package_share_directory("openarm_moveit_config")
     motion_planner_cfg = get_package_share_directory("motion_planner")
 
@@ -317,6 +322,8 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
+    """Declares this launch file's arguments (see each arg's own description)
+    and defers node construction to launch_setup() via OpaqueFunction."""
     return LaunchDescription([
         DeclareLaunchArgument("use_rviz",    default_value="false"),
         DeclareLaunchArgument("use_api",     default_value="false"),

@@ -7,6 +7,9 @@ from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
+    """Starts only robot_skills_node against a fake-hardware URDF (no
+    robot_state_publisher, ros2_control, or move_group) - for exercising the
+    ExecuteSkill/scene-command surface without a full bring-up."""
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
 
     # ── Robot Description (URDF) ──

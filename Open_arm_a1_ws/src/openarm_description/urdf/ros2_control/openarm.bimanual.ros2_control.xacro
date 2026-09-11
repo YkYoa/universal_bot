@@ -7,6 +7,8 @@
              left_can_interface:=^|can1
              right_can_interface:=^|can0
              use_fake_hardware:=^|false
+             left_use_fake_hardware:=^|inherit
+             right_use_fake_hardware:=^|inherit
              head_use_fake_hardware:=^|false
              fake_sensor_commands:=^|false
              hand:=^|false
@@ -26,6 +28,15 @@
              no_prefix:=^|false">
 
     <xacro:property name="body_joint_prefix" value="${'' if no_prefix else 'openarm_body_'}" />
+
+    <!-- left_use_fake_hardware/right_use_fake_hardware:='inherit' (default) falls
+         back to the shared use_fake_hardware, so callers that only know about
+         use_fake_hardware (sequence_executor.launch.py, robot_api.launch.py, etc.)
+         keep their existing all-or-nothing behavior unchanged. Pass an explicit
+         'true'/'false' per side to override just that arm - see bringup.launch.py's
+         left_arm/right_arm launch args. -->
+    <xacro:property name="left_fake_hw" value="${use_fake_hardware if left_use_fake_hardware == 'inherit' else left_use_fake_hardware}" />
+    <xacro:property name="right_fake_hw" value="${use_fake_hardware if right_use_fake_hardware == 'inherit' else right_use_fake_hardware}" />
 
     <xacro:macro name="configure_arm_joint" params="joint_name initial_position">
       <joint name="${joint_name}">
@@ -48,12 +59,12 @@
     <ros2_control name="openarm_left_hardware_interface" type="system">
         <hardware>
           <param name="arm_type">${arm_type}</param>
-          <xacro:if value="${use_fake_hardware}">
+          <xacro:if value="${left_fake_hw}">
             <plugin>mock_components/GenericSystem</plugin>
             <param name="fake_sensor_commands">${fake_sensor_commands}</param>
             <param name="state_following_offset">0.0</param>
           </xacro:if>
-          <xacro:unless value="${use_fake_hardware}">
+          <xacro:unless value="${left_fake_hw}">
             <xacro:if value="${gazebo}">
               <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </xacro:if>
@@ -109,12 +120,12 @@
     <xacro:if value="${hand and ee_type == 'openarm_hand'}">
       <ros2_control name="openarm_left_gripper_hardware_interface" type="system">
         <hardware>
-          <xacro:if value="${use_fake_hardware}">
+          <xacro:if value="${left_fake_hw}">
             <plugin>mock_components/GenericSystem</plugin>
             <param name="fake_sensor_commands">${fake_sensor_commands}</param>
             <param name="state_following_offset">0.0</param>
           </xacro:if>
-          <xacro:unless value="${use_fake_hardware}">
+          <xacro:unless value="${left_fake_hw}">
             <xacro:if value="${gazebo}">
               <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </xacro:if>
@@ -128,7 +139,7 @@
              (OpenArm_v10HW) whenever hand=true, so only declare it here on the
              fake/gazebo path - declaring it in both components crashes
              controller_manager with a duplicate CommandInterface key. -->
-        <xacro:if value="${use_fake_hardware or gazebo}">
+        <xacro:if value="${left_fake_hw or gazebo}">
           <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}finger_joint1" initial_position="0.0" />
         </xacro:if>
         <xacro:configure_arm_joint joint_name="openarm_${left_arm_prefix}finger_joint2" initial_position="0.0" />
@@ -147,15 +158,15 @@
          component or it silently has no interfaces on this path at all
          (JointTrajectoryController goals get rejected with no reason
          logged). -->
-    <xacro:if value="${hand and ee_type == 'amazing_hand' and (use_fake_hardware or gazebo)}">
+    <xacro:if value="${hand and ee_type == 'amazing_hand' and (left_fake_hw or gazebo)}">
       <ros2_control name="openarm_left_hand_rotate_hardware_interface" type="system">
         <hardware>
-          <xacro:if value="${use_fake_hardware}">
+          <xacro:if value="${left_fake_hw}">
             <plugin>mock_components/GenericSystem</plugin>
             <param name="fake_sensor_commands">${fake_sensor_commands}</param>
             <param name="state_following_offset">0.0</param>
           </xacro:if>
-          <xacro:unless value="${use_fake_hardware}">
+          <xacro:unless value="${left_fake_hw}">
             <plugin>gz_ros2_control/GazeboSimSystem</plugin>
           </xacro:unless>
         </hardware>
@@ -166,12 +177,12 @@
     <ros2_control name="openarm_right_hardware_interface" type="system">
         <hardware>
           <param name="arm_type">${arm_type}</param>
-          <xacro:if value="${use_fake_hardware}">
+          <xacro:if value="${right_fake_hw}">
             <plugin>mock_components/GenericSystem</plugin>
             <param name="fake_sensor_commands">${fake_sensor_commands}</param>
             <param name="state_following_offset">0.0</param>
           </xacro:if>
-          <xacro:unless value="${use_fake_hardware}">
+          <xacro:unless value="${right_fake_hw}">
             <xacro:if value="${gazebo}">
               <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </xacro:if>
@@ -222,12 +233,12 @@
     <xacro:if value="${hand and ee_type == 'openarm_hand'}">
       <ros2_control name="openarm_right_gripper_hardware_interface" type="system">
         <hardware>
-          <xacro:if value="${use_fake_hardware}">
+          <xacro:if value="${right_fake_hw}">
             <plugin>mock_components/GenericSystem</plugin>
             <param name="fake_sensor_commands">${fake_sensor_commands}</param>
             <param name="state_following_offset">0.0</param>
           </xacro:if>
-          <xacro:unless value="${use_fake_hardware}">
+          <xacro:unless value="${right_fake_hw}">
             <xacro:if value="${gazebo}">
               <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </xacro:if>
@@ -241,7 +252,7 @@
              (OpenArm_v10HW) whenever hand=true, so only declare it here on the
              fake/gazebo path - declaring it in both components crashes
              controller_manager with a duplicate CommandInterface key. -->
-        <xacro:if value="${use_fake_hardware or gazebo}">
+        <xacro:if value="${right_fake_hw or gazebo}">
           <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}finger_joint1" initial_position="0.0" />
         </xacro:if>
         <xacro:configure_arm_joint joint_name="openarm_${right_arm_prefix}finger_joint2" initial_position="0.0" />
@@ -250,15 +261,15 @@
 
     <!-- RIGHT "MOTOR 8" - see openarm_left_hand_rotate_hardware_interface's
          comment above. -->
-    <xacro:if value="${hand and ee_type == 'amazing_hand' and (use_fake_hardware or gazebo)}">
+    <xacro:if value="${hand and ee_type == 'amazing_hand' and (right_fake_hw or gazebo)}">
       <ros2_control name="openarm_right_hand_rotate_hardware_interface" type="system">
         <hardware>
-          <xacro:if value="${use_fake_hardware}">
+          <xacro:if value="${right_fake_hw}">
             <plugin>mock_components/GenericSystem</plugin>
             <param name="fake_sensor_commands">${fake_sensor_commands}</param>
             <param name="state_following_offset">0.0</param>
           </xacro:if>
-          <xacro:unless value="${use_fake_hardware}">
+          <xacro:unless value="${right_fake_hw}">
             <plugin>gz_ros2_control/GazeboSimSystem</plugin>
           </xacro:unless>
         </hardware>

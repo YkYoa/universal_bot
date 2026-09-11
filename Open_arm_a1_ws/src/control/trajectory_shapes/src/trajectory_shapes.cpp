@@ -9,11 +9,11 @@ namespace trajectory_shapes
 namespace
 {
 
-// Returns a unit vector perpendicular to axis_unit (which must already be
-// unit length). Picks world-Z as the reference to cross with, falling back
-// to world-X when axis_unit is nearly parallel to Z - same trick used
-// throughout this codebase's Cartesian-path code (e.g. the original
-// runWavingCartesianSequence) to avoid a near-zero cross product.
+/// Returns a unit vector perpendicular to axis_unit (which must already be
+/// unit length). Picks world-Z as the reference to cross with, falling back
+/// to world-X when axis_unit is nearly parallel to Z - same trick used
+/// throughout this codebase's Cartesian-path code (e.g. the original
+/// runWavingCartesianSequence) to avoid a near-zero cross product.
 Eigen::Vector3d pickPerpendicular(const Eigen::Vector3d& axis_unit)
 {
   Eigen::Vector3d ref(0.0, 0.0, 1.0);

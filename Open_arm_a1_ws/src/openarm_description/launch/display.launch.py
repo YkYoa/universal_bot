@@ -9,6 +9,9 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
+    """Build v10.urdf.xacro from launch args (arm/ee/body type, bimanual, mobile base,
+    end-effector mount tuning) and start joint_state_publisher + robot_state_publisher +
+    RViz to visualize/jog the full robot with no hardware or controllers attached."""
     declared_arguments = []
     
     declared_arguments.append(DeclareLaunchArgument("arm_type", default_value="v10", description="Type of arm."))

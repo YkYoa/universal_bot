@@ -9,18 +9,26 @@
 #include <string>
 #include <memory>
 
+/// Backing node for the get_robot_state CLI tool: caches the latest
+/// /joint_states message and exposes a TF buffer for EE pose lookups.
 class GetRobotStateNode : public rclcpp::Node
 {
 public:
+  /// Subscribes to /joint_states and sets up the TF buffer/listener.
   GetRobotStateNode();
   virtual ~GetRobotStateNode() = default;
 
+  /// Subscription callback: caches the latest joint names/positions.
   void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
 
+  /// True once at least one /joint_states message has been received.
   bool hasJointState() const;
+  /// Joint names from the latest /joint_states message.
   const std::vector<std::string>& getJointNames() const;
+  /// Joint positions (parallel to getJointNames()) from the latest message.
   const std::vector<double>& getJointPositions() const;
 
+  /// TF buffer for looking up end-effector transforms.
   std::unique_ptr<tf2_ros::Buffer>& getTfBuffer();
 
 private:

@@ -33,41 +33,55 @@
 
 namespace robot_skills {
 
+/// See the file header comment: services planning-scene edits
+/// (add/remove/attach/detach/allow/disallow/clear) in-process against
+/// MoveItCppPlannerManager's PlanningSceneMonitor.
 class SceneManager
 {
 public:
   using SceneCommand = openarm_messages::srv::SceneCommand;
 
+  /// Stores `node`/`planner`; call start() to actually advertise the service.
   SceneManager(rclcpp::Node::SharedPtr node,
                std::shared_ptr<motion_planner::MoveItCppPlannerManager> planner);
 
-  // Advertises robot_skills_server/scene_command. Returns false if the planner
-  // never came up with a PlanningSceneMonitor.
+  /// Advertises robot_skills_server/scene_command. Returns false if the planner
+  /// never came up with a PlanningSceneMonitor.
   bool start();
 
 private:
+  /// SceneCommand service callback: dispatches request.action to the
+  /// matching add/remove/attach/detach/allow/disallow/clear method.
   void handle(const std::shared_ptr<SceneCommand::Request> request,
               std::shared_ptr<SceneCommand::Response> response);
 
   // Each returns an empty string on success, or the reason it failed.
+  /// Adds a new collision object built via buildPrimitive().
   std::string addObject(const SceneCommand::Request& req);
+  /// Removes a previously added collision object by id.
   std::string removeObject(const SceneCommand::Request& req);
+  /// Attaches an object to a link (the grasp case - see file header comment).
   std::string attachObject(const SceneCommand::Request& req);
+  /// Detaches a previously attached object back into the world scene.
   std::string detachObject(const SceneCommand::Request& req);
+  /// Sets (or clears) an AllowedCollisionMatrix entry between an object and touch_links.
   std::string setAllowed(const SceneCommand::Request& req, bool allowed);
+  /// Removes every collision object from the scene.
   std::string clearScene();
 
-  // Links allowed to touch a grasped object when the caller did not name any:
-  // every link of the end effector `link` belongs to, so closing fingers on an
-  // object is not reported as a collision. Falls back to just `link` itself.
+  /// Links allowed to touch a grasped object when the caller did not name any:
+  /// every link of the end effector `link` belongs to, so closing fingers on an
+  /// object is not reported as a collision. Falls back to just `link` itself.
   std::vector<std::string> defaultTouchLinks(const std::string& link) const;
 
+  /// Builds a CollisionObject from the request's primitive/dimensions/pose
+  /// fields; returns false (with `error` set) if the shape is invalid.
   bool buildPrimitive(const SceneCommand::Request& req,
                       moveit_msgs::msg::CollisionObject& object,
                       std::string& error) const;
 
-  // Pushes the edit out to /monitored_planning_scene so RViz, move_group, and
-  // anything else watching see it.
+  /// Pushes the edit out to /monitored_planning_scene so RViz, move_group, and
+  /// anything else watching see it.
   void publishSceneUpdate();
 
   rclcpp::Node::SharedPtr node_;

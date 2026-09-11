@@ -21,6 +21,9 @@
 #include "qvic_2026/sqlite_sequence_source.hpp"
 #include "sequence_executor/executor_app.hpp"
 
+/// Entry point: runApp() configured with this project's hardcoded actions
+/// and SqliteSequenceSource (see file header comment for the db_path
+/// parameter and the deliberate no-YAML-fallback behavior).
 int main(int argc, char** argv)
 {
   return sequence_executor::runApp(

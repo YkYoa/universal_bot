@@ -28,6 +28,11 @@ def _setup_gazebo_resource_paths():
 
 
 def generate_launch_description():
+    """Bimanual bring-up covering all 3 modes (fake hardware, Gazebo sim, real
+    CAN hardware - pick via use_fake_hardware/gazebo args): builds the URDF,
+    starts robot_state_publisher + ros2_control (standalone or via Gazebo's
+    spawn/bridge), spawns arm/gripper/hand/head/base controllers once the
+    relevant process is up, plus a static world->odom TF and RViz."""
     _setup_gazebo_resource_paths()
 
     # CycloneDDS: large URDF / many joints

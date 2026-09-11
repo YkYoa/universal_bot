@@ -29,6 +29,7 @@ SIDES = ("left", "right")
 
 
 def _f(name, type_, required=True, default=None, desc="", **extra):
+    """Builds one field-schema dict for a step type's "fields" list."""
     field = {
         "name": name,
         "type": type_,
@@ -314,6 +315,7 @@ def catalog():
 
 
 def control_mode_for(step_type):
+    """The MODE_* a step of `step_type` requires (MODE_ANY if the type is unknown)."""
     spec = STEP_TYPES.get(step_type)
     return spec["control_mode"] if spec else MODE_ANY
 
@@ -421,6 +423,9 @@ def _check_pairs(step_type, params):
 
 
 def _coerce(step_type, field, value):
+    """Validates and normalizes one param value against its field schema
+    (enum/bool/float/string/float[]/int[]/string[]); raises StepValidationError
+    on a type/range/length mismatch."""
     name, kind = field["name"], field["type"]
     where = f"{step_type}.{name}"
 

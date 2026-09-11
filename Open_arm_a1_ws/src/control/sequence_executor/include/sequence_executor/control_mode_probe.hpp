@@ -28,12 +28,16 @@
 
 namespace sequence_executor {
 
+/// Determines and caches which control mode (position/mit/velocity/torque)
+/// the arm hardware actually came up in - see file header comment for why
+/// this can't just be read from config alone.
 class ControlModeProbe
 {
 public:
   // `hardware_config_path` empty = resolve robot_hardware_interface's share
   // directory. A missing file is not an error; the probe just falls back to
   // the controller list.
+  /// Stores `node`/`hardware_config_path`; call probe() to actually resolve the mode.
   ControlModeProbe(rclcpp::Node::SharedPtr node, const std::string& hardware_config_path);
 
   // Queries both sources and caches the answer. Call once, at startup, before
@@ -51,7 +55,11 @@ public:
   std::string mode() const;
 
 private:
+  /// Reads hardware_config.yaml's declared `control_mode`, or "unknown" if unavailable.
   std::string modeFromConfig() const;
+  /// Infers the mode from which controllers /controller_manager/list_controllers
+  /// reports active (a live gravity-comp controller means torque; a live arm
+  /// trajectory controller means position/mit).
   std::string modeFromControllers();
 
   rclcpp::Node::SharedPtr node_;

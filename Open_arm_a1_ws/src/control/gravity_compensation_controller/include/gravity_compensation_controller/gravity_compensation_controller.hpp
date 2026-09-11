@@ -59,14 +59,27 @@ namespace gravity_compensation_controller
 class GravityCompensationController : public controller_interface::ControllerInterface
 {
 public:
+  /** Declares the `effort` command interface for every joint in joint_names_. */
   controller_interface::InterfaceConfiguration command_interface_configuration() const override;
+  /** Declares the `position` and `velocity` state interfaces needed for q_/qd_. */
   controller_interface::InterfaceConfiguration state_interface_configuration() const override;
 
+  /** Reads joint_names_, base_link_/tip_link_, ramp/damping/detent parameters. */
   controller_interface::CallbackReturn on_init() override;
+  /** Builds the KDL chain (base_link_ -> tip_link_) and ChainDynParam solver
+   *  from robot_description, and sizes the KDL joint arrays. */
   controller_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;
+  /** Resets the ramp (current_scale_ = 0, hold_initialized_ = false) and starts
+   *  the ~/enable service. */
   controller_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override;
+  /** Stops the ~/enable service and explicitly zeroes every effort command
+   *  interface. */
   controller_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
 
+  /** Realtime loop: reads q_/qd_, computes gravity torque via ChainDynParam,
+   *  ramps current_scale_ toward enable_requested_'s target over
+   *  ramp_duration_sec_, and writes scaled (gravity + damping + detent) torque
+   *  to the effort command interfaces. */
   controller_interface::return_type update(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 private:

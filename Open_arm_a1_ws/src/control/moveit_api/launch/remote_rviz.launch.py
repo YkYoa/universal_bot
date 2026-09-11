@@ -7,6 +7,8 @@ from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
+    """Starts only RViz (with robot_description/SRDF/kinematics params) for a
+    remote monitoring machine that isn't running the actual control stack."""
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
 
     # 1. Robot Description (URDF)

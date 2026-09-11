@@ -125,6 +125,8 @@ def _ensure_extensions_loaded():
 
 
 def _delete_graph_if_exists(graph_path: str):
+    """Deletes the prim at `graph_path` if it already exists, so the action
+    graph can be rebuilt from scratch without leftover/duplicate nodes."""
     stage = omni.usd.get_context().get_stage()
     prim = stage.GetPrimAtPath(graph_path)
     if prim.IsValid():
@@ -387,6 +389,11 @@ CORE  = "isaacsim.core.nodes"
 GRAPH = "omni.graph.action"
 
 def setup_ros2_action_graph():
+    """Main entry point: runs every stage-fixup helper (extensions, physics,
+    render products, mesh collisions), auto-resolves ROBOT_PRIM to a valid
+    articulation root wherever it actually lives in the stage, then builds
+    the full ROS2 bridge action graph (clock/TF, joint state pub/sub +
+    articulation controllers per arm/gripper, front/left camera pipelines)."""
     global ROBOT_PRIM, BASE_LINK_PRIM
     carb.log_info("[OpenArm] === Setting up ROS2 Action Graph (Isaac Sim 4.5+) ===")
 
@@ -403,6 +410,7 @@ def setup_ros2_action_graph():
     is_valid_articulation = False
 
     def _prim_is_articulation(p):
+        """True if prim `p` already carries an articulation-root API/type."""
         return (p.HasAPI(UsdPhysics.ArticulationRootAPI) or
                 p.HasAPI(PhysxSchema.PhysxArticulationAPI) or
                 p.GetTypeName() == "PhysicsArticulationRoot")

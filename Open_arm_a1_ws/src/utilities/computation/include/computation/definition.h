@@ -9,6 +9,7 @@ namespace utilities
 {
 namespace computation
 {
+    /// One of the three principal planes, used by getPosePlaneParameter().
     typedef enum
     {
         PLANE_XY,
@@ -16,6 +17,7 @@ namespace computation
         PLANE_ZX
     } Plane;
 
+    /// One of the three principal axes.
     typedef enum
     {
         AXIS_X,
@@ -23,6 +25,7 @@ namespace computation
         AXIS_Z
     } Axis;
 
+    /// A plane in point-normal form, as returned by getPosePlaneParameter().
     typedef struct
     {
         tf2::Vector3 origin;

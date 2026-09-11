@@ -4,30 +4,36 @@
 #include <algorithm>
 #include <cmath>
 
-// Velocity/acceleration-limited rate limiter ("trapezoidal profile": a step
-// change in target produces an accel ramp, a max-velocity cruise, and a
-// decel ramp that lands on target without overshoot). Call step() once per
-// control-loop tick - this is what turns a raw ROS-commanded step change
-// into motion the servo can actually track smoothly, instead of an instant
-// PWM jump. See auto_calibrate.py's note on why the servo's own internal
-// loop doesn't need this (it does, for POSITION accuracy) - this is a
-// separate concern: shaping the target that internal loop chases.
+/** Velocity/acceleration-limited rate limiter ("trapezoidal profile": a step
+ *  change in target produces an accel ramp, a max-velocity cruise, and a
+ *  decel ramp that lands on target without overshoot). Call step() once per
+ *  control-loop tick - this is what turns a raw ROS-commanded step change
+ *  into motion the servo can actually track smoothly, instead of an instant
+ *  PWM jump. See auto_calibrate.py's note on why the servo's own internal
+ *  loop doesn't need this (it does, for POSITION accuracy) - this is a
+ *  separate concern: shaping the target that internal loop chases. */
 class TrapezoidalProfile {
 public:
+    /** Zero-initialized profile (position 0, no rate limits) - reset()/set
+     *  the limits via the other constructor before using. */
     TrapezoidalProfile() = default;
+    /** Profile with fixed `max_velocity` (rad/s) and `max_acceleration` (rad/s^2). */
     TrapezoidalProfile(double max_velocity, double max_acceleration)
         : max_velocity_(max_velocity), max_acceleration_(max_acceleration) {}
 
+    /** Snaps position to `value` and zeroes velocity (no ramp). */
     void reset(double value) {
         position_ = value;
         velocity_ = 0.0;
     }
 
+    /** Current profiled position. */
     double position() const { return position_; }
 
-    // Advances position_ toward target by at most dt seconds of motion,
-    // decelerating in time to land on target without overshoot (distance-
-    // to-stop = v^2 / (2*a), the standard trapezoidal/kinematic relation).
+    /** Advances position_ toward target by at most dt seconds of motion,
+     *  decelerating in time to land on target without overshoot (distance-
+     *  to-stop = v^2 / (2*a), the standard trapezoidal/kinematic relation).
+     *  Returns the new position. */
     double step(double target, double dt) {
         if (dt <= 0.0) return position_;
 

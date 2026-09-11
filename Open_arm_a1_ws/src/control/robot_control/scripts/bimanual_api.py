@@ -11,6 +11,7 @@ class BimanualArmAPI(Node):
     A simple API for the UI team to control the two arms in simulation.
     """
     def __init__(self):
+        """Opens FollowJointTrajectory action clients for both arms and grippers."""
         super().__init__('bimanual_arm_api')
         self.left_client = ActionClient(self, FollowJointTrajectory, '/left_arm_controller/follow_joint_trajectory')
         self.right_client = ActionClient(self, FollowJointTrajectory, '/right_arm_controller/follow_joint_trajectory')
@@ -69,6 +70,7 @@ class BimanualArmAPI(Node):
         return client.send_goal_async(goal_msg)
 
 def main(args=None):
+    """Demo entry point: moves both arms to a hardcoded ready pose, then spins."""
     rclpy.init(args=args)
     api = BimanualArmAPI()
     

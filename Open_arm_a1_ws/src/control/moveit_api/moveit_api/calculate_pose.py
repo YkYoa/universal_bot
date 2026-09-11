@@ -11,6 +11,7 @@ print(f"Negative Y-shift (-0.1m): [{p_start[0]:.4f}, {p_start[1] - 0.1:.4f}, {p_
 # Local tool frame calculations
 # Quaternion rotation matrix
 def quaternion_to_matrix(q):
+    """Converts a quaternion [x, y, z, w] to its 3x3 rotation matrix."""
     x, y, z, w = q
     return np.array([
         [1 - 2*y**2 - 2*z**2,     2*x*y - 2*z*w,         2*x*z + 2*y*w],

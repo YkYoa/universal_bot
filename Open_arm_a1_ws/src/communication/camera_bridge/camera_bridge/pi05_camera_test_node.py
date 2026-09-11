@@ -32,7 +32,12 @@ TASK_INSTRUCTION = "pick up the object"
 
 
 class Pi05CameraTestNode(Node):
+    """Node TEST: subscribe camera that, goi server pi0.5 tren huyhoang-4090 va
+    chi log ket qua action - khong actuate tay. Xem module docstring de biet
+    ly do gioi han toc do goi (RATE_LIMIT_SEC)."""
+
     def __init__(self):
+        """Subscribe /camera_front/image_raw va khoi tao rate limiter cho on_frame()."""
         super().__init__("pi05_camera_test_node")
         self.bridge = CvBridge()
         self.last_call = 0.0
@@ -44,6 +49,9 @@ class Pi05CameraTestNode(Node):
         )
 
     def on_frame(self, msg: Image):
+        """Callback moi frame /camera_front/image_raw: bo qua neu chua du
+        RATE_LIMIT_SEC ke tu lan goi truoc, nguoc lai encode JPEG va POST
+        sang pi0.5 server, chi log action tra ve."""
         now = time.time()
         if now - self.last_call < RATE_LIMIT_SEC:
             return
@@ -77,6 +85,7 @@ class Pi05CameraTestNode(Node):
 
 
 def main():
+    """Diem vao: spin Pi05CameraTestNode toi khi Ctrl+C."""
     rclpy.init()
     node = Pi05CameraTestNode()
     try:

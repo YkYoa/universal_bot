@@ -419,6 +419,60 @@ calib = {
 xuống 26.04%. Latency INT8 tăng nhẹ không đáng kể (1565us → 1930us), vẫn
 giữ 224/224 layer chạy 100% NPU. Chi tiết: `VLA/command.md`.
 
+### 5.6. Bảng benchmark tổng hợp (số liệu THẬT đo trên IQ-9075)
+
+Tất cả số liệu dưới đây đo trực tiếp trên Hexagon NPU của board IQ-9075
+qua Qualcomm AI Hub — không phải ước tính. "Layer thật" nghĩa là lát cắt
+đại diện (vài layer đầu, không phải toàn bộ model) — xem Phần 3.3 vì sao
+làm vậy (tránh bug external-data >2GB) và vì sao vẫn hợp lệ (mọi layer
+lặp lại dùng chung 1 loại toán tử).
+
+**Operator coverage (dry-run, trọng số random-init, FP32) — 2026-08-28:**
+
+| Model | Lát cắt | Layer đo | % chạy NPU | Latency FP32 |
+|---|---|---|---|---|
+| GR00T N1.7 DiT | 4/32 layer | 4 layer | **100%** (185/185) | 6.18ms |
+| pi0/pi0.5 Gemma action-expert | 3/18 layer | 3 layer | **100%** (187/187) | 4.99ms |
+
+Cả 2 model đều 100% operator coverage — không op nào bị QNN từ chối/rơi
+về CPU. Ước tính tuyến tính cho full stack (chưa tính VLM backbone, chỉ
+riêng action-head × số bước denoise): GR00T ~197ms (32 layer × 4 bước,
+`num_inference_timesteps=4`), pi0.5 ~300ms (18 layer × 10 bước,
+`num_inference_steps=10`) — GR00T có lợi thế tốc độ thô nhờ ít bước
+denoise hơn.
+
+**Quantize INT8 với TRỌNG SỐ THẬT (checkpoint đã tải, không random) — 2026-08-28 đến 2026-09-04:**
+
+| Model | Calibration data | Latency INT8 | Speedup vs FP32 | % NPU | Cosine similarity | Max relative diff |
+|---|---|---|---|---|---|---|
+| GR00T N1.7 DiT (4 layer) | 1 sample tổng hợp | 2.99ms | ~2.0x (vs 6.18ms) | 100% (197/197) | 0.9556 | 39.56% |
+| pi0.5 Gemma (3 layer) | 1 sample tổng hợp | 1.565ms | ~3.2x (vs 4.99ms) | 100% (224/224) | 0.9167 | 42.39% |
+| pi0.5 Gemma (3 layer) | **220 sample thật** (camera OpenArm) | 1.930ms | ~2.6x (vs 4.99ms) | 100% (224/224) | **0.9753** | **26.04%** |
+
+**Kết luận rút ra từ bảng trên** (quan trọng khi đọc số liệu này):
+1. **INT8 luôn nhanh hơn FP32 rõ rệt** (2-3.2x) trên cả 2 model, và **luôn
+   giữ 100% layer trên NPU** — operator coverage chưa bao giờ là vấn đề.
+2. **Calibration data mới là yếu tố quyết định độ chính xác**, không phải
+   kiến trúc model: cùng pi0.5, chỉ đổi từ 1 sample tổng hợp sang 220
+   sample thật đã đưa cosine similarity từ dưới ngưỡng chấp nhận (0.9167)
+   lên gần ngưỡng tốt (0.9753), trong khi latency chỉ tăng ~23%.
+3. GR00T DiT **chưa được thử lại với calibration data thật** — kết quả
+   0.9556 hiện tại vẫn dùng 1 sample tổng hợp, nên **không so sánh công
+   bằng** với pi0.5's 0.9753. Muốn biết model nào "quantize tốt hơn" thật
+   sự, cần lặp lại quy trình Phần 5.5 cho GR00T trước.
+4. Ngưỡng ">0.99 thường chấp nhận được" (Phần 5.4) **chưa đạt được ở cả
+   2 model** dù đã cải thiện nhiều — cân nhắc thêm QAT hoặc calibration
+   data lớn hơn/đa dạng hơn trước khi tin dùng model quantize cho robot
+   thật.
+
+**Latency CPU tham khảo (không phải NPU, chỉ để đối chiếu)**: pi0.5 full
+model (3.3B tham số, FP32, chưa fine-tune OpenArm) chạy inference đầy đủ
+(10 bước denoise) trên CPU x86 của server mất **5.77 giây/lần** — quá
+chậm cho control loop thật, chỉ dùng để xác nhận pipeline đúng trước khi
+tối ưu NPU.
+
+Chi tiết đầy đủ từng lần đo, script, và ngày tháng: `VLA/command.md`.
+
 ---
 
 ## Phần 6 — Deploy thật lên board IQ-9075

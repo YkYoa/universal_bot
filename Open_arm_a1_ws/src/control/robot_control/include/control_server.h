@@ -24,9 +24,12 @@ class ControlServer : public rclcpp::Node
 public:
   using DriveCommand = openarm_messages::srv::DriveCommand;
 
+  /// Constructs the owned DriveControl and advertises the DriveCommand service.
   explicit ControlServer(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
 
 private:
+  /// DriveCommand service callback: dispatches request.command to the
+  /// matching DriveControl method and reports success/message.
   void handle_drive_command(
     const std::shared_ptr<DriveCommand::Request> request,
     std::shared_ptr<DriveCommand::Response> response);

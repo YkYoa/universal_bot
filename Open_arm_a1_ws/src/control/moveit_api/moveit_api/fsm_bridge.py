@@ -62,6 +62,8 @@ class FsmBridge(Node):
     """Subscribes to the FSM, and calls into it on behalf of HTTP clients."""
 
     def __init__(self, on_state=None):
+        """Subscribes to FSM_NODE's state topic and opens action/service clients
+        to it; `on_state(payload)` is called on every published transition."""
         super().__init__('fsm_bridge')
 
         # The publisher is transient_local so a late subscriber gets the
@@ -87,6 +89,8 @@ class FsmBridge(Node):
     # ── state ────────────────────────────────────────────────────────────────
 
     def _on_state_msg(self, msg):
+        """Subscription callback: caches the latest state and forwards it
+        (as a dict) to the on_state listener, if any."""
         payload = state_to_dict(msg)
         with self._state_lock:
             self._latest = payload
@@ -99,6 +103,7 @@ class FsmBridge(Node):
                 self.get_logger().warning(f'state listener raised: {exc}')
 
     def latest_state(self):
+        """Returns the last received state dict, or None before the first message."""
         with self._state_lock:
             return self._latest
 

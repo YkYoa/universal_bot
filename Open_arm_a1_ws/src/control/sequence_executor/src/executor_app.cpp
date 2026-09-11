@@ -19,6 +19,8 @@ namespace {
 // fire while left_arm_controller/right_arm_controller were mid-activation.
 // The gripper controllers are deliberately excluded - they never activate at
 // all under amazing_hand and would hang this forever if required.
+/// True if joint_state_broadcaster and both arm controllers report "active"
+/// in `response`.
 bool allRequiredControllersActive(
   const controller_manager_msgs::srv::ListControllers::Response& response)
 {
@@ -39,6 +41,9 @@ bool allRequiredControllersActive(
   return true;
 }
 
+/// Polls /controller_manager/list_controllers until allRequiredControllersActive()
+/// or `timeout_s` elapses (0 skips the wait entirely; an unavailable service
+/// also gives up immediately and proceeds).
 void waitForControllersReady(const rclcpp::Node::SharedPtr& node, double timeout_s)
 {
   if (timeout_s <= 0.0) {

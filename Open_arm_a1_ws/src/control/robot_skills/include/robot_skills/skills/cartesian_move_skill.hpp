@@ -6,9 +6,15 @@
 
 namespace robot_skills
 {
+    /// "cartesian_move": plans to the first pose in req.waypoints using the
+    /// requested (or "linear_approach" default) planner profile, then hands
+    /// the trajectory to SkillServer::execute_trajectory(). TODO in the .cpp:
+    /// a future version should use computeCartesianPath for the full waypoint
+    /// list instead of just the first one.
     class CartesianMoveSkill : public RobotSkill
     {
     public:
+        /// `server` is used to dispatch the planned trajectory for execution.
         CartesianMoveSkill(SkillServer* server) : server_(server) {}
         ~CartesianMoveSkill() override = default;
 

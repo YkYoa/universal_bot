@@ -6,13 +6,15 @@
 
 namespace robot_skills
 {
-    // Plans a list of joint-space waypoints as ONE continuous blended
-    // trajectory (see motion_planner::MoveItCppPlannerManager's
-    // getJointSequence() branch) instead of N independent
-    // plan+execute+full-stop cycles like MoveToJointSkill.
+    /// "move_to_joint_sequence": plans a flat, stride-DOF list of joint-space
+    /// waypoints (req.joint_sequence, at least 2) as ONE continuous blended
+    /// trajectory (see motion_planner::MoveItCppPlannerManager's
+    /// getJointSequence() branch) instead of N independent
+    /// plan+execute+full-stop cycles like MoveToJointSkill.
     class MoveToJointSequenceSkill : public RobotSkill
     {
     public:
+        /// `server` is used to dispatch the planned trajectory for execution.
         MoveToJointSequenceSkill(SkillServer* server) : server_(server) {}
         ~MoveToJointSequenceSkill() override = default;
 

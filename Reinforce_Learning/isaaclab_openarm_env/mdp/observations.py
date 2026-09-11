@@ -14,7 +14,7 @@
 
 import torch
 from isaaclab.envs import ManagerBasedRLEnv
-from .helpers import check_init_buffers, compute_state, uses_grasp_lift
+from .helpers import check_init_buffers, compute_state, uses_grasp_lift, STAGE_PLACE, PLACE_CARRY
 
 
 def get_apple_pick_place_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
@@ -68,6 +68,26 @@ def get_apple_pick_place_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
         finger_high = (s["z_error_finger"] > descend_z).unsqueeze(-1)
         in_wrap = in_grasp & (~finger_high) & (~gripped.unsqueeze(-1))
         ee_to_target = torch.where(in_lift, lift_delta, torch.where(in_wrap, descend_body, reach_top))
+
+        # S7 — nhánh PLACE: target = trên bát ở độ cao carry (chưa tới) hoặc
+        # độ cao thả (đã DESCEND/HOLDING) — mirror ĐÚNG target mà
+        # _osc_carry_to_bowl/_osc_descend_to_bowl dùng (bowl_center_pos đã
+        # sửa lệch tâm + bowl_rim_z/bowl_floor_z đo thật ở S9), không dùng
+        # bowl_pos thô. An toàn phase 2: in_place luôn False (STAGE_PLACE
+        # không bao giờ được gán khi task_phase<3) nên torch.where trả về
+        # nhánh cũ y nguyên — KHÔNG đổi obs cho checkpoint đã train.
+        in_place = (env._stage == STAGE_PLACE).unsqueeze(-1)
+        if in_place.any():
+            carry_height = float(getattr(env.cfg, "place_carry_height_m", 0.15))
+            release_height = float(getattr(env.cfg, "place_release_height_m", 0.02))
+            place_phase = getattr(env, "_place_phase", torch.zeros(env.num_envs, dtype=torch.long, device=env.device))
+            in_carry = (place_phase == PLACE_CARRY).unsqueeze(-1)
+            carry_target = s["bowl_center_pos"].clone()
+            carry_target[:, 2] = s["bowl_rim_z"] + carry_height
+            descend_target = s["bowl_center_pos"].clone()
+            descend_target[:, 2] = s["bowl_floor_z"] + release_height
+            place_delta = torch.where(in_carry, carry_target - s["ee_pos"], descend_target - s["ee_pos"])
+            ee_to_target = torch.where(in_place, place_delta, ee_to_target)
     else:
         ee_to_target = s["grasp_pos"] - s["ee_pos"]
 

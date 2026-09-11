@@ -142,6 +142,10 @@ std::vector<std::string> Kinematics::ancestors(const std::string& link) const
 namespace
 {
 
+/// Follows the decomposed spherical joint (3 stacked continuous joints)
+/// hanging off a rotule_ball link; returns (joint_names, terminal_link).
+/// Guarded at 20 hops (the python original has no cap) against a malformed
+/// URDF hanging a long-running C++ node.
 std::pair<std::vector<std::string>, std::string> ballChain(const Kinematics& hand, const std::string& start_link)
 {
   std::vector<std::string> joints;
@@ -161,6 +165,8 @@ std::pair<std::vector<std::string>, std::string> ballChain(const Kinematics& han
   throw std::runtime_error("ballChain: exceeded 20 continuous joints from " + start_link + " (malformed URDF?)");
 }
 
+/// Escapes ECMAScript regex metacharacters in `s` so a link_prefix containing
+/// them can be embedded literally in the servo/bushing link-name patterns.
 std::string regexEscape(const std::string& s)
 {
   static const std::regex special(R"([.^$|()\[\]{}*+?\\])");
@@ -389,6 +395,7 @@ std::vector<FingerInfo> calibrate(const Kinematics& hand, std::vector<FingerInfo
 namespace
 {
 
+/// Clamps each component of `x` into [lower[i], upper[i]].
 Eigen::VectorXd clampToBounds(const Eigen::VectorXd& x, const Eigen::VectorXd& lower, const Eigen::VectorXd& upper)
 {
   Eigen::VectorXd out = x;
@@ -398,6 +405,8 @@ Eigen::VectorXd clampToBounds(const Eigen::VectorXd& x, const Eigen::VectorXd& l
   return out;
 }
 
+/// Forward-difference Jacobian of `f` at `x`, given the already-computed
+/// `f0 = f(x)`; step size scales with |x[j]| for numerical conditioning.
 Eigen::MatrixXd numericJacobian(
   const std::function<Eigen::VectorXd(const Eigen::VectorXd&)>& f, const Eigen::VectorXd& x,
   const Eigen::VectorXd& f0)
@@ -420,8 +429,8 @@ Eigen::MatrixXd numericJacobian(
 namespace
 {
 
-// Runs boundedLeastSquares' actual LM iteration in a pre-scaled parameter
-// space (see boundedLeastSquares below for why).
+/// Runs boundedLeastSquares' actual LM iteration in a pre-scaled parameter
+/// space (see boundedLeastSquares below for why).
 LeastSquaresResult boundedLeastSquaresScaled(
   const std::function<Eigen::VectorXd(const Eigen::VectorXd&)>& residual_fn, const Eigen::VectorXd& x0,
   const Eigen::VectorXd& lower, const Eigen::VectorXd& upper, double xtol, double ftol, int max_nfev)
@@ -520,18 +529,18 @@ bool anyNonzero(const Eigen::VectorXd& v)
   return (v.array() != 0.0).any();
 }
 
-// boundedLeastSquares chases whichever basin its damped-Newton steps happen
-// to fall into from the given start - for a genuinely multi-modal residual
-// (this finger's rod/gimbal loop-closure has more than one geometrically
-// valid configuration, e.g. the twist DOF can wind either "short way" or
-// "long way" around), a single start from zero can land in a much worse
-// basin than scipy's TRF finds from the identical start. Chase the current
-// best with a few damping-reset restarts, then re-seed the search from a
-// small grid of starting points spread across the last variable's own
-// range (empirically the one most prone to a bad basin - it's the
-// least-constrained/most range-tolerant DOF in both command spaces) to give
-// the search a chance to find a fundamentally different basin instead of
-// just refining the one it's already stuck in.
+/// boundedLeastSquares chases whichever basin its damped-Newton steps happen
+/// to fall into from the given start - for a genuinely multi-modal residual
+/// (this finger's rod/gimbal loop-closure has more than one geometrically
+/// valid configuration, e.g. the twist DOF can wind either "short way" or
+/// "long way" around), a single start from zero can land in a much worse
+/// basin than scipy's TRF finds from the identical start. Chase the current
+/// best with a few damping-reset restarts, then re-seed the search from a
+/// small grid of starting points spread across the last variable's own
+/// range (empirically the one most prone to a bad basin - it's the
+/// least-constrained/most range-tolerant DOF in both command spaces) to give
+/// the search a chance to find a fundamentally different basin instead of
+/// just refining the one it's already stuck in.
 LeastSquaresResult solveMultistart(
   const std::function<Eigen::VectorXd(const Eigen::VectorXd&)>& residual_fn, const Eigen::VectorXd& x0,
   const Eigen::VectorXd& lower, const Eigen::VectorXd& upper)
@@ -575,17 +584,27 @@ LeastSquaresResult solveMultistart(
   return sol;
 }
 
+/// True if `prev`/`cur` (commanded servo or knuckle args) match within `tol`
+/// - used to skip re-solving on effectively-static input (ros2_control's
+/// reported command isn't bit-identical cycle to cycle).
 bool argsUnchanged(const std::array<double, 2>& prev, const std::array<double, 2>& cur, double tol = 1e-6)
 {
   return std::abs(prev[0] - cur[0]) < tol && std::abs(prev[1] - cur[1]) < tol;
 }
 
+/// Vee-map of the antisymmetric part of Ra^T*Rb: ~0 when the two orientations
+/// match, grows smoothly with the mismatch angle. Not an exact log-map but
+/// well-behaved for least-squares over this linkage's actual swing range.
 Eigen::Vector3d orientationResidual(const Eigen::Matrix3d& Ra, const Eigen::Matrix3d& Rb)
 {
   Eigen::Matrix3d Rdiff = Ra.transpose() * Rb;
   return 0.5 * Eigen::Vector3d(Rdiff(2, 1) - Rdiff(1, 2), Rdiff(0, 2) - Rdiff(2, 0), Rdiff(1, 0) - Rdiff(0, 1));
 }
 
+/// Shared residual for one finger's closed-loop solve (both command-space
+/// directions call this with different subsets of {q1,q2,q_prox,q_knu,
+/// q_prism,q_twist,theta_a,theta_b} treated as unknowns): the two rod-length
+/// constraints plus the distal_dup/distal_real position+orientation match.
 Eigen::VectorXd fingerLoopResidual(
   const Kinematics& hand, const FingerInfo& f, double q1, double q2, double q_prox, double q_knu, double q_prism,
   double q_twist, double theta_a, double theta_b)

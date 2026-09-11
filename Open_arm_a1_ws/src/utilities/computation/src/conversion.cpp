@@ -160,6 +160,7 @@ namespace computation
 		return std::vector<double>(eigenVec.data(), eigenVec.data() + eigenVec.size());
 	}
 	
+	/// Eigen::Isometry3d -> Pose (position + quaternion).
 	Pose eigenIsoToPose(const Eigen::Isometry3d& eigen_iso)
 	{
 		Eigen::Vector3d position = eigen_iso.translation();
@@ -167,14 +168,17 @@ namespace computation
 		return Pose(position.x(), position.y(), position.z(), quat.x(), quat.y(), quat.z(), quat.w());
 	}
 	
+	/// PoseStamped -> Pose (drops the header/frame_id, keeps only the pose).
 	Pose poseStampedMsgsToPose(const geometry_msgs::msg::PoseStamped& pose_stamped)
 	{
 		return poseMsgsToPose(pose_stamped.pose);
 	}
+	/// Pose -> geometry_msgs/Pose.
 	geometry_msgs::msg::Pose poseToPoseMsgs(const Pose& pose)
 	{
 		return poseQuatToPoseMsgs(pose.pos, pose.quat);
 	}
+	/// geometry_msgs/Pose -> tf2::Transform.
 	tf2::Transform poseMsgsToTfTransform(const geometry_msgs::msg::Pose& pose_msg)
 	{
 		Pose pose = poseMsgsToPose(pose_msg);

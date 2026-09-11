@@ -37,6 +37,7 @@ namespace sequence_executor {
 // The prefix that marks a sequence name as a builtin rather than a stored one.
 inline constexpr const char* kBuiltinPrefix = "builtin:";
 
+/// Everything a BuiltinAction body needs to run, handed to it by the FSM.
 struct BuiltinContext
 {
   rclcpp::Node::SharedPtr node;
@@ -50,6 +51,7 @@ struct BuiltinContext
   std::function<bool()> cancelled;
 };
 
+/// One registered hardcoded action, addressable as "builtin:<id>" alongside stored sequences.
 struct BuiltinAction
 {
   using DoneCallback = std::function<void(bool success, const std::string& error_message)>;
@@ -63,13 +65,16 @@ struct BuiltinAction
   std::function<void(BuiltinContext&, DoneCallback)> run;
 };
 
+/// The set of registered BuiltinActions, keyed by id.
 class BuiltinActionRegistry
 {
 public:
   // Later registrations of the same id replace earlier ones, so a project can
   // override a shared default without editing it.
+  /// Registers `action`, replacing any earlier registration under the same id.
   void add(BuiltinAction action);
 
+  /// Looks up an action by id, or nullptr if not registered.
   const BuiltinAction* find(const std::string& id) const;
 
   // Registration order, which is the order they appear in the UI.
@@ -77,7 +82,7 @@ public:
 
   bool empty() const { return ordered_.empty(); }
 
-  // Strips kBuiltinPrefix if present; returns empty for a stored-sequence name.
+  /// Strips kBuiltinPrefix if present; returns empty for a stored-sequence name.
   static std::string idFromSequenceName(const std::string& name);
 
 private:

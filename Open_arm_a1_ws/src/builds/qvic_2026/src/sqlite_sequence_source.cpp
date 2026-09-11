@@ -22,39 +22,46 @@ namespace {
 constexpr const char* kSourceTreeDb =
   "/home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/data/sequences.db";
 
+/// Reads column `index` of the current row as a string, or "" if NULL.
 std::string columnText(sqlite3_stmt* stmt, int index)
 {
   const auto* text = sqlite3_column_text(stmt, index);
   return text ? reinterpret_cast<const char*>(text) : std::string();
 }
 
-// Statement handle that finalises itself, so a throw mid-loop cannot leak it.
+/// Statement handle that finalises itself, so a throw mid-loop cannot leak it.
 class Statement
 {
 public:
+  /// Prepares `sql` against `db`; throws std::runtime_error on failure.
   Statement(sqlite3* db, const std::string& sql)
   {
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt_, nullptr) != SQLITE_OK) {
       throw std::runtime_error(std::string("sqlite: ") + sqlite3_errmsg(db));
     }
   }
+  /// Finalizes the prepared statement.
   ~Statement() { sqlite3_finalize(stmt_); }
   Statement(const Statement&) = delete;
   Statement& operator=(const Statement&) = delete;
 
+  /// Binds a text parameter at 1-based `index`.
   void bind(int index, const std::string& value)
   {
     sqlite3_bind_text(stmt_, index, value.c_str(), -1, SQLITE_TRANSIENT);
   }
+  /// Advances to the next row; true if one was returned.
   bool step() { return sqlite3_step(stmt_) == SQLITE_ROW; }
+  /// The underlying prepared statement handle.
   sqlite3_stmt* get() const { return stmt_; }
 
 private:
   sqlite3_stmt* stmt_ = nullptr;
 };
 
-// The store writes value vectors as a JSON array; yaml-cpp parses JSON, so no
-// separate JSON library appears just to read a column.
+/// The store writes value vectors as a JSON array; yaml-cpp parses JSON, so no
+/// separate JSON library appears just to read a column. Throws
+/// std::runtime_error (prefixed with `where`) on malformed JSON.
 std::vector<double> parseValues(const std::string& json, const std::string& where)
 {
   try {
@@ -72,6 +79,8 @@ std::vector<double> parseValues(const std::string& json, const std::string& wher
   }
 }
 
+/// Splits a "section/key" waypoint ref into (section, key); an unqualified
+/// ref (no '/') returns ("", ref).
 std::pair<std::string, std::string> splitRef(const std::string& ref)
 {
   const auto slash = ref.find('/');

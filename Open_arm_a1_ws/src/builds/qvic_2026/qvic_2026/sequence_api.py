@@ -36,10 +36,12 @@ def register(app, joint_state_reader=None):
 
 
 def _fail(message, code=400):
+    """Builds a {'success': False, 'message': ...} JSON error response."""
     return jsonify({'success': False, 'message': message}), code
 
 
 def _body():
+    """Returns the request's JSON body as a dict; raises ValueError if absent/not an object."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         raise ValueError('a JSON object body is required')
@@ -80,11 +82,13 @@ def get_step_types():
 
 @bp.route('/api/sequences', methods=['GET'])
 def list_sequences():
+    """GET /api/sequences: lists every stored sequence."""
     return jsonify({'success': True, 'sequences': store.list_sequences()})
 
 
 @bp.route('/api/sequences', methods=['POST'])
 def create_sequence():
+    """POST /api/sequences: creates a new sequence from the request body."""
     def run():
         data = _body()
         name = data.get('name')
@@ -106,11 +110,14 @@ def create_sequence():
 
 @bp.route('/api/sequences/<name>', methods=['GET'])
 def get_sequence(name):
+    """GET /api/sequences/<name>: fetches one sequence's full definition."""
     return _handle(lambda: jsonify({'success': True, 'sequence': store.get_sequence(name)}))
 
 
 @bp.route('/api/sequences/<name>', methods=['PUT'])
 def update_sequence(name):
+    """PUT /api/sequences/<name>: updates metadata fields, and/or replaces the
+    step list, and/or renames the sequence, depending on which keys are present."""
     def run():
         data = _body()
         fields = {k: v for k, v in data.items() if k in store.UPDATABLE_FIELDS}
@@ -125,6 +132,7 @@ def update_sequence(name):
 
 @bp.route('/api/sequences/<name>', methods=['DELETE'])
 def delete_sequence(name):
+    """DELETE /api/sequences/<name>: deletes a sequence."""
     def run():
         store.delete_sequence(name)
         return jsonify({'success': True, 'message': f"deleted '{name}'"})
@@ -133,6 +141,7 @@ def delete_sequence(name):
 
 @bp.route('/api/sequences/<name>/duplicate', methods=['POST'])
 def duplicate_sequence(name):
+    """POST /api/sequences/<name>/duplicate: copies a sequence under a new name."""
     def run():
         data = _body()
         new_name = data.get('new_name') or f'{name}_copy'
@@ -144,6 +153,7 @@ def duplicate_sequence(name):
 
 @bp.route('/api/sequences/<name>/steps', methods=['POST'])
 def add_step(name):
+    """POST /api/sequences/<name>/steps: appends (or inserts at `index`) a new step."""
     def run():
         data = _body()
         index = data.pop('index', None)
@@ -153,6 +163,7 @@ def add_step(name):
 
 @bp.route('/api/sequences/<name>/steps/<int:index>', methods=['PUT'])
 def update_step(name, index):
+    """PUT /api/sequences/<name>/steps/<index>: replaces one step's fields."""
     return _handle(
         lambda: jsonify({'success': True, 'sequence': store.update_step(name, index, _body())})
     )
@@ -160,6 +171,7 @@ def update_step(name, index):
 
 @bp.route('/api/sequences/<name>/steps/<int:index>', methods=['DELETE'])
 def delete_step(name, index):
+    """DELETE /api/sequences/<name>/steps/<index>: removes one step."""
     return _handle(
         lambda: jsonify({'success': True, 'sequence': store.delete_step(name, index)})
     )
@@ -167,6 +179,7 @@ def delete_step(name, index):
 
 @bp.route('/api/sequences/<name>/reorder', methods=['POST'])
 def reorder_steps(name):
+    """POST /api/sequences/<name>/reorder: reorders steps per a full index permutation."""
     def run():
         order = _body().get('order')
         if not isinstance(order, list):
@@ -179,6 +192,8 @@ def reorder_steps(name):
 
 @bp.route('/api/waypoints', methods=['GET'])
 def list_waypoints():
+    """GET /api/waypoints[?section=...]: lists waypoints (optionally filtered
+    to one section) plus every known section name."""
     return jsonify({
         'success': True,
         'waypoints': store.list_waypoints(section=request.args.get('section')),
@@ -221,12 +236,14 @@ def create_waypoint():
 
 @bp.route('/api/waypoints/<path:ref>', methods=['GET'])
 def get_waypoint(ref):
-    # `ref` is 'section/name'; the path converter keeps the slash.
+    """GET /api/waypoints/<section>/<name>: fetches one waypoint's values.
+    `ref` is 'section/name'; the path converter keeps the slash."""
     return _handle(lambda: jsonify({'success': True, 'waypoint': store.get_waypoint(ref)}))
 
 
 @bp.route('/api/waypoints/<path:ref>', methods=['DELETE'])
 def delete_waypoint(ref):
+    """DELETE /api/waypoints/<section>/<name>: deletes one waypoint."""
     def run():
         store.delete_waypoint(ref)
         return jsonify({'success': True, 'message': f"deleted '{ref}'"})
@@ -237,6 +254,7 @@ def delete_waypoint(ref):
 
 @bp.route('/api/store/import', methods=['POST'])
 def import_yaml():
+    """POST /api/store/import: imports a sequence.yaml file's sections/sequences into the store."""
     def run():
         from . import yaml_sync
         path = _body().get('file')
@@ -248,6 +266,7 @@ def import_yaml():
 
 @bp.route('/api/store/export', methods=['POST'])
 def export_yaml():
+    """POST /api/store/export: writes the store's current contents out to a sequence.yaml file."""
     def run():
         from . import yaml_sync
         path = _body().get('file')
@@ -259,12 +278,14 @@ def export_yaml():
 
 @bp.route('/api/store/runs', methods=['GET'])
 def list_runs():
+    """GET /api/store/runs[?limit=N]: lists recent sequence run records."""
     limit = request.args.get('limit', 50)
     return _handle(lambda: jsonify({'success': True, 'runs': store.list_runs(limit=limit)}))
 
 
 @bp.route('/api/store/info', methods=['GET'])
 def store_info():
+    """GET /api/store/info: db path plus sequence/waypoint counts."""
     return jsonify({
         'success': True,
         'db_path': store.db_path(),

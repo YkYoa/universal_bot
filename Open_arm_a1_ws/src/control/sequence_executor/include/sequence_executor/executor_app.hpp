@@ -27,18 +27,21 @@
 
 namespace sequence_executor {
 
-// Called once, after the node exists and its parameters are declared, to
-// supply the sequence source and register builtin actions. Returning nullptr
-// falls back to a YamlSequenceSource built from the `sequence_yaml_path`
-// parameter.
+/// Called once, after the node exists and its parameters are declared, to
+/// supply the sequence source and register builtin actions. Returning nullptr
+/// falls back to a YamlSequenceSource built from the `sequence_yaml_path`
+/// parameter.
 using ConfigureCallback = std::function<std::shared_ptr<SequenceSource>(
   const rclcpp::Node::SharedPtr& node, BuiltinActionRegistry& builtins)>;
 
-// Declares these parameters on the node:
-//   sequence_yaml_path     - fallback source; required if `configure` returns null
-//   sequence_name          - autostart this sequence, empty = sit in IDLE
-//   hardware_config_path   - override for the control-mode probe
-//   wait_for_controllers   - seconds; 0 skips the wait entirely
+/// Shared main() body (see file header comment): creates the node, waits for
+/// controllers, builds the ControlModeProbe/SequenceSource/RobotSupervisor
+/// (via `configure`), autostarts `sequence_name` if set, and spins a
+/// SingleThreadedExecutor until shutdown. Declares these parameters on the node:
+///   sequence_yaml_path     - fallback source; required if `configure` returns null
+///   sequence_name          - autostart this sequence, empty = sit in IDLE
+///   hardware_config_path   - override for the control-mode probe
+///   wait_for_controllers   - seconds; 0 skips the wait entirely
 int runApp(int argc, char** argv, const std::string& node_name,
            const ConfigureCallback& configure = nullptr);
 

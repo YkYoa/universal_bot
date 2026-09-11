@@ -12,6 +12,8 @@ namespace sequence_executor {
 
 namespace {
 
+/// Renders a scalar node as-is, or a sequence node as its comma-joined values;
+/// "" for anything else.
 std::string toStringValue(const YAML::Node& node)
 {
   if (node.IsScalar()) {
@@ -28,6 +30,8 @@ std::string toStringValue(const YAML::Node& node)
   return "";
 }
 
+/// Splits `raw` on commas, trims whitespace from each piece, and drops empty
+/// results.
 std::vector<std::string> parseTokens(const std::string& raw)
 {
   std::vector<std::string> tokens;
@@ -43,6 +47,7 @@ std::vector<std::string> parseTokens(const std::string& raw)
   return tokens;
 }
 
+/// parseTokens() followed by a std::stod on each token.
 std::vector<double> parseDoubles(const std::string& raw)
 {
   std::vector<double> out;
@@ -52,6 +57,8 @@ std::vector<double> parseDoubles(const std::string& raw)
   return out;
 }
 
+/// True if `key` contains "angle" (case-insensitive) - identifies the
+/// *Angle-suffixed waypoint keys SequenceYaml::waypoints() collects.
 bool isJointAngleKey(const std::string& key)
 {
   std::string k = key;
@@ -59,6 +66,8 @@ bool isJointAngleKey(const std::string& key)
   return k.find("angle") != std::string::npos;
 }
 
+/// Loads and validates `yaml_path` as a non-empty YAML map; throws
+/// std::runtime_error otherwise.
 YAML::Node loadRoot(const std::string& yaml_path)
 {
   std::ifstream f(yaml_path);

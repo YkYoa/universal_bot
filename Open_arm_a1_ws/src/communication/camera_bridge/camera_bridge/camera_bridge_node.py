@@ -34,7 +34,12 @@ node: "CameraBridgeNode" = None
 
 
 class CameraBridgeNode(Node):
+    """Node ROS2 giu publisher Image/CameraInfo cho 2 slot camera (front/left) va
+    cache frame JPEG moi nhat de phuc vu HTTP; khong tu nhan du lieu, Flask route
+    ben duoi goi publish_frame() moi khi co POST tu Jetson."""
+
     def __init__(self):
+        """Tao cac publisher /camera_<slot>/image_raw + camera_info cho front/left."""
         super().__init__("camera_bridge_node")
         self.bridge = CvBridge()
         self.pub_front = self.create_publisher(Image, "/camera_front/image_raw", 5)
@@ -46,6 +51,8 @@ class CameraBridgeNode(Node):
         self.get_logger().info("camera_bridge_node san sang, cho frame tu Jetson qua HTTP")
 
     def publish_frame(self, slot: str, jpeg_bytes: bytes) -> bool:
+        """Giai ma 1 frame JPEG va publish Image + CameraInfo cho `slot`
+        ("front"/"left"); tra ve False neu OpenCV khong decode duoc."""
         arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
         frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if frame is None:
@@ -73,6 +80,8 @@ class CameraBridgeNode(Node):
 
 @app.route("/frame/<slot>", methods=["POST"])
 def receive_frame(slot):
+    """HTTP handler POST /frame/<slot>: nhan raw JPEG bytes tu Jetson va publish
+    len ROS2 qua CameraBridgeNode.publish_frame()."""
     if slot not in ("front", "left"):
         return {"error": f"unknown slot '{slot}', dung 'front' hoac 'left'"}, 400
     ok = node.publish_frame(slot, request.get_data())
@@ -83,6 +92,8 @@ def receive_frame(slot):
 
 @app.route("/frame/<slot>/latest", methods=["GET"])
 def get_latest_frame(slot):
+    """HTTP handler GET /frame/<slot>/latest: tra ve raw JPEG bytes cua frame
+    moi nhat da nhan cho slot do (dung boi teleop_record_openarm.py)."""
     if slot not in ("front", "left"):
         return {"error": f"unknown slot '{slot}', dung 'front' hoac 'left'"}, 400
     jpeg_bytes = node.last_jpeg_bytes.get(slot)
@@ -93,6 +104,8 @@ def get_latest_frame(slot):
 
 @app.route("/health", methods=["GET"])
 def health():
+    """HTTP handler GET /health: tra ve tuoi (giay) cua frame moi nhat tung slot,
+    dung de kiem tra Jetson streamer con song khong."""
     now = time.time()
     return {
         "status": "ok",
@@ -101,6 +114,8 @@ def health():
 
 
 def main():
+    """Diem vao: khoi tao node ROS2 tren 1 thread rieng, chay Flask server o
+    thread chinh (port 8090) cho toi khi bi ngat."""
     global node
     rclpy.init()
     node = CameraBridgeNode()

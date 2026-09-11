@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import sys
 import glob
+import copy
 import argparse
 import pickle
 
@@ -62,7 +63,29 @@ parser.add_argument("--lr-start", "--lr_start", dest="lr_start", type=float, def
 parser.add_argument("--lr-end", "--lr_end", dest="lr_end", type=float, default=1e-5)
 parser.add_argument("--clip-range", "--clip_range", dest="clip_range", type=float, default=0.2,
                     help="Fine-tune: 0.1 để update đầu không phá reach/grasp đang tốt.")
-parser.add_argument("--ent-coef", "--ent_coef", dest="ent_coef", type=float, default=0.005)
+parser.add_argument("--n-epochs", "--n_epochs", dest="n_epochs", type=int, default=10,
+                    help="Số epoch tái sử dụng mỗi rollout batch. Phase 18: batch trộn mẫu từ nhiều stage "
+                         "(REACH/GRASP/LIFT/PLACE, cùng 1 episode liên tục) — mỗi epoch là 1 lần gradient từ "
+                         "PLACE (nhiễu, chưa hội tụ) kéo lệch trọng số policy_net dùng chung cho REACH/GRASP. "
+                         "Giảm xuống (vd 3) không sửa gốc rễ nhưng làm chậm tốc độ trôi dạt — cách rẻ nhất để thử.")
+parser.add_argument("--kl-coef", "--kl_coef", dest="kl_coef", type=float, default=0.0,
+                    help="Phase 21: hệ số phạt KL-divergence giữa policy đang train và policy tham chiếu "
+                         "(đóng băng), CHỈ áp dụng cho mẫu REACH/GRASP (stage_obs<0.75) trong mỗi minibatch. "
+                         "Sửa đúng gốc rễ Phase 18 (gradient từ PLACE — nhiễu, chưa hội tụ — kéo lệch trọng số "
+                         "policy_net dùng chung REACH/GRASP/LIFT/PLACE): ràng buộc TRỰC TIẾP hành vi REACH/GRASP "
+                         "không lệch xa policy tham chiếu, bất kể gradient từ đâu tới. 0.0 = tắt (hành vi cũ).")
+parser.add_argument("--kl-ref-checkpoint", "--kl_ref_checkpoint", dest="kl_ref_checkpoint", type=str, default=None,
+                    help="Checkpoint dùng làm policy tham chiếu cho --kl-coef. Mặc định = --checkpoint (đúng ý "
+                         "định: không lệch xa policy TRƯỚC KHI fine-tune PLACE). Chỉ cần chỉ định riêng khi dùng "
+                         "cùng --resume (không tự có sẵn 'trước khi fine-tune' để tham chiếu).")
+parser.add_argument("--ent-coef", "--ent_coef", dest="ent_coef", type=float, default=0.005,
+                    help="Giá trị BẮT ĐẦU. Với --assist-schedule sẽ tự giảm dần về --ent-coef-end.")
+parser.add_argument("--ent-coef-end", "--ent_coef_end", dest="ent_coef_end", type=float, default=None,
+                    help="Đích giảm dần của ent_coef (mirror --lr-end). Mặc định = --ent-coef (không đổi, "
+                         "hành vi cũ) — chỉ định rõ để bật EntCoefScheduleCallback. Phase 15: ent_coef cố "
+                         "định suốt run khiến std/log_std không hội tụ giảm, policy dựa vào nhiễu sampling "
+                         "để 'qua bài' lúc train (rollout stochastic tốt) trong khi mean action (deterministic "
+                         "— thứ demo/eval/deploy dùng) không được ép hội tụ, thoái hoá dần theo thời gian train.")
 parser.add_argument("--joint-space", "--joint_space", dest="joint_space", action="store_true",
                     help="Use legacy 8-D joint-space actions instead of OSC 6-DOF (default)")
 parser.add_argument("--task-phase", "--task_phase", dest="task_phase", type=int, default=None,
@@ -72,8 +95,8 @@ parser.add_argument("--descent-assist", "--descent_assist", dest="descent_assist
 parser.add_argument("--assist-schedule", "--assist_schedule", dest="assist_schedule", action="store_true",
                     help="Phase 2: decay assist blend 1.0→0.0 over training (Option C)")
 parser.add_argument("--stage", type=str, default="all",
-                    choices=("reach", "grasp", "lift", "all"),
-                    help="Phase 2 sub-stage gates: reach | grasp | lift | all")
+                    choices=("reach", "grasp", "lift", "place", "all"),
+                    help="Phase 2+ sub-stage gates: reach | grasp | lift | place | all")
 
 # Isaac Sim AppLauncher args
 from isaaclab.app import AppLauncher
@@ -279,8 +302,53 @@ class AssistScheduleCallback(BaseCallback):
         anneal_frac = float(getattr(cfg, "grasp_assist_anneal_frac", 0.4))
         w = start + (end - start) * min(frac / max(anneal_frac, 1e-6), 1.0)
         unwrapped._assist_blend_scale = w
+        # Cố định, KHÔNG anneal — bảo vệ REACH/GRASP-descent (đọc qua
+        # _assist_scale_descent trong grasp_assist.py) khỏi bị tắt theo lịch
+        # anneal của LIFT/PLACE. Xác nhận bằng thực nghiệm: fine-tune PLACE
+        # (task_phase=3) làm grasp_rate sập 0.83→0.40 vì cả 2 dùng chung 1
+        # scale trước khi có dòng này — đúng rủi ro đã cảnh báo ở Giai đoạn 2
+        # cũ (S2.3 "tách 2 scale") nhưng chưa từng cài.
+        unwrapped._assist_blend_scale_descent = 1.0
         if self.num_timesteps % 200000 < (self.training_env.num_envs or 1):
             print(f"  [Assist] scale={w:.3f} @ {self.num_timesteps:,} steps", flush=True)
+        return True
+
+
+class EntCoefScheduleCallback(BaseCallback):
+    """Giảm dần `ent_coef` start→end, ĐỒNG BỘ cùng anneal_frac với assist.
+
+    Phát hiện Phase 15 (terminal_command.md): fine-tune PLACE 5M bước với
+    `ent_coef` CỐ ĐỊNH suốt run khiến `std` (đo qua SB3 logger) không đổi
+    (~3.98 hằng số từ đầu tới cuối) — entropy bonus không bao giờ nhường chỗ
+    cho tín hiệu reward ép mean action hội tụ sắc nét. Hậu quả: chính sách
+    STOCHASTIC (dùng lúc rollout để tính train/grasp_rate) vẫn "qua bài" nhờ
+    nhiễu sampling + assist descent luôn bật, trong khi chính sách
+    DETERMINISTIC (mean action — thứ demo/eval/deploy THẬT dùng) không hề
+    được ép tốt lên, thoái hoá dần suốt quá trình fine-tune (grasp ~50% ở 1M
+    bước → gần 0% ở 5M bước, đo trực tiếp bằng eval_lift_metrics.py).
+
+    Đồng bộ cùng `grasp_assist_anneal_frac` (KHÔNG phải một anneal_frac riêng)
+    là chủ đích: entropy nên xuống thấp ĐÚNG LÚC assist về 0 — đó chính là
+    lúc policy bắt đầu phải tự chủ hoàn toàn, cần một mean sắc nét chứ không
+    phải một phân phối còn rộng dựa vào may rủi sampling.
+    """
+
+    def __init__(self, total_timesteps: int, start: float, end: float, verbose: int = 0):
+        super().__init__(verbose)
+        self._total = max(total_timesteps, 1)
+        self._start = start
+        self._end = end
+
+    def _on_step(self) -> bool:
+        env = self.training_env
+        unwrapped = env.unwrapped if hasattr(env, "unwrapped") else env.envs[0].unwrapped
+        cfg = unwrapped.cfg
+        frac = min(max(self.num_timesteps / self._total, 0.0), 1.0)
+        anneal_frac = float(getattr(cfg, "grasp_assist_anneal_frac", 0.4))
+        w = self._start + (self._end - self._start) * min(frac / max(anneal_frac, 1e-6), 1.0)
+        self.model.ent_coef = w
+        if self.num_timesteps % 200000 < (self.training_env.num_envs or 1):
+            print(f"  [EntCoef] ent_coef={w:.5f} @ {self.num_timesteps:,} steps", flush=True)
         return True
 
 
@@ -381,6 +449,156 @@ class TrainMetricsCallback(BaseCallback):
         return True
 
 
+# Index của stage_obs trong observation 26-D (xem observations.py::get_apple_pick_place_obs
+# docstring: obs[25] = stage_obs, 0.0=REACH 0.5=GRASP 1.0=PLACE). Ngưỡng 0.75 tách PLACE
+# (1.0) khỏi REACH/GRASP (0.0/0.5) — không phụ thuộc LIFT vì LIFT là sub-phase của GRASP
+# (env._stage không đổi khi vào LIFT, chỉ _lift_phase đổi).
+_STAGE_OBS_IDX = 25
+_STAGE_OBS_PLACE_THRESHOLD = 0.75
+
+
+class KLProtectedPPO(PPO):
+    """PPO + phạt KL-divergence giữ policy REACH/GRASP gần policy tham chiếu.
+
+    Phase 21 — sửa đúng gốc rễ đã xác nhận ở Phase 18 (terminal_command.md):
+    `policy_net` là MỘT mạng dùng chung cho cả 4 stage (REACH/GRASP/LIFT/PLACE)
+    vì đây là 1 episode liên tục và stage chỉ là 1/26 giá trị observation, không
+    phải kiến trúc tách riêng. Gradient tổng hợp mỗi lần update trộn lẫn mẫu từ
+    PLACE (nhiệm vụ khó, advantage nhiễu vì value chưa hội tụ) với REACH/GRASP
+    (đã gần tối ưu) — không có gì bảo vệ REACH/GRASP khỏi bị kéo lệch. Đã thử
+    2 cách RẺ (entropy decay Phase 16-17, giảm n_epochs Phase 19-20) — cả 2 chỉ
+    làm chậm chứ không chặn đứng đà thoái hoá qua nhiều lần chạy khác nhau.
+
+    Cách này ràng buộc TRỰC TIẾP: mỗi minibatch, tính KL-divergence giữa phân
+    phối hành động của policy ĐANG TRAIN và policy THAM CHIẾU (đóng băng, snapshot
+    ngay lúc bắt đầu fine-tune — chính là checkpoint đã biết TỐT), CHỈ tính trên
+    mẫu có stage_obs < 0.75 (REACH/GRASP). PLACE vẫn học tự do (không bị ràng
+    buộc) nhưng KHÔNG được phép kéo hành vi REACH/GRASP đi xa policy tham chiếu,
+    bất kể gradient tới từ đâu trong 1 minibatch trộn lẫn stage.
+    """
+
+    def __init__(self, *args, kl_coef: float = 0.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.kl_coef = float(kl_coef)
+        self._ref_policy = None
+
+    def set_reference_policy(self, ref_state_dict: dict) -> None:
+        """Snapshot policy hiện tại, đóng băng, dùng làm mốc tham chiếu KL."""
+        ref_policy = copy.deepcopy(self.policy)
+        ref_policy.load_state_dict(ref_state_dict)
+        ref_policy.set_training_mode(False)
+        for p in ref_policy.parameters():
+            p.requires_grad_(False)
+        self._ref_policy = ref_policy
+
+    def train(self) -> None:
+        """Mirror PPO.train() (SB3 2.9.0) + thêm số hạng phạt KL cho mẫu REACH/GRASP."""
+        import numpy as np
+        from stable_baselines3.common.utils import explained_variance
+
+        self.policy.set_training_mode(True)
+        self._update_learning_rate(self.policy.optimizer)
+        clip_range = self.clip_range(self._current_progress_remaining)
+        if self.clip_range_vf is not None:
+            clip_range_vf = self.clip_range_vf(self._current_progress_remaining)
+
+        entropy_losses = []
+        pg_losses, value_losses = [], []
+        clip_fractions = []
+        kl_ref_losses = []
+
+        continue_training = True
+        for epoch in range(self.n_epochs):
+            approx_kl_divs = []
+            for rollout_data in self.rollout_buffer.get(self.batch_size):
+                actions = rollout_data.actions
+
+                values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
+                values = values.flatten()
+                advantages = rollout_data.advantages
+                if self.normalize_advantage and len(advantages) > 1:
+                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+                ratio = torch.exp(log_prob - rollout_data.old_log_prob)
+                policy_loss_1 = advantages * ratio
+                policy_loss_2 = advantages * torch.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                policy_loss = -torch.min(policy_loss_1, policy_loss_2).mean()
+
+                pg_losses.append(policy_loss.item())
+                clip_fraction = torch.mean((torch.abs(ratio - 1) > clip_range).float()).item()
+                clip_fractions.append(clip_fraction)
+
+                if self.clip_range_vf is None:
+                    values_pred = values
+                else:
+                    values_pred = rollout_data.old_values + torch.clamp(
+                        values - rollout_data.old_values, -clip_range_vf, clip_range_vf
+                    )
+                value_loss = torch.nn.functional.mse_loss(rollout_data.returns, values_pred)
+                value_losses.append(value_loss.item())
+
+                if entropy is None:
+                    entropy_loss = -torch.mean(-log_prob)
+                else:
+                    entropy_loss = -torch.mean(entropy)
+                entropy_losses.append(entropy_loss.item())
+
+                loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+
+                if self._ref_policy is not None and self.kl_coef > 0.0:
+                    stage_obs = rollout_data.observations[:, _STAGE_OBS_IDX]
+                    protect_mask = stage_obs < _STAGE_OBS_PLACE_THRESHOLD
+                    if protect_mask.any():
+                        cur_dist = self.policy.get_distribution(rollout_data.observations)
+                        with torch.no_grad():
+                            ref_dist = self._ref_policy.get_distribution(rollout_data.observations)
+                        kl_per_dim = torch.distributions.kl_divergence(cur_dist.distribution, ref_dist.distribution)
+                        kl_per_sample = kl_per_dim.sum(dim=-1)
+                        kl_loss = kl_per_sample[protect_mask].mean()
+                    else:
+                        kl_loss = torch.zeros((), device=self.device)
+                    kl_ref_losses.append(kl_loss.item())
+                    loss = loss + self.kl_coef * kl_loss
+
+                with torch.no_grad():
+                    log_ratio = log_prob - rollout_data.old_log_prob
+                    approx_kl_div = torch.mean((torch.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
+                    approx_kl_divs.append(approx_kl_div)
+
+                if self.target_kl is not None and approx_kl_div > 1.5 * self.target_kl:
+                    continue_training = False
+                    if self.verbose >= 1:
+                        print(f"Early stopping at step {epoch} due to reaching max kl: {approx_kl_div:.2f}")
+                    break
+
+                self.policy.optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+                self.policy.optimizer.step()
+
+            self._n_updates += 1
+            if not continue_training:
+                break
+
+        explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
+
+        self.logger.record("train/entropy_loss", float(np.mean(entropy_losses)))
+        self.logger.record("train/policy_gradient_loss", float(np.mean(pg_losses)))
+        self.logger.record("train/value_loss", float(np.mean(value_losses)))
+        self.logger.record("train/approx_kl", float(np.mean(approx_kl_divs)))
+        self.logger.record("train/clip_fraction", float(np.mean(clip_fractions)))
+        self.logger.record("train/loss", loss.item())
+        self.logger.record("train/explained_variance", explained_var)
+        if kl_ref_losses:
+            self.logger.record("train/kl_ref_reach_grasp", float(np.mean(kl_ref_losses)))
+        if hasattr(self.policy, "log_std"):
+            self.logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
+        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+        self.logger.record("train/clip_range", clip_range)
+        if self.clip_range_vf is not None:
+            self.logger.record("train/clip_range_vf", clip_range_vf)
+
+
 class PruningCheckpointCallback(CheckpointCallback):
     """CheckpointCallback that keeps only the last N zip files on disk."""
 
@@ -441,33 +659,47 @@ def train():
     )
     callbacks = CallbackList([checkpoint_cb, TrainMetricsCallback()])
     if getattr(train_env.unwrapped.cfg, "grasp_assist_schedule_enabled", False):
-        callbacks = CallbackList([checkpoint_cb, TrainMetricsCallback(), AssistScheduleCallback(args.timesteps)])
+        cb_list = [checkpoint_cb, TrainMetricsCallback(), AssistScheduleCallback(args.timesteps)]
         print("  ✅ Assist schedule enabled (blend 1.0 → 0.0)")
+        ent_end = args.ent_coef_end if args.ent_coef_end is not None else args.ent_coef
+        if ent_end != args.ent_coef:
+            cb_list.append(EntCoefScheduleCallback(args.timesteps, args.ent_coef, ent_end))
+            print(f"  ✅ Entropy coef schedule enabled ({args.ent_coef} → {ent_end}, sync với assist anneal)")
+        callbacks = CallbackList(cb_list)
 
     # Model definition
     latest_ckpt = find_latest_checkpoint(log_dir) if args.resume else None
 
     if args.resume and latest_ckpt:
         print(f"\n  ✅ Resuming from: {latest_ckpt}")
-        model = PPO.load(
+        model = KLProtectedPPO.load(
             latest_ckpt,
             env=train_env,
             device=device,
             tensorboard_log=tb_dir,
+            kl_coef=args.kl_coef,
         )
         done_steps = int(latest_ckpt.split("_steps.zip")[0].split("_")[-1])
         remaining  = max(args.timesteps - done_steps, 0)
         print(f"  Steps done: {done_steps:,} / Remaining: {remaining:,}")
+        if args.kl_coef > 0.0:
+            if args.kl_ref_checkpoint:
+                ref_path = args.kl_ref_checkpoint
+                ref_path = ref_path if os.path.isabs(ref_path) else os.path.join(_THIS_DIR, ref_path)
+                model.set_reference_policy(torch.load(ref_path, map_location=device))
+                print(f"  ✅ KL-protection enabled (coef={args.kl_coef}, ref={ref_path})")
+            else:
+                print("  ⚠️  --kl-coef bật nhưng --resume không có --kl-ref-checkpoint — bỏ qua KL-protection.")
     else:
         if args.resume:
             print("  ⚠️  No checkpoint found — starting from scratch.")
-        model = PPO(
+        model = KLProtectedPPO(
             policy="MlpPolicy",
             env=train_env,
             learning_rate=linear_lr_schedule(args.lr_start, args.lr_end),
             n_steps=64,
             batch_size=4096,
-            n_epochs=10,
+            n_epochs=args.n_epochs,
             gamma=0.99,
             gae_lambda=0.95,
             clip_range=args.clip_range,
@@ -482,6 +714,7 @@ def train():
             seed=args.seed,
             device=device,
             tensorboard_log=tb_dir,
+            kl_coef=args.kl_coef,
         )
         remaining = args.timesteps
 
@@ -494,6 +727,17 @@ def train():
             print(f"\n  ✅ Fine-tuning from: {ckpt_path}")
             state_dict = torch.load(ckpt_path, map_location=device)
             model.policy.load_state_dict(state_dict)
+            if args.kl_coef > 0.0:
+                if args.kl_ref_checkpoint:
+                    ref_path = args.kl_ref_checkpoint
+                    ref_path = ref_path if os.path.isabs(ref_path) else os.path.join(_THIS_DIR, ref_path)
+                    model.set_reference_policy(torch.load(ref_path, map_location=device))
+                    print(f"  ✅ KL-protection enabled (coef={args.kl_coef}, ref={ref_path})")
+                else:
+                    # Mặc định: tham chiếu = ĐÚNG checkpoint vừa fine-tune từ đó —
+                    # đúng ý định "không lệch xa policy TRƯỚC KHI học PLACE".
+                    model.set_reference_policy(state_dict)
+                    print(f"  ✅ KL-protection enabled (coef={args.kl_coef}, ref={ckpt_path} [= --checkpoint])")
             # log_std dim gripper (index 6) đóng băng ~16.0 (std≈9tr) từ lịch sử
             # train cũ. ĐÃ THỬ 3 cách sửa-rồi-để-gradient-tự-do (clamp mỗi bước
             # 2 trần khác nhau, reset một lần không đóng băng) — CẢ 3 đều làm

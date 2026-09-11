@@ -11,6 +11,8 @@
 namespace openarm_demo
 {
     auto DEMO_LOG = rclcpp::get_logger("demo_node");
+    /// Mirrors OpenArmDemoNode::config_ so getGlobalWaypoint() can read it
+    /// without a node reference.
     static YAML::Node g_config;
 
     OpenArmDemoNode::OpenArmDemoNode(const rclcpp::NodeOptions & options)
@@ -556,6 +558,7 @@ namespace openarm_demo
     }
 } // namespace openarm_demo
 
+/// Entry point: spin a single OpenArmDemoNode until shutdown.
 int main(int argc, char ** argv)
 {
     rclcpp::init(argc, argv);

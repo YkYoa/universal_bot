@@ -8,26 +8,32 @@ namespace sequence_executor {
 
 namespace {
 
+/// "<sequence_name> step <index> (<type>)" - the prefix for every error this
+/// file throws.
 std::string context(const std::string& sequence_name, int index, const std::string& type)
 {
   return sequence_name + " step " + std::to_string(index) + " (" + type + ")";
 }
 
+/// `params[key]` as a string, or "" if absent.
 std::string str(const YAML::Node& params, const char* key)
 {
   return params[key] ? params[key].as<std::string>() : std::string();
 }
 
+/// `params[key]` as a double, or `fallback` if absent.
 double num(const YAML::Node& params, const char* key, double fallback)
 {
   return params[key] ? params[key].as<double>() : fallback;
 }
 
+/// `params[key]` as a bool, or `fallback` if absent.
 bool flag(const YAML::Node& params, const char* key, bool fallback)
 {
   return params[key] ? params[key].as<bool>() : fallback;
 }
 
+/// `params[key]` as a vector of doubles, or empty if absent/not a sequence.
 std::vector<double> doubles(const YAML::Node& params, const char* key)
 {
   std::vector<double> out;
@@ -40,6 +46,7 @@ std::vector<double> doubles(const YAML::Node& params, const char* key)
   return out;
 }
 
+/// `params[key]` as a vector of ints, or empty if absent/not a sequence.
 std::vector<int> ints(const YAML::Node& params, const char* key)
 {
   std::vector<int> out;
@@ -52,6 +59,7 @@ std::vector<int> ints(const YAML::Node& params, const char* key)
   return out;
 }
 
+/// `params[key]` as a vector of strings, or empty if absent/not a sequence.
 std::vector<std::string> strings(const YAML::Node& params, const char* key)
 {
   std::vector<std::string> out;
@@ -64,6 +72,7 @@ std::vector<std::string> strings(const YAML::Node& params, const char* key)
   return out;
 }
 
+/// Throws if `values` is non-empty but doesn't have exactly `expected` entries.
 void requireLength(const std::vector<double>& values, std::size_t expected,
                    const std::string& where, const char* field)
 {
@@ -74,6 +83,7 @@ void requireLength(const std::vector<double>& values, std::size_t expected,
   }
 }
 
+/// Throws if `value` is empty.
 void requireNonEmpty(const std::string& value, const std::string& where, const char* field)
 {
   if (value.empty()) {

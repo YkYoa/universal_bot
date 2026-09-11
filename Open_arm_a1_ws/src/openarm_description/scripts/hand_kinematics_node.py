@@ -38,6 +38,7 @@ from sensor_msgs.msg import JointState
 
 
 def rpy_to_matrix(r, p, y):
+    """URDF-convention rotation matrix (extrinsic X-Y-Z, i.e. Rz @ Ry @ Rx) from roll/pitch/yaw."""
     cr, sr = np.cos(r), np.sin(r)
     cp, sp = np.cos(p), np.sin(p)
     cy, sy = np.cos(y), np.sin(y)
@@ -48,6 +49,7 @@ def rpy_to_matrix(r, p, y):
 
 
 def axis_rotation(axis, theta):
+    """Rodrigues' rotation matrix for angle `theta` about `axis` (normalized internally)."""
     axis = axis / np.linalg.norm(axis)
     x, y, z = axis
     c, s = np.cos(theta), np.sin(theta)
@@ -63,6 +65,7 @@ class Kinematics:
     """Generic URDF forward-kinematics helper (root-frame transforms)."""
 
     def __init__(self, urdf_xml):
+        """Parse joints/links out of a URDF string into lookup tables used by fk()/child_links()/ancestors()."""
         root = ET.fromstring(urdf_xml)
         self.joints = {}
         self.children = {}
@@ -87,6 +90,7 @@ class Kinematics:
             self.parent_of_link[c] = name
 
     def joint_local_T(self, jname, value):
+        """Transform contributed by joint `jname` at `value`: its fixed origin composed with its motion (revolute/continuous rotate about `axis`, prismatic translate along it)."""
         j = self.joints[jname]
         T = np.eye(4)
         T[:3, :3] = rpy_to_matrix(*j['rpy'])
@@ -102,6 +106,7 @@ class Kinematics:
         return T
 
     def fk(self, link, values=None):
+        """World-from-root transform of `link`, walking the parent chain and composing joint_local_T() at each step (joints missing from `values` default to 0)."""
         values = values or {}
         chain = []
         cur = link
@@ -115,6 +120,7 @@ class Kinematics:
         return T
 
     def child_links(self, link, jtype=None):
+        """(joint_name, child_link) pairs for every joint whose parent is `link`, optionally filtered to one joint `jtype`."""
         out = []
         for jn in self.children.get(link, []):
             j = self.joints[jn]
@@ -123,6 +129,7 @@ class Kinematics:
         return out
 
     def ancestors(self, link):
+        """Link names on the path from `link` up to the root, nearest first."""
         path = []
         cur = link
         while cur in self.parent_of_link:
@@ -302,6 +309,10 @@ def _orientation_residual(R_a, R_b):
 
 
 def make_residual_fn(hand, f):
+    """Build the forward-solve residual for one finger: given commanded servo angles
+    (theta_A, theta_B), how far the 6 unknowns (q1, q2, q_prox, q_knu, q_prism, q_twist)
+    are from satisfying the two rod-length constraints and the distal_dup/distal_real
+    position+orientation match. See make_ik_residual_fn for the inverse direction."""
     rb0, rb1 = f['rod_balls']
     hb0, hb1 = f['servo_data'][0]['horn_ball'], f['servo_data'][1]['horn_ball']
     act0, act1 = f['servo_data'][0]['actuator_joint'], f['servo_data'][1]['actuator_joint']
@@ -364,7 +375,14 @@ def make_ik_residual_fn(hand, f):
 
 
 class HandKinematicsNode(Node):
+    """ROS 2 node that republishes a mechanically-consistent amazing_hand joint state
+    by solving each finger's closed-loop rod/gimbal linkage on every input update.
+    See the module docstring for the servo vs. knuckle command_space distinction."""
+
     def __init__(self):
+        """Discover the hand's fingers from `robot_description`, calibrate rod lengths
+        and knuckle offsets from the assembled rest pose, build one solver per finger,
+        and start the joint_states_raw/commands -> joint_states bridge."""
         super().__init__('hand_kinematics_node')
         self.declare_parameter('robot_description', '')
         self.declare_parameter('command_space', 'knuckle')
@@ -466,6 +484,9 @@ class HandKinematicsNode(Node):
         self.state_timer = self.create_timer(0.05, self.republish_states)
 
     def republish_states(self):
+        """Timer callback: re-publish the last solved alias and full joint states so
+        feedback stays live between input messages (the hardware only sends commands
+        on change)."""
         now = self.get_clock().now().to_msg()
         msg = JointState()
         msg.header.stamp = now
@@ -615,6 +636,9 @@ class HandKinematicsNode(Node):
             solved.update(zip(joints, sol.x))
 
     def on_joint_states(self, msg: JointState):
+        """Subscription callback (joint_states_raw or the alias command topic): resolve
+        alias names to real joint names, solve every finger for the requested command
+        space, aim the rod visual chains, and publish the completed joint state."""
         raw = dict(zip(msg.name, msg.position))
         for alias, real in self.alias_of.items():
             if alias in raw:
@@ -658,6 +682,7 @@ class HandKinematicsNode(Node):
 
 
 def main():
+    """Entry point: spin a single HandKinematicsNode until shutdown."""
     rclpy.init()
     node = HandKinematicsNode()
     rclpy.spin(node)

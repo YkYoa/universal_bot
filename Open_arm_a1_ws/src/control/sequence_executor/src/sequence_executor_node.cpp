@@ -13,6 +13,8 @@
 // -----------------------------------------------------------------------------
 #include "sequence_executor/executor_app.hpp"
 
+/// Entry point: runApp() with no project-specific configuration (see file
+/// header comment).
 int main(int argc, char** argv)
 {
   return sequence_executor::runApp(argc, argv, "sequence_executor_node");

@@ -30,6 +30,10 @@
 
 namespace {
 
+/** Opens a fresh TCP connection to `host:port`, sends `line` terminated with
+ *  CRLF, and returns the STM32's single-line reply (trailing newline stripped),
+ *  or an "ERROR: ..." string describing which step failed. Closes the socket
+ *  before returning either way - no persistent connection is kept. */
 std::string sendLine(const std::string& host, uint16_t port, const std::string& line)
 {
   struct addrinfo hints{};
@@ -77,9 +81,16 @@ std::string sendLine(const std::string& host, uint16_t port, const std::string& 
 
 }  // namespace
 
+/** Exposes head_led/set_color, set_mode and set_brightness services that thin-wrap
+ *  the neck STM32 board's RGB/MODE/BRIGHTNESS text protocol over its own TCP port
+ *  (9878, separate from head_motor_driver_node's persistent connection since the
+ *  W5500 only allows one client per socket). Not part of ros2_control by design -
+ *  LED commands have no real-time/calibration requirements. */
 class HeadLedNode : public rclcpp::Node
 {
 public:
+  /** Reads HEAD_STM32_HOST/HEAD_STM32_LED_PORT overrides from the environment
+   *  and registers the three LED services. */
   HeadLedNode() : Node("head_led_node")
   {
     if (const char* env = std::getenv("HEAD_STM32_HOST")) host_ = env;
@@ -99,6 +110,8 @@ public:
   }
 
 private:
+  /** head_led/set_color callback: sends "RGB <led> <r> <g> <b>" and reports
+   *  success based on the board's "SUCCESS" reply prefix. */
   void handleSetColor(
     const std::shared_ptr<openarm_messages::srv::SetColor::Request> request,
     std::shared_ptr<openarm_messages::srv::SetColor::Response> response)
@@ -110,6 +123,8 @@ private:
     response->message = reply;
   }
 
+  /** head_led/set_mode callback: sends "MODE <mode> [speed_ms]" (speed_ms
+   *  omitted when zero) and reports success from the board's reply prefix. */
   void handleSetMode(
     const std::shared_ptr<openarm_messages::srv::SetMode::Request> request,
     std::shared_ptr<openarm_messages::srv::SetMode::Response> response)
@@ -121,6 +136,8 @@ private:
     response->message = reply;
   }
 
+  /** head_led/set_brightness callback: sends "BRIGHTNESS <led> <value>" and
+   *  reports success from the board's reply prefix. */
   void handleSetBrightness(
     const std::shared_ptr<openarm_messages::srv::SetBrightness::Request> request,
     std::shared_ptr<openarm_messages::srv::SetBrightness::Response> response)
@@ -138,6 +155,7 @@ private:
   rclcpp::Service<openarm_messages::srv::SetBrightness>::SharedPtr set_brightness_srv_;
 };
 
+/** Entry point: spin a single HeadLedNode until shutdown. */
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);

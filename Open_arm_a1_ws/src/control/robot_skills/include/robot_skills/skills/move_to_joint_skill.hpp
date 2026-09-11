@@ -6,9 +6,12 @@
 
 namespace robot_skills
 {
+    /// "move_to_joint": plans a single joint-space target (req.joint_targets)
+    /// for req.arm and dispatches it via SkillServer::execute_trajectory().
     class MoveToJointSkill : public RobotSkill
     {
     public:
+        /// `server` is used to dispatch the planned trajectory for execution.
         MoveToJointSkill(SkillServer* server) : server_(server) {}
         ~MoveToJointSkill() override = default;
 

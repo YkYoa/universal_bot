@@ -16,6 +16,10 @@ if "CYCLONEDDS_URI" not in os.environ:
 
 
 def launch_setup(context, *args, **kwargs):
+    """OpaqueFunction body: the main bimanual bring-up (robot_state_publisher,
+    ros2_control + arm/gripper/hand/head controller spawners, MoveGroup,
+    robot_skills_node, RViz), ee_type/body_type-aware via load_srdf_for_ee_type()
+    and load_moveit_controllers_for_ee_type()."""
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
 
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
@@ -320,6 +324,10 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
+    """Declares this launch file's arguments (fake hardware, head presence,
+    RViz/sim-time toggles, ee_type/body_type, robot_skills_node/move_group
+    toggles - see each arg's own description) and defers node construction
+    to launch_setup() via OpaqueFunction."""
     use_fake_hardware_arg = DeclareLaunchArgument(
         "use_fake_hardware",
         default_value="true",

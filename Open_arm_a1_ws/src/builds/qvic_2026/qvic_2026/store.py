@@ -97,6 +97,7 @@ class StoreError(Exception):
 
 
 def db_path():
+    """The store's file path: QVIC_DB_PATH if set, else DEFAULT_DB_PATH."""
     return os.environ.get("QVIC_DB_PATH", DEFAULT_DB_PATH)
 
 
@@ -193,6 +194,7 @@ def get_waypoint(ref, section=None, path=None):
 
 
 def list_waypoints(section=None, path=None):
+    """All waypoints, or just `section`'s, as dicts (see _waypoint_dict())."""
     with connect(path) as conn:
         if section:
             rows = conn.execute(
@@ -223,6 +225,7 @@ def list_sections(path=None):
 
 
 def delete_waypoint(ref, section=None, path=None):
+    """Deletes one waypoint by ref (or name+section); raises StoreError if absent."""
     parsed_section, name = split_ref(ref)
     section = section or parsed_section
     if not section:
@@ -236,6 +239,7 @@ def delete_waypoint(ref, section=None, path=None):
 
 
 def _waypoint_dict(row):
+    """Converts a `waypoints` table row into the API-facing waypoint dict."""
     return {
         "ref": waypoint_ref(row["section"], row["name"]),
         "name": row["name"],
@@ -279,6 +283,7 @@ def create_sequence(name, description="", arm="left_arm", planner_profile="",
 
 
 def get_sequence(name, path=None):
+    """Fetches one sequence with its full step list; raises StoreError if unknown."""
     with connect(path) as conn:
         row = conn.execute("SELECT * FROM sequences WHERE name = ?", (name,)).fetchone()
         if row is None:
@@ -290,6 +295,7 @@ def get_sequence(name, path=None):
 
 
 def list_sequences(path=None):
+    """Every sequence's metadata (not its steps) plus a step count, name-sorted."""
     with connect(path) as conn:
         rows = conn.execute(
             """
@@ -321,6 +327,7 @@ UPDATABLE_FIELDS = ("description", "arm", "planner_profile", "repeat",
 
 
 def update_sequence(name, path=None, **fields):
+    """Updates one or more of UPDATABLE_FIELDS on a sequence, bumping its version."""
     unknown = set(fields) - set(UPDATABLE_FIELDS)
     if unknown:
         raise StoreError(
@@ -340,6 +347,7 @@ def update_sequence(name, path=None, **fields):
 
 
 def rename_sequence(name, new_name, path=None):
+    """Renames a sequence; raises StoreError if `new_name` is already taken."""
     with connect(path) as conn:
         seq_id = _sequence_id(conn, name)
         if conn.execute("SELECT 1 FROM sequences WHERE name = ?", (new_name,)).fetchone():
@@ -352,6 +360,7 @@ def rename_sequence(name, new_name, path=None):
 
 
 def delete_sequence(name, path=None):
+    """Deletes a sequence (and its steps, via ON DELETE CASCADE)."""
     with connect(path) as conn:
         cur = conn.execute("DELETE FROM sequences WHERE name = ?", (name,))
     if cur.rowcount == 0:
@@ -359,6 +368,7 @@ def delete_sequence(name, path=None):
 
 
 def duplicate_sequence(name, new_name, path=None):
+    """Creates a copy of `name` under `new_name`, including its step list."""
     src = get_sequence(name, path=path)
     return create_sequence(
         new_name,
@@ -436,6 +446,7 @@ def update_step(sequence_name, index, step, path=None):
 
 
 def delete_step(sequence_name, index, path=None):
+    """Deletes the step at `index`, shifting every later step's index down by one."""
     with connect(path) as conn:
         seq_id = _sequence_id(conn, sequence_name)
         cur = conn.execute(
@@ -493,6 +504,7 @@ def replace_steps(sequence_name, steps, path=None):
 # ── run history ───────────────────────────────────────────────────────────
 
 def start_run(sequence_name, path=None):
+    """Records the start of a run; returns the new run's id."""
     with connect(path) as conn:
         cur = conn.execute(
             "INSERT INTO runs (sequence_name, started_at) VALUES (?, ?)",
@@ -502,6 +514,7 @@ def start_run(sequence_name, path=None):
 
 
 def finish_run(run_id, result, fault_reason="", steps_completed=0, path=None):
+    """Records a run's end time, outcome, and how many steps it completed."""
     with connect(path) as conn:
         conn.execute(
             "UPDATE runs SET ended_at = ?, result = ?, fault_reason = ?,"
@@ -511,6 +524,7 @@ def finish_run(run_id, result, fault_reason="", steps_completed=0, path=None):
 
 
 def list_runs(limit=50, path=None):
+    """The `limit` most recent run records, newest first."""
     with connect(path) as conn:
         rows = conn.execute(
             "SELECT * FROM runs ORDER BY started_at DESC LIMIT ?", (int(limit),)
@@ -521,6 +535,7 @@ def list_runs(limit=50, path=None):
 # ── internals ─────────────────────────────────────────────────────────────
 
 def _sequence_id(conn, name):
+    """Looks up a sequence's row id by name; raises StoreError if unknown."""
     row = conn.execute("SELECT id FROM sequences WHERE name = ?", (name,)).fetchone()
     if row is None:
         raise StoreError(f"no sequence named '{name}'")
@@ -528,6 +543,8 @@ def _sequence_id(conn, name):
 
 
 def _prepare_step(step, idx):
+    """Validates one step dict against step_types and builds the row values
+    ready for _insert_steps()."""
     if not isinstance(step, dict):
         raise StoreError("step must be an object")
     step_type = step.get("type")
@@ -548,6 +565,7 @@ def _prepare_step(step, idx):
 
 
 def _insert_steps(conn, seq_id, prepared):
+    """Bulk-inserts already-prepared step rows for `seq_id`."""
     conn.executemany(
         """
         INSERT INTO steps (sequence_id, idx, name, type, params_json,
@@ -579,6 +597,8 @@ def _rollup_mode(prepared):
 
 
 def _resync_mode(conn, seq_id):
+    """Recomputes and stores a sequence's required_control_mode from its
+    current steps - called after any step add/update/delete."""
     rows = conn.execute(
         "SELECT required_control_mode, enabled FROM steps WHERE sequence_id = ?", (seq_id,)
     ).fetchall()
@@ -593,6 +613,7 @@ def _resync_mode(conn, seq_id):
 
 
 def _touch(conn, seq_id):
+    """Bumps a sequence's updated_at/version - called on any modification."""
     conn.execute(
         "UPDATE sequences SET updated_at = ?, version = version + 1 WHERE id = ?",
         (time.time(), seq_id),
@@ -600,6 +621,8 @@ def _touch(conn, seq_id):
 
 
 def _sequence_dict(row, step_rows):
+    """Converts a `sequences` row plus its `steps` rows into the API-facing
+    sequence dict (see get_sequence())."""
     return {
         "name": row["name"],
         "description": row["description"],

@@ -22,15 +22,24 @@
 namespace robot_control
 {
 
+/// Standalone dev/debug node republishing a mechanically-consistent
+/// amazing_hand joint state (see this file's header comment for how it
+/// relates to AmazingHandHW's in-process use of the same solver).
 class HandKinematicNode : public rclcpp::Node
 {
 public:
+  /// Builds the HandSolver from the `robot_description` parameter and starts
+  /// the joint_states_raw/commands -> joint_states bridge.
   explicit HandKinematicNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
 
 private:
   using JointStateMsg = sensor_msgs::msg::JointState;
 
+  /// Subscription callback: solves the hand for the incoming raw/alias
+  /// command and publishes the completed joint state.
   void onJointStates(const JointStateMsg& msg);
+  /// Timer callback: re-publishes the last solved state so feedback stays
+  /// live between input messages.
   void republishStates();
 
   std::unique_ptr<amazing_hand_kinematics::HandSolver> solver_;

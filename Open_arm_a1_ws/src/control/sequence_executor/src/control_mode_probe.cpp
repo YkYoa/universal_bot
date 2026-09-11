@@ -18,6 +18,8 @@ constexpr const char* kUnknown = "unknown";
 constexpr const char* kGravityCompMarker = "gravity_comp";
 constexpr const char* kArmControllerMarker = "arm_controller";
 
+/// Resolves robot_hardware_interface's installed hardware_config.yaml path,
+/// or "" if the package/file can't be found.
 std::string resolveDefaultConfigPath()
 {
   try {

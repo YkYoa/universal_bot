@@ -26,6 +26,8 @@ constexpr int kLoopHz = 100;
 constexpr double kLoopPeriodS = 1.0 / kLoopHz;
 constexpr double kWatchdogS = 0.25;
 
+/** Monotonic clock reading in seconds (steady_clock), used for timeouts and
+ *  watchdog/stall timing throughout this file. */
 double nowSeconds()
 {
   return std::chrono::duration<double>(
@@ -33,10 +35,10 @@ double nowSeconds()
     .count();
 }
 
-/* Minimal flat-JSON field extraction, mirroring robot_hardware_interface's
- * HeadHW parser - both ends of this socket are written together for one
- * fixed schema, so a full JSON library is unnecessary overhead here. */
-
+/** Minimal flat-JSON field extraction, mirroring robot_hardware_interface's
+ *  HeadHW parser - both ends of this socket are written together for one
+ *  fixed schema, so a full JSON library is unnecessary overhead here.
+ *  Returns nullopt if `key` is absent or its value doesn't parse as a number. */
 std::optional<double> extractNumber(const std::string& line, const std::string& key)
 {
   std::string needle = "\"" + key + "\":";
@@ -52,6 +54,9 @@ std::optional<double> extractNumber(const std::string& line, const std::string& 
   }
 }
 
+/** Parses one joint's (pan or tilt) calibration block from head_calibration.yaml
+ *  into a JointCalibration, including the optional multi-point ADC->degree
+ *  lookup table (sorted ascending by adc if present). */
 JointCalibration loadJointCalibration(const YAML::Node& node)
 {
   JointCalibration cal;
@@ -79,9 +84,9 @@ JointCalibration loadJointCalibration(const YAML::Node& node)
   return cal;
 }
 
-// Linear interpolation through a sorted (ascending by adc) lookup table,
-// clamped at the ends. Mirrors auto_calibrate.py's lut_lookup() exactly -
-// keep both in sync if this changes.
+/** Linear interpolation through a sorted (ascending by adc) lookup table,
+ *  clamped at the ends. Mirrors auto_calibrate.py's lut_lookup() exactly -
+ *  keep both in sync if this changes. */
 double lutLookupDeg(const std::vector<CalibrationPoint>& points, double adc)
 {
   if (adc <= points.front().adc) return points.front().deg;
@@ -451,14 +456,20 @@ void HeadMotorDriver::shutdown()
 }
 
 namespace {
-HeadMotorDriver* g_driver = nullptr;
+HeadMotorDriver* g_driver = nullptr;  ///< Set by main() so handleSignal() can reach shutdown().
 
+/** SIGINT/SIGTERM handler: forwards to the running driver's shutdown() so the
+ *  control/UDS loops exit and the last position is held instead of the
+ *  process dying mid-command. */
 void handleSignal(int)
 {
   if (g_driver) g_driver->shutdown();
 }
 }  // namespace
 
+/** Entry point: reads STM32 host/port, UDS path, and calibration file overrides
+ *  from the environment, then runs the UDS server on its own thread and the
+ *  100Hz control loop on the main thread until a signal triggers shutdown(). */
 int main()
 {
   std::string stm32_host = "192.168.10.101";

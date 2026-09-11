@@ -47,6 +47,7 @@
 
 namespace {
 
+/// Prints the CLI's expected argument shape to stderr.
 void printUsage(const char* prog)
 {
   std::cerr
@@ -82,7 +83,7 @@ void printUsage(const char* prog)
     << "  Run once per arm.\n";
 }
 
-// Runs `xacro <xacro_path> <args>` and returns captured stdout, empty on failure.
+/// Runs `xacro <xacro_path> <args>` and returns captured stdout, empty on failure.
 std::string runXacro(const std::string& xacro_path, const std::string& args)
 {
   const std::string cmd = "xacro " + xacro_path + " " + args;
@@ -100,9 +101,9 @@ std::string runXacro(const std::string& xacro_path, const std::string& args)
   return result;
 }
 
-// Reads a "key: v1, v2, ..., v7" waypoint straight out of a sequence.yaml
-// file - no live robot connection needed. Matches the flat "key: comma,
-// separated, values" shape every waypoint in this codebase uses.
+/// Reads a "key: v1, v2, ..., v7" waypoint straight out of a sequence.yaml
+/// file - no live robot connection needed. Matches the flat "key: comma,
+/// separated, values" shape every waypoint in this codebase uses.
 std::optional<std::vector<double>> readYamlKey(const std::string& file_path, const std::string& key)
 {
   std::ifstream in(file_path);
@@ -132,7 +133,7 @@ std::optional<std::vector<double>> readYamlKey(const std::string& file_path, con
   return std::nullopt;
 }
 
-// Same convention sequence_converter.cpp's isJointAngle() uses.
+/// Same convention sequence_converter.cpp's isJointAngle() uses.
 bool isJointAngleKey(const std::string& key)
 {
   std::string k = key;
@@ -140,15 +141,17 @@ bool isJointAngleKey(const std::string& key)
   return k.find("angle") != std::string::npos;
 }
 
+/// A --start/--end/--center spec, parsed: live capture, or an existing yaml
+/// key, optionally mirrored from the other arm.
 struct PoseSource {
   bool live = false;
   bool mirror = false;
   std::string key;
 };
 
-// Optional "mirror:" prefix, then the existing live/key:NAME syntax.
-// mirror:live is intentionally unsupported - if you're live-capturing
-// you're already on the target arm, mirroring doesn't apply.
+/// Optional "mirror:" prefix, then the existing live/key:NAME syntax.
+/// mirror:live is intentionally unsupported - if you're live-capturing
+/// you're already on the target arm, mirroring doesn't apply.
 bool parsePoseSource(const std::string& spec_in, PoseSource& out)
 {
   std::string spec = spec_in;
@@ -170,22 +173,22 @@ bool parsePoseSource(const std::string& spec_in, PoseSource& out)
   return false;
 }
 
-// Reflects a pose across the model-root frame's Y=0 plane - the transform
-// between this robot's left/right arm mounts (both mount to
-// openarm_body_link0 with identical X/Z and only Y sign-flipped, per
-// v10.urdf.xacro:47-51; the mobile-base-to-body chain is translation-only,
-// no rotation, so the model-root frame's Y axis stays aligned with
-// openarm_body_link0's own Y axis). Position: negate Y. Orientation: the
-// standard Householder reflection-conjugation R' = F R F with
-// F = diag(1,-1,1) - always yields a valid proper rotation (conjugating by
-// a reflection on both sides cancels the determinant flip), unlike a
-// hand-wavy "negate a quaternion component" guess.
-//
-// Known limitation: the real left/right mounts aren't perfectly
-// Y-symmetric (0.112 vs 0.118 - a real ~6mm offset, likely a CAD/build
-// tolerance), which this doesn't model. Negligible for a wave-shaped
-// gesture; verify empirically (see this package's plan/verification notes)
-// before trusting it for anything precision-sensitive.
+/// Reflects a pose across the model-root frame's Y=0 plane - the transform
+/// between this robot's left/right arm mounts (both mount to
+/// openarm_body_link0 with identical X/Z and only Y sign-flipped, per
+/// v10.urdf.xacro:47-51; the mobile-base-to-body chain is translation-only,
+/// no rotation, so the model-root frame's Y axis stays aligned with
+/// openarm_body_link0's own Y axis). Position: negate Y. Orientation: the
+/// standard Householder reflection-conjugation R' = F R F with
+/// F = diag(1,-1,1) - always yields a valid proper rotation (conjugating by
+/// a reflection on both sides cancels the determinant flip), unlike a
+/// hand-wavy "negate a quaternion component" guess.
+///
+/// Known limitation: the real left/right mounts aren't perfectly
+/// Y-symmetric (0.112 vs 0.118 - a real ~6mm offset, likely a CAD/build
+/// tolerance), which this doesn't model. Negligible for a wave-shaped
+/// gesture; verify empirically (see this package's plan/verification notes)
+/// before trusting it for anything precision-sensitive.
 Eigen::Isometry3d mirrorAcrossY(const Eigen::Isometry3d& pose)
 {
   const Eigen::Matrix3d reflect = Eigen::Vector3d(1.0, -1.0, 1.0).asDiagonal();
@@ -195,7 +198,7 @@ Eigen::Isometry3d mirrorAcrossY(const Eigen::Isometry3d& pose)
   return mirrored;
 }
 
-// Parses "x,y,z" into an Eigen::Vector3d.
+/// Parses "x,y,z" into an Eigen::Vector3d.
 std::optional<Eigen::Vector3d> parseVector3(const std::string& spec)
 {
   std::vector<double> values;
@@ -216,6 +219,11 @@ std::optional<Eigen::Vector3d> parseVector3(const std::string& spec)
 
 }  // namespace
 
+/// CLI entry point: see the file header comment - resolves the chosen
+/// shape's reference pose(s), samples it into a per-point target list via
+/// trajectory_shapes, IK-solves each point in sequence (seeded from the
+/// previous solution), and appends the result as a numbered waypoint run
+/// into sequence.yaml.
 int main(int argc, char** argv)
 {
   std::string arm_prefix, section, shape, start_spec, end_spec, center_spec, normal_spec, file_path;

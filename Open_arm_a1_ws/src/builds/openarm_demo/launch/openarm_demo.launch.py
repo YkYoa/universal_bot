@@ -5,6 +5,9 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch_ros.actions import Node
 
 def generate_launch_description():
+    """Starts openarm_demo_node, either in its own gnome-terminal window
+    (interactive:=true, default - needed since the node reads console
+    commands from stdin) or attached to this launch's own output."""
     use_sim_time = LaunchConfiguration("use_sim_time")
     interactive = LaunchConfiguration("interactive")
 

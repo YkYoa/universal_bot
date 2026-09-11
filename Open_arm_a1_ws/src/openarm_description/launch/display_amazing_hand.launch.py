@@ -8,6 +8,10 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    """Visualize one amazing_hand in isolation, driven by slider input instead of real
+    servos. Picks one of 4 joint_state_publisher(_gui) variants based on use_gui x
+    solve_linkage, optionally starting hand_kinematics_node so the sliders (knuckle or
+    raw servo angles, per command_space) drive a mechanically consistent pose."""
     declared_arguments = [
         DeclareLaunchArgument("side", default_value="right", description="Which hand to show: right or left."),
         DeclareLaunchArgument(

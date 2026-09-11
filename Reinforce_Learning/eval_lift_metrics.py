@@ -39,8 +39,8 @@ parser.add_argument("--run-name", "--run_name", dest="run_name", type=str, defau
 parser.add_argument("--iteration", type=int, default=0)
 parser.add_argument("--task-phase", "--task_phase", dest="task_phase", type=int, default=2)
 parser.add_argument("--stage", type=str, default="all",
-                    choices=("reach", "grasp", "lift", "all"),
-                    help="Phase 2 sub-stage gates")
+                    choices=("reach", "grasp", "lift", "place", "all"),
+                    help="Phase 2+ sub-stage gates")
 
 from isaaclab.app import AppLauncher
 
@@ -59,7 +59,16 @@ from isaaclab_rl.sb3 import Sb3VecEnvWrapper
 
 from isaaclab_openarm_env.env import ApplePickPlaceEnv
 from isaaclab_openarm_env.config import ApplePickPlaceEnvCfg
-from isaaclab_openarm_env.mdp.helpers import STAGE_GRASP, STAGE_REACH, check_init_buffers
+from isaaclab_openarm_env.mdp.helpers import (
+    STAGE_GRASP,
+    STAGE_REACH,
+    STAGE_PLACE,
+    PLACE_IDLE,
+    PLACE_CARRY,
+    PLACE_DESCEND,
+    PLACE_HOLDING,
+    check_init_buffers,
+)
 from isaaclab_openarm_env.phase2_overrides import (
     ENV_CFG_SNAPSHOT_KEYS,
     apply_phase2_demo_gates,
@@ -126,12 +135,21 @@ def _classify_fail_mode(
     grip_thresh: float,
     lift_thresh: float,
     tipped_deg: float,
+    task_phase: int = 2,
+    max_place_phase: int = PLACE_IDLE,
+    released: bool = False,
+    release_dist_bottle_bowl_xy: float | None = None,
+    misplaced: bool = False,
+    place_success_xy_radius_m: float = 0.05,
 ) -> str:
     """Name the failure so a fix is falsifiable.
 
     `no_lift_command` is the mode this pipeline exhibits today: the bottle is
     grasped and latched but the lift state machine never armed, so the assist
     never issued an upward command.
+
+    S8 (PLACE, task_phase>=3): mirror kỷ luật trên — mỗi cách thất bại có TÊN
+    RIÊNG để việc sửa có thể chứng minh được, thay vì gộp chung "timeout".
     """
     if is_success:
         return "success"
@@ -147,6 +165,18 @@ def _classify_fail_mode(
         return "lift_too_low"
     if lift_hold < lift_hold_steps:
         return "hold_unstable"
+    if task_phase >= 3:
+        if stage_end < STAGE_PLACE:
+            # Lift-hold đạt (mọi nhánh trên đều qua) nhưng stage vẫn chưa
+            # sang PLACE — chỉ xảy ra nếu stage-transition logic có bug.
+            return "no_place_transition"
+        if not released:
+            return "place_timeout" if is_truncated else "no_release"
+        if release_dist_bottle_bowl_xy is not None and release_dist_bottle_bowl_xy > place_success_xy_radius_m * 2.0:
+            return "early_release"
+        if misplaced:
+            return "dropped_outside_bowl"
+        return "place_timeout" if is_truncated else "hold_unstable"
     return "timeout"
 
 
@@ -158,6 +188,9 @@ class _EpisodeAccumulator:
         "last_tilt", "last_z_f", "last_top", "last_lat_f", "last_dist_f",
         "max_gc", "min_gc_after_exhaust", "min_span", "latched", "steps",
         "lift_cmd_steps", "first_lift_cmd_step", "abort_reasons",
+        # S8 — PLACE (task_phase>=3)
+        "max_place_phase", "place_start_step", "released", "release_dist_bottle_bowl",
+        "min_dist_bottle_bowl", "was_gripped_in_place",
     )
 
     def __init__(self) -> None:
@@ -184,6 +217,12 @@ class _EpisodeAccumulator:
         self.lift_cmd_steps = 0
         self.first_lift_cmd_step = -1
         self.abort_reasons: dict[str, int] = {}
+        self.max_place_phase = PLACE_IDLE
+        self.place_start_step = -1
+        self.released = False
+        self.release_dist_bottle_bowl: float | None = None
+        self.min_dist_bottle_bowl = 999.0
+        self.was_gripped_in_place = False
 
 
 def _percentile(values: list[float], q: float) -> float:
@@ -205,11 +244,19 @@ def main() -> None:
     env_cfg.scene.num_envs = num_envs
     env_cfg.sim.render_interval = env_cfg.decimation
     env_cfg.seed = args.seed
+
+    # BUG đã sửa (S8): snapshot env_cfg.pkl (lưu lúc TRAIN checkpoint) đè
+    # task_phase SAU khi set từ CLI — --task_phase 3 trên checkpoint train ở
+    # phase 2 (như policy_1M_success57.pt) bị âm thầm trả về 2, khiến mọi
+    # PLACE-eval trước đây (nếu có) đo nhầm ở phase cũ. Mirror đúng thứ tự
+    # isaaclab_demo.py đã dùng: load snapshot TRƯỚC, CLI ghi đè SAU — CLI luôn
+    # là thẩm quyền cuối cùng cho eval (mục đích chính là thử phase KHÁC lúc
+    # train, không phải tái tạo y hệt lúc train).
+    _apply_env_cfg_snapshot(env_cfg, model_path)
     env_cfg.task_phase = args.task_phase
     if args.task_phase >= 2:
         env_cfg.episode_length_s = 20.0
 
-    _apply_env_cfg_snapshot(env_cfg, model_path)
     apply_phase2_demo_gates(env_cfg, model_path, stage=args.stage)
 
     env_cfg.bottle_pos_noise = args.bottle_noise
@@ -285,6 +332,12 @@ def main() -> None:
                 else None
             )
             abort_t = getattr(u, "_lift_abort_reason", None)
+            place_phase_t = (
+                u._place_phase.detach().cpu().numpy() if hasattr(u, "_place_phase") else None
+            )
+            dist_bb_xy_t = (
+                ls["dist_bottle_bowl_xy"].detach().cpu().numpy() if "dist_bottle_bowl_xy" in ls else None
+            )
 
             for i in range(num_envs):
                 if dones[i]:
@@ -317,6 +370,30 @@ def main() -> None:
                     reason = abort_t[i] if isinstance(abort_t, (list, tuple)) else None
                     if reason:
                         a.abort_reasons[reason] = a.abort_reasons.get(reason, 0) + 1
+                # S8 — PLACE tracking (task_phase>=3; no-op tensors elsewhere)
+                if place_phase_t is not None:
+                    phase_i = int(place_phase_t[i])
+                    a.max_place_phase = max(a.max_place_phase, phase_i)
+                    if phase_i != PLACE_IDLE and a.place_start_step < 0:
+                        a.place_start_step = a.steps
+                    in_place_now = int(stage_t[i]) == STAGE_PLACE
+                    gripped_now = float(grip_t[i]) > grip_thresh
+                    if in_place_now and dist_bb_xy_t is not None:
+                        a.min_dist_bottle_bowl = min(a.min_dist_bottle_bowl, float(dist_bb_xy_t[i]))
+                    if in_place_now and gripped_now:
+                        a.was_gripped_in_place = True
+                    # Release = từng đóng kẹp lúc PLACE, giờ đã mở — one-shot,
+                    # ghi khoảng cách XY đúng lúc đó (mirror rewards.py::_compute_place_reward).
+                    if (
+                        in_place_now
+                        and a.was_gripped_in_place
+                        and not gripped_now
+                        and not a.released
+                    ):
+                        a.released = True
+                        a.release_dist_bottle_bowl = (
+                            float(dist_bb_xy_t[i]) if dist_bb_xy_t is not None else None
+                        )
 
         if not np.any(dones):
             continue
@@ -331,6 +408,10 @@ def main() -> None:
             timeout_t = u.termination_manager.time_outs.detach().cpu().numpy()
         except AttributeError:
             timeout_t = np.zeros(num_envs, dtype=bool)
+        try:
+            misplaced_t = u.termination_manager.get_term("bottle_misplaced").detach().cpu().numpy()
+        except (KeyError, ValueError, AttributeError):
+            misplaced_t = np.zeros(num_envs, dtype=bool)
 
         for i in range(num_envs):
             if not dones[i] or len(results) >= args.episodes:
@@ -338,9 +419,16 @@ def main() -> None:
             a = acc[i]
             if a.max_lift <= -998.0:
                 a.max_lift = 0.0  # episode produced no state samples
+            # BUG đã sửa (S8): OR-clause dùng lift-hold làm "success" từng đúng
+            # cho phase 2, nhưng viết `task_phase >= 2` khiến nó ÂM THẦM đúng
+            # luôn cho phase>=3 — coi "đã nhấc" là "đã đặt vào bát", đúng bug
+            # đã đốt cả TrainMetricsCallback trước đây (xem terminal_command.md
+            # Phase 11). Ở phase>=3, `success_t` (termination thật, S5) là
+            # thẩm quyền DUY NHẤT — không OR thêm heuristic lift-hold.
             is_success = bool(success_t[i]) or (
-                a.max_lift_hold >= lift_hold_steps and cfg.task_phase >= 2
+                a.max_lift_hold >= lift_hold_steps and cfg.task_phase == 2
             )
+            xy_radius = float(getattr(cfg, "place_success_xy_radius_m", 0.05))
             fail_mode = _classify_fail_mode(
                 is_success=is_success,
                 is_truncated=bool(timeout_t[i]),
@@ -355,6 +443,12 @@ def main() -> None:
                 grip_thresh=grip_thresh,
                 lift_thresh=lift_thresh,
                 tipped_deg=tipped_deg,
+                task_phase=cfg.task_phase,
+                max_place_phase=a.max_place_phase,
+                released=a.released,
+                release_dist_bottle_bowl_xy=a.release_dist_bottle_bowl,
+                misplaced=bool(misplaced_t[i]),
+                place_success_xy_radius_m=xy_radius,
             )
             results.append({
                 "success": is_success,
@@ -373,6 +467,12 @@ def main() -> None:
                 "min_span_m": a.min_span if a.min_span < 999.0 else None,
                 "abort_reasons": a.abort_reasons or None,
                 "steps": a.steps,
+                "max_place_phase": a.max_place_phase,
+                "place_start_step": a.place_start_step,
+                "released": a.released,
+                "release_dist_bottle_bowl_m": a.release_dist_bottle_bowl,
+                "min_dist_bottle_bowl_m": a.min_dist_bottle_bowl if a.min_dist_bottle_bowl < 999.0 else None,
+                "misplaced": bool(misplaced_t[i]),
             })
             a.reset()
 
@@ -396,6 +496,19 @@ def main() -> None:
     lifts = [r["lift_m"] for r in results]
     lift_cmd = [r["lift_cmd_steps"] for r in results]
     first_cmd = [r["first_lift_cmd_step"] for r in results if r["first_lift_cmd_step"] >= 0]
+
+    # S8 — PLACE metrics (task_phase>=3). Vô hại/0 ở phase<3 vì max_place_phase
+    # luôn PLACE_IDLE=0 (u._place_phase không tồn tại → place_phase_t=None).
+    place_dists = [r["release_dist_bottle_bowl_m"] for r in results if r["release_dist_bottle_bowl_m"] is not None]
+    place_metrics = {}
+    if cfg.task_phase >= 3:
+        place_metrics = {
+            "place_start_rate": float(np.mean([1.0 if r["max_place_phase"] > PLACE_IDLE else 0.0 for r in results])),
+            "release_rate": float(np.mean([1.0 if r["released"] else 0.0 for r in results])),
+            "p50_place_dist_m": _percentile(place_dists, 50) if place_dists else None,
+            "p90_place_dist_m": _percentile(place_dists, 90) if place_dists else None,
+            "dropped_rate": float(np.mean([1.0 if r["misplaced"] else 0.0 for r in results])),
+        }
 
     run_name = args.run_name or os.path.basename(model_path)
     if run_name.startswith("best_policy_"):
@@ -423,6 +536,7 @@ def main() -> None:
         "run": run_name,
         "iteration": args.iteration,
         "model": os.path.basename(model_path),
+        **place_metrics,
     }
 
     print(
@@ -430,6 +544,14 @@ def main() -> None:
         f" latch={metrics['latch_rate']:.2f} lift_start={metrics['lift_start_rate']:.2f}"
         f" p50_lift={metrics['p50_max_lift_m']:+.4f} lift_cmd_steps={metrics['mean_lift_commanded_steps']:.1f}"
     )
+    if place_metrics:
+        p50_d = place_metrics["p50_place_dist_m"]
+        print(
+            f"  [Eval] place_start={place_metrics['place_start_rate']:.2f}"
+            f" release={place_metrics['release_rate']:.2f}"
+            f" dropped={place_metrics['dropped_rate']:.2f}"
+            f" p50_place_dist={'n/a' if p50_d is None else f'{p50_d:.3f}'}"
+        )
     print(f"  [Eval] fail_modes={fail_modes}")
     # flush: Isaac's close() hard-exits and drops buffered stdout when piped.
     print(f"LIFT_METRICS {json.dumps(metrics)}", flush=True)

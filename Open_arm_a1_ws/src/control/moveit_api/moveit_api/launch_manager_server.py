@@ -89,6 +89,8 @@ class LaunchSupervisor:
     """Tracks at most one running `ros2 launch` subprocess at a time."""
 
     def __init__(self, log_dir=None):
+        """No process is started yet; `log_dir` (or LAUNCH_MANAGER_LOG_DIR, or
+        /tmp) is where each launch's captured stdout/stderr is written."""
         self._lock = threading.Lock()
         self._proc: subprocess.Popen = None
         self._preset_name = None
@@ -100,6 +102,9 @@ class LaunchSupervisor:
         self._log_file = None
 
     def status(self) -> dict:
+        """Current supervised process state: 'stopped' (never started or
+        exited cleanly), 'running' (with pid/uptime/log_path), or 'crashed'
+        (nonzero exit, detected lazily on this call via poll())."""
         with self._lock:
             if self._proc is None:
                 return {'state': 'stopped'}
@@ -129,6 +134,11 @@ class LaunchSupervisor:
             return result
 
     def start(self, preset_name: str, args: dict, force: bool = False) -> dict:
+        """Validates `preset_name`/`args` against the PRESETS whitelist, then
+        launches `ros2 launch <package> <launch_file> <merged args>` as a
+        subprocess in its own process group. Refuses (409) if something is
+        already running unless `force` is set, in which case it is stopped
+        first. Returns (response_dict, http_status)."""
         preset = PRESETS.get(preset_name)
         if preset is None:
             return {'success': False, 'message': f'Unknown preset: {preset_name}. '
@@ -188,6 +198,8 @@ class LaunchSupervisor:
             }, 200
 
     def stop(self) -> dict:
+        """Stops the running launch (see _stop_locked), or reports success
+        trivially if nothing is running. Returns (response_dict, http_status)."""
         with self._lock:
             if self._proc is None or self._proc.poll() is not None:
                 return {'success': True, 'message': 'Nothing running.'}, 200
@@ -226,6 +238,8 @@ class LaunchSupervisor:
                 'returncode': returncode}
 
     def tail_logs(self, lines: int) -> str:
+        """Returns the last `lines` lines of the current/last launch's log
+        file, or '' if none exists yet."""
         with self._lock:
             log_path = self._log_path
         if not log_path or not os.path.exists(log_path):
@@ -243,6 +257,7 @@ supervisor = LaunchSupervisor()
 
 @app.after_request
 def add_cors_headers(response):
+    """Allows any origin to call this API (a teammate's browser/app)."""
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
@@ -251,11 +266,14 @@ def add_cors_headers(response):
 
 @app.route('/api/health', methods=['GET'])
 def health():
+    """GET /api/health: trivial liveness check for this Flask process itself."""
     return jsonify({'status': 'ok', 'service': 'launch_manager'})
 
 
 @app.route('/api/launch/presets', methods=['GET'])
 def list_presets():
+    """GET /api/launch/presets: lists the whitelisted launch presets and
+    their default args, so a caller knows what it may legally start."""
     return jsonify({'success': True, 'presets': {
         name: {'package': p['package'], 'launch_file': p['launch_file'],
                'description': p['description'], 'default_args': p['default_args']}
@@ -265,11 +283,14 @@ def list_presets():
 
 @app.route('/api/launch/status', methods=['GET'])
 def get_status():
+    """GET /api/launch/status: current supervised process state."""
     return jsonify({'success': True, **supervisor.status()})
 
 
 @app.route('/api/launch/start', methods=['POST'])
 def start_launch():
+    """POST /api/launch/start: starts a whitelisted preset ({"preset": ...,
+    "args": {...}, "force": bool}); see LaunchSupervisor.start()."""
     data = request.get_json(silent=True) or {}
     preset = data.get('preset')
     if not preset:
@@ -283,17 +304,21 @@ def start_launch():
 
 @app.route('/api/launch/stop', methods=['POST'])
 def stop_launch():
+    """POST /api/launch/stop: stops the running launch (SIGINT, escalating)."""
     result, code = supervisor.stop()
     return jsonify(result), code
 
 
 @app.route('/api/launch/logs', methods=['GET'])
 def get_logs():
+    """GET /api/launch/logs?lines=N: tail of the current/last launch's
+    captured stdout/stderr."""
     lines = int(request.args.get('lines', 200))
     return jsonify({'success': True, 'logs': supervisor.tail_logs(lines)})
 
 
 def main():
+    """Entry point: runs the Flask app (not a ROS 2 node - see module docstring)."""
     port = int(os.environ.get('LAUNCH_MANAGER_PORT', 5060))
     host = os.environ.get('LAUNCH_MANAGER_HOST', '0.0.0.0')
     print(f'Starting Launch Manager API on {host}:{port}')

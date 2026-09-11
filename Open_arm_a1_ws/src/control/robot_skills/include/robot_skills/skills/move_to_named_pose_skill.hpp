@@ -6,9 +6,13 @@
 
 namespace robot_skills
 {
+    /// "move_to_named_pose": looks up req.named_pose as an SRDF group_state
+    /// for req.arm's planning group, then plans/executes a joint-target move
+    /// to it via SkillServer::execute_trajectory().
     class MoveToNamedPoseSkill : public RobotSkill
     {
     public:
+        /// `server` is used to dispatch the planned trajectory for execution.
         MoveToNamedPoseSkill(SkillServer* server) : server_(server) {}
         ~MoveToNamedPoseSkill() override = default;
 

@@ -29,6 +29,10 @@ inline constexpr const char* kModeAny = "any";
 inline constexpr const char* kModeMotion = "position|mit";
 inline constexpr const char* kModeTorque = "torque";
 
+/// One step of a sequence. Flat field set shared across every step type
+/// (see the file header comment for why) - `type` decides which fields
+/// below are meaningful; see qvic_2026/qvic_2026/step_types.py for the
+/// authoritative per-type field list.
 struct Step
 {
   int index = 0;
@@ -92,6 +96,8 @@ struct Step
   std::vector<std::string> links;
 };
 
+/// A whole named sequence: metadata (arm/planner defaults, repeat count,
+/// required control mode) plus its ordered list of Steps.
 struct SequenceSpec
 {
   std::string name;
@@ -106,9 +112,9 @@ struct SequenceSpec
   std::vector<Step> steps;
 };
 
-// Does a step needing `required` run on hardware that came up in `active`?
-// An unknown active mode is permissive - a failed probe should not brick every
-// sequence, it should just stop being a useful guard.
+/// Does a step needing `required` run on hardware that came up in `active`?
+/// An unknown active mode is permissive - a failed probe should not brick every
+/// sequence, it should just stop being a useful guard.
 bool modeIsCompatible(const std::string& required, const std::string& active);
 
 }  // namespace sequence_executor

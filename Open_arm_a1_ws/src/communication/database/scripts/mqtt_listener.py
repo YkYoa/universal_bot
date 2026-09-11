@@ -15,7 +15,13 @@ from std_msgs.msg import String
 import paho.mqtt.client as mqtt
 
 class MqttListenerNode(Node):
+    """Bridges backend MQTT commands (robots/<id>/commands) to the openarm_demo
+    ROS 2 topics, enforcing a one-command-at-a-time safety lock and reporting
+    received/started/completed/failed/timed_out status back over HTTP ACK."""
+
     def __init__(self):
+        """Read broker/robot config from env vars, set up the ROS publisher/subscriber
+        and safety-lock state, then connect and start the MQTT client loop."""
         super().__init__('mqtt_listener_node')
         
         # Read parameters / env variables
@@ -94,6 +100,8 @@ class MqttListenerNode(Node):
             self.get_logger().error(f"Failed to connect to MQTT Broker: {e}")
 
     def on_mqtt_connect(self, client, userdata, flags, rc):
+        """paho-mqtt on_connect callback: subscribe to this robot's command topic
+        once the broker handshake succeeds (rc == 0)."""
         if rc == 0:
             topic = f"robots/{self.robot_id}/commands"
             self.get_logger().info(f"Connected to MQTT Broker! Subscribing to topic: {topic}")
@@ -102,9 +110,13 @@ class MqttListenerNode(Node):
             self.get_logger().error(f"MQTT connection failed with code {rc}")
 
     def on_mqtt_disconnect(self, client, userdata, rc):
+        """paho-mqtt on_disconnect callback: just logs (paho's own loop handles
+        automatic reconnection)."""
         self.get_logger().warn(f"Disconnected from MQTT Broker with code {rc}. Reconnecting...")
 
     def send_http_ack(self, correlation_id, intent, status, success, error_msg=None):
+        """POST one status-update payload (received/started/completed/failed/
+        timed_out) to the backend's robot-commands ack endpoint."""
         payload = {
             "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "robotId": self.robot_id,
@@ -122,6 +134,11 @@ class MqttListenerNode(Node):
             self.get_logger().error(f"Failed to send HTTP ACK to backend: {e}")
 
     def on_mqtt_message(self, client, userdata, msg):
+        """paho-mqtt on_message callback: validate the command payload (robotId,
+        timestamp, intent, success), enforce the single-command safety lock, ack
+        'received' then 'started', and publish the mapped Cartesian sequence code
+        ('gc'/'wc') to /openarm_demo/command. Rejects unknown intents and busy state
+        with a 'failed' ack instead of publishing."""
         try:
             raw_payload = msg.payload.decode('utf-8')
             self.get_logger().info(f"Received MQTT message on topic: {msg.topic}")
@@ -201,6 +218,9 @@ class MqttListenerNode(Node):
             self.get_logger().error(f"Error handling MQTT message: {e}")
 
     def status_callback(self, msg):
+        """Subscription callback for /openarm_demo/status: tracks executing/idle
+        transitions and sends the 'completed' HTTP ack once the active command's
+        execution has actually been observed to start and finish."""
         status_data = msg.data.strip()
         self.get_logger().info(f"Received status update from demo node: '{status_data}'")
         
@@ -232,6 +252,8 @@ class MqttListenerNode(Node):
             self.send_http_ack(corr_id, intent, "completed", True)
 
     def check_timeout_callback(self):
+        """1 Hz timer: fail the active command with a 'timed_out' ack if it has
+        been running (or unstarted) for more than 45 seconds."""
         send_timeout = False
         corr_id = None
         intent = None
@@ -258,12 +280,14 @@ class MqttListenerNode(Node):
             self.send_http_ack(corr_id, intent, "timed_out", False, err_msg)
 
     def destroy_node(self):
+        """Stop the MQTT client's background loop before the ROS node tears down."""
         self.get_logger().info("Stopping MQTT client loop...")
         self.mqtt_client.loop_stop()
         self.mqtt_client.disconnect()
         super().destroy_node()
 
 def main(args=None):
+    """Entry point: spin a single MqttListenerNode until shutdown."""
     rclpy.init(args=args)
     node = MqttListenerNode()
     try:

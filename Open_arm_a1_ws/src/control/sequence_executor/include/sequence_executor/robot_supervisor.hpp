@@ -51,8 +51,12 @@ enum class RobotState
   TEACHING,   // hand-guiding, only reachable when the arm is in torque mode
 };
 
+/// Human-readable name of `state`, for logs and the FsmState message.
 const char* toString(RobotState state);
 
+/// The robot-level state machine and only ROS surface of this node - see
+/// file header comment for the RunSequence/FsmCommand/FsmState surface and
+/// why this is a distinct layer above SequenceFsm.
 class RobotSupervisor
 {
 public:
@@ -61,6 +65,7 @@ public:
   using FsmState = openarm_messages::msg::FsmState;
   using GoalHandle = rclcpp_action::ServerGoalHandle<RunSequence>;
 
+  /// Builds the owned SequenceFsm; does not advertise anything yet (see start()).
   RobotSupervisor(rclcpp::Node::SharedPtr node, std::shared_ptr<SequenceSource> source,
                   std::shared_ptr<ControlModeProbe> mode_probe,
                   std::shared_ptr<BuiltinActionRegistry> builtins);
@@ -74,22 +79,39 @@ public:
   void autostart(const std::string& sequence_name);
 
 private:
+  /// RunSequence goal callback: rejects an empty sequence_name, ESTOP/FAULT
+  /// (clear_fault first), TEACHING (exit teach first), or anything already
+  /// running (one goal at a time - see file header comment); otherwise
+  /// accepts and executes.
   rclcpp_action::GoalResponse handleGoal(const rclcpp_action::GoalUUID& uuid,
                                          std::shared_ptr<const RunSequence::Goal> goal);
+  /// RunSequence cancel callback: forwards to the running SequenceFsm's cancel().
   rclcpp_action::CancelResponse handleCancel(const std::shared_ptr<GoalHandle>& goal_handle);
+  /// RunSequence accepted callback: stores `goal_handle` as active_goal_ and starts the FSM.
   void handleAccepted(const std::shared_ptr<GoalHandle>& goal_handle);
 
+  /// FsmCommand service callback: dispatches pause/resume/step/cancel/estop/
+  /// clear_fault/enter_teach/exit_teach.
   void handleCommand(const std::shared_ptr<FsmCommand::Request> request,
                      std::shared_ptr<FsmCommand::Response> response);
 
+  /// SequenceFsm transition callback: mirrors progress onto the active goal's
+  /// feedback and publishes state.
   void onSequenceTransition(const SequenceProgress& progress);
+  /// SequenceFsm finished callback: reports the result on active_goal_,
+  /// transitions robot_state_ (IDLE or FAULT), and publishes state.
   void onSequenceFinished(bool success, const std::string& error_message, int steps_completed);
 
+  /// Updates robot_state_ and publishes the new state.
   void setRobotState(RobotState state);
+  /// Publishes buildStateMessage() on state_pub_.
   void publishState();
+  /// Assembles the current FsmState message from robot_state_/fault_reason_/last_progress_.
   FsmState buildStateMessage() const;
 
+  /// Enters TEACHING mode (only valid in torque control mode); `message` explains a refusal.
   bool enterTeach(std::string& message);
+  /// Leaves TEACHING mode back to IDLE.
   bool exitTeach(std::string& message);
 
   rclcpp::Node::SharedPtr node_;

@@ -21,6 +21,13 @@ STAGE_REACH = 0   # Move EE above bottle, avoid table
 STAGE_GRASP = 1   # Close gripper and lift bottle
 STAGE_PLACE = 2   # Transport bottle to bowl and release
 
+# Place state machine (xem grasp_assist.py::_update_place_state). Place là
+# sub-mode của STAGE_PLACE, mirror cấu trúc LIFT_IDLE/RISING/HOLDING.
+PLACE_IDLE = 0       # chưa vào PLACE, hoặc vừa bị hủy do _place_must_abort
+PLACE_CARRY = 1      # đang tịnh tiến XY về phía bát, giữ độ cao carry
+PLACE_DESCEND = 2    # đã tới trên bát (XY), đang hạ xuống độ cao thả
+PLACE_HOLDING = 3    # đã tới độ cao thả — đứng yên chờ settle trước khi mở kẹp
+
 def uses_grasp_lift(task_phase: int | None = None) -> bool:
     """Phase 2+: reach + grasp + lift in one episode."""
     return task_phase is not None and task_phase >= 2
@@ -134,6 +141,42 @@ def grasp_lift_success_ready(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
     tilt_ok = s["bottle_tilt_deg"] < max_tilt
 
     return gripped & lifted & finger_close & ee_close & lat_ok & top_ok & speed_ok & tilt_ok
+
+
+def place_release_ready(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """True when PLACE state machine has held PLACE_HOLDING long enough to release.
+
+    Đọc `env._place_phase`/`env._steps_place_holding`, do `_update_place_state`
+    (grasp_assist.py) ghi mỗi bước — không import grasp_assist ở đây (tránh
+    vòng lặp import, actions.py đã import cả hai module riêng biệt), chỉ đọc
+    thuộc tính runtime giống cách `_lift_phase` được đọc xuyên module.
+    """
+    place_phase = getattr(env, "_place_phase", None)
+    holding_steps = getattr(env, "_steps_place_holding", None)
+    if place_phase is None or holding_steps is None:
+        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    hold_req = int(getattr(env.cfg, "place_release_hold_steps", 5))
+    return (place_phase == PLACE_HOLDING) & (holding_steps >= hold_req)
+
+
+def place_in_bowl_success(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
+    """True when bottle geometry/tốc độ hiện tại thoả tiêu chí "đã nằm trong bát".
+
+    Chỉ kiểm tra TRẠNG THÁI hiện tại (vị trí/tốc độ/nghiêng) — KHÔNG kiểm tra
+    gripper đã mở hay chưa (việc đó do success_termination/bottle_misplaced_
+    termination tự kết hợp thêm). Ngưỡng dựa trên số đo hình học bát THẬT (S9,
+    xem comment ở compute_state/config.py) — bát chỉ sâu 5.2cm, rộng ~16cm.
+    """
+    xy_radius = float(getattr(env.cfg, "place_success_xy_radius_m", 0.05))
+    max_height = float(getattr(env.cfg, "place_success_max_height_above_floor_m", 0.03))
+    max_speed = float(getattr(env.cfg, "place_success_max_speed", 0.15))
+    max_tilt = float(getattr(env.cfg, "place_success_max_tilt_deg", 60.0))
+
+    xy_ok = s["dist_bottle_bowl_xy"] < xy_radius
+    height_ok = s["height_above_bowl_floor"] < max_height
+    speed_ok = s["bottle_lin_speed"] < max_speed
+    tilt_ok = s["bottle_tilt_deg"] < max_tilt
+    return xy_ok & height_ok & speed_ok & tilt_ok
 
 
 def _reach_lateral_ok(env: ManagerBasedRLEnv, s: dict, tol: float) -> torch.Tensor:
@@ -543,7 +586,33 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
     bottle_pos = bottle_world - origins
 
     bowl_world = _t(env._bowl.data.root_pos_w)
+    bowl_quat_w = _t(env._bowl.data.root_quat_w)
     bowl_pos = bowl_world - origins
+
+    # S9 — đo hình học bát thật bằng UsdGeom.BBoxCache (2026-09-08): root của
+    # Bowl KHÔNG nằm ở tâm hình học — lệch tới 8-8.6cm theo cả X và Y (gần
+    # đúng bằng NỬA bề rộng bát 15.97cm, tức root nằm ở một GÓC của bbox chứ
+    # không phải tâm hay đáy). Trước đây `bowl_pos` (= root) được dùng trực
+    # tiếp làm mục tiêu carry/descend trong PLACE — luôn nhắm lệch ra ngoài
+    # rìa bát thay vì vào tâm, rất có thể là nguyên nhân carry không bao giờ
+    # hội tụ XY quan sát được ở S1-S3. `bowl_center_local_xy_{x,y}` và
+    # `bowl_floor_local_z`/`bowl_rim_local_z` là offset ĐÃ ĐO THẬT (không phải
+    # đoán) trong hệ toạ độ cục bộ của bát, áp dụng qua quat_apply để vẫn đúng
+    # nếu bát bị xoay (dù thực tế hiếm khi xoay).
+    bowl_center_local_x = getattr(env.cfg, "bowl_center_local_xy_x", 0.0)
+    bowl_center_local_y = getattr(env.cfg, "bowl_center_local_xy_y", 0.0)
+    bowl_center_off_local = torch.zeros(env.num_envs, 3, device=env.device)
+    bowl_center_off_local[:, 0] = bowl_center_local_x
+    bowl_center_off_local[:, 1] = bowl_center_local_y
+    bowl_center_off_world = quat_apply(bowl_quat_w, bowl_center_off_local)
+    bowl_center_pos = bowl_pos.clone()
+    bowl_center_pos[:, 0] += bowl_center_off_world[:, 0]
+    bowl_center_pos[:, 1] += bowl_center_off_world[:, 1]
+
+    bowl_floor_local_z = getattr(env.cfg, "bowl_floor_local_z", -0.0188)
+    bowl_rim_local_z = getattr(env.cfg, "bowl_rim_local_z", 0.0333)
+    bowl_floor_z = bowl_pos[:, 2] + bowl_floor_local_z
+    bowl_rim_z = bowl_pos[:, 2] + bowl_rim_local_z
 
     h = env._bottle_height
     half_h = h * 0.5
@@ -625,7 +694,17 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
     ee_to_grasp = grasp_target_pos - ee_pos
     ee_to_grasp_body = grasp_pos - ee_pos
     ee_to_grasp_finger = grasp_body_pos - hand_pos
+    # QUAN TRỌNG: `bottle_to_bowl` (biến này) nằm trong observation 26-D
+    # (obs[20:23], xem observations.py) — TUYỆT ĐỐI không đổi công thức của
+    # nó, kể cả khi công thức cũ "sai" (dùng root thay vì tâm hình học thật) —
+    # policy đã train (kể cả policy_1M_success57.pt) đã học với đúng phân bố
+    # giá trị CŨ này; đổi công thức (dù giữ nguyên shape) vẫn coi như đổi
+    # observation, xác nhận bằng thực nghiệm: regression grasp_rate 0.83→0.47
+    # khi lỡ đổi. Dùng `bottle_to_bowl_center` (bên dưới) — biến MỚI, KHÔNG
+    # đưa vào observation — cho mọi tính toán reward/assist PLACE cần vị trí
+    # tâm bát đã sửa (S9).
     bottle_to_bowl = bowl_pos - bottle_pos
+    bottle_to_bowl_center = bowl_center_pos - bottle_pos
 
     dist_ee_grasp = torch.norm(ee_to_grasp, dim=-1)
     dist_ee_bottle = torch.norm(ee_to_grasp_body, dim=-1)
@@ -645,7 +724,12 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
     dist_right_body = torch.norm(grasp_body_pos - right_finger_pos, dim=-1)
     dist_finger_body = torch.minimum(dist_left_body, dist_right_body)
     finger_span_xy = torch.norm(left_finger_pos[:, :2] - right_finger_pos[:, :2], dim=-1)
-    dist_bottle_bowl = torch.norm(bottle_to_bowl, dim=-1)
+    dist_bottle_bowl = torch.norm(bottle_to_bowl_center, dim=-1)
+    dist_bottle_bowl_xy = torch.norm(bottle_to_bowl_center[:, :2], dim=-1)
+    # S9 (đo thật, xem bowl_center_pos/bowl_floor_z ở trên): độ cao đáy chai
+    # so với ĐÁY TRONG thật của bát, không còn so với root (đã sai lệch tới
+    # ~1.9cm cho riêng trục Z, cộng dồn với lệch tâm XY 8cm đã sửa ở trên).
+    height_above_bowl_floor = bottle_pos[:, 2] - bowl_floor_z
 
     table_clearance = ee_pos[:, 2] - env._table_z
     if not hasattr(env, "_bottle_rest_z"):
@@ -712,6 +796,9 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
         "grasp_tcp_pos_w": grasp_tcp_pos_w,
         "bottle_pos": bottle_pos,
         "bowl_pos": bowl_pos,
+        "bowl_center_pos": bowl_center_pos,
+        "bowl_floor_z": bowl_floor_z,
+        "bowl_rim_z": bowl_rim_z,
         "grasp_target_pos": grasp_target_pos,
         "grasp_pos": grasp_pos,
         "ee_to_grasp": ee_to_grasp,
@@ -729,6 +816,8 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
         "z_error_finger": z_error_finger,
         "z_error_tcp_grasp": z_error_tcp_grasp,
         "dist_bottle_bowl": dist_bottle_bowl,
+        "dist_bottle_bowl_xy": dist_bottle_bowl_xy,
+        "height_above_bowl_floor": height_above_bowl_floor,
         "table_clearance": table_clearance,
         "bottle_lift": bottle_lift,
         "is_lifted": is_lifted,

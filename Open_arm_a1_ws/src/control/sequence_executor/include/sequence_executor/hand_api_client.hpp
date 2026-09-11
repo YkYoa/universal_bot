@@ -39,6 +39,9 @@ namespace sequence_executor {
 // One motor of one finger. `finger` is 1-4 (F1..F4), `angle` is degrees.
 // The board clamps each motor to its own safe range, so the applied value can
 // differ from the requested one - that is the board's business, not an error.
+/// One motor of one finger. `finger` is 1-4 (F1..F4), `angle` is degrees.
+/// The board clamps each motor to its own safe range, so the applied value can
+/// differ from the requested one - that is the board's business, not an error.
 struct FingerTarget
 {
   int finger = 1;
@@ -46,14 +49,18 @@ struct FingerTarget
   double angle = 0.0;
 };
 
+/// See file header comment: async REST client (own worker thread + result
+/// queue) for the 4-finger hand board's standalone HTTP API.
 class HandApiClient
 {
 public:
   using ResultCallback = std::function<void(bool success, const std::string& message)>;
 
   // `base_url` is host:port only, e.g. "127.0.0.1:5051".
+  /// Starts the worker thread and completion-draining timer for `host:port`.
   explicit HandApiClient(const rclcpp::Node::SharedPtr& node,
                          const std::string& host = "127.0.0.1", int port = 5051);
+  /// Stops the worker thread.
   ~HandApiClient();
 
   // Moves every target. The API takes one finger per call, so this issues them
@@ -77,7 +84,11 @@ private:
   bool request(const std::string& method, const std::string& path, const std::string& body,
                std::string& response, std::string& error);
 
+  /// Queues `work` to run on worker_, wiring `callback` to fire (via
+  /// drainCompletions()) once it reports a result.
   void enqueue(std::function<void()> work, ResultCallback callback);
+  /// completion_timer_ callback: pops completed_ and fires each callback on
+  /// the executor thread.
   void drainCompletions();
 
   rclcpp::Node::SharedPtr node_;

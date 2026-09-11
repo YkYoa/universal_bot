@@ -97,6 +97,7 @@ void HandKinematicNode::republishStates()
 
 }  // namespace robot_control
 
+/// Entry point: spin a single HandKinematicNode until shutdown.
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);

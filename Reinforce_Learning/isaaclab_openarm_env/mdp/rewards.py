@@ -20,12 +20,20 @@ from .helpers import (
     compute_state,
     STAGE_REACH,
     STAGE_GRASP,
+    STAGE_PLACE,
+    PLACE_IDLE,
+    PLACE_CARRY,
+    PLACE_DESCEND,
+    PLACE_HOLDING,
     finger_grasp_ready,
     finger_symmetric_ready,
     finger_ready_for_close,
     grasp_lift_success_ready,
+    place_in_bowl_success,
+    place_release_ready,
     reach_align_ready,
     uses_grasp_lift,
+    uses_place,
     format_bottle_debug,
     format_finger_debug,
 )
@@ -199,6 +207,21 @@ def _update_contact_and_stages(env: ManagerBasedRLEnv, s: dict, hold_steps: int)
                           f" + grip>{getattr(env.cfg, 'grasp_grip_threshold', 0.4)}"
                           f" for {getattr(env.cfg, 'grasp_lift_hold_steps', 5)} steps")
 
+    if uses_place(task_phase):
+        # Tái dùng ĐÚNG tín hiệu "lift-hold đã đạt" mà trước đây dùng để
+        # TERMINATE episode (xem success_termination) — giờ chỉ dùng để
+        # chuyển sang STAGE_PLACE, không kết thúc episode nữa. An toàn với
+        # task_phase==2: uses_place trả False nên khối này là dead code,
+        # env._stage không bao giờ chạm STAGE_PLACE.
+        lift_hold = getattr(env.cfg, "grasp_lift_hold_steps", 5)
+        advance_place = (env._stage == STAGE_GRASP) & (env._steps_bottle_lifted >= lift_hold)
+        if getattr(env.cfg, "debug_success_log", False) and env.num_envs <= 16 and advance_place.any():
+            for idx in advance_place.nonzero(as_tuple=False).flatten().tolist():
+                if idx == 0:
+                    print(f"  [Success] PLACE stage started — mang chai tới bát")
+        env._stage[advance_place] = STAGE_PLACE
+        env._steps_bottle_lifted[advance_place] = 0  # PLACE dùng counter settle riêng
+
     env._steps_in_grasp[env._stage == STAGE_GRASP] += 1
     env._steps_in_grasp[env._stage != STAGE_GRASP] = 0
 
@@ -227,6 +250,47 @@ def _update_contact_and_stages(env: ManagerBasedRLEnv, s: dict, hold_steps: int)
     # thái tức thời nào nên không có "vùng an toàn" nào để né.
     env._steps_in_reach[env._stage == STAGE_REACH] += 1
     env._steps_in_reach[env._stage != STAGE_REACH] = 0
+
+    # Số bước kể từ lúc THỰC SỰ bắt đầu PLACE (_place_phase != IDLE) — mirror
+    # đúng cách _steps_since_latch neo vào mốc thật thay vì thời gian vào
+    # stage, tránh tái tạo bug decay đã sửa ở GRASP (xem Phase 8). Đơn điệu:
+    # reset về 0 khi state machine PLACE rơi về IDLE (must_abort thật).
+    place_phase = getattr(env, "_place_phase", None)
+    if place_phase is not None:
+        if not hasattr(env, "_steps_since_place_start"):
+            env._steps_since_place_start = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+        moving_or_holding = place_phase != PLACE_IDLE
+        env._steps_since_place_start[moving_or_holding] += 1
+        env._steps_since_place_start[~moving_or_holding] = 0
+
+        # S5 — số bước liên tiếp chai đã "nằm yên trong bát" SAU KHI đã thả
+        # tay (gripper mở) — dùng làm điều kiện settle cho cả thành công thật
+        # (success_termination) lẫn thất bại thật (bottle_misplaced_termination).
+        # Neo vào place_in_bowl_success (vị trí/tốc độ/nghiêng thật) VÀ gripper
+        # đã mở — không neo vào thời gian hay vào stage, tránh lặp lại bug
+        # decay đã sửa ở GRASP (Phase 8) và lỗi lệch tâm bát vừa sửa (Phase 11).
+        if not hasattr(env, "_steps_bottle_settled"):
+            env._steps_bottle_settled = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+        if not hasattr(env, "_steps_bottle_misplaced"):
+            env._steps_bottle_misplaced = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+        # BUG đã sửa (phát hiện qua demo thật task_phase=3, mọi episode chết ở
+        # 13 bước): thiếu gate theo stage khiến "gripper mở + chai đứng yên"
+        # ở REACH (TRƯỚC KHI từng chạm chai) cũng thoả at_rest & ~in_bowl —
+        # bottle_misplaced_termination coi "chưa từng gắp" là "đã làm rơi".
+        # Chỉ tính settle/misplaced khi ĐANG ở STAGE_PLACE (đã từng CARRY ít
+        # nhất một lần, không phải chưa từng bắt đầu).
+        in_place_stage = env._stage == STAGE_PLACE
+        grip_threshold = getattr(env.cfg, "grasp_grip_threshold", 0.4)
+        released = s["gripper_state"] < grip_threshold
+        max_settle_speed = float(getattr(env.cfg, "place_success_max_speed", 0.15))
+        at_rest = in_place_stage & released & (s["bottle_lin_speed"] < max_settle_speed)
+        in_bowl = place_in_bowl_success(env, s)
+        settled_now = at_rest & in_bowl
+        misplaced_now = at_rest & ~in_bowl
+        env._steps_bottle_settled[settled_now] += 1
+        env._steps_bottle_settled[~settled_now] = 0
+        env._steps_bottle_misplaced[misplaced_now] += 1
+        env._steps_bottle_misplaced[~misplaced_now] = 0
 
     return in_contact
 
@@ -539,6 +603,88 @@ def _compute_grasp_reward(env: ManagerBasedRLEnv, s: dict, in_contact: torch.Ten
     )
 
 
+def _compute_place_reward(env: ManagerBasedRLEnv, s: dict, in_contact: torch.Tensor) -> torch.Tensor:
+    """Phase 3 — mang chai đã kẹp qua bát, thả xuống, giữ ổn định.
+
+    S4 (Phase 10 trong plan): các thành phần 1-4 dùng tín hiệu đã đo/có sẵn
+    (dist_bottle_bowl_xy, height_above_bowl_floor, gripper_state) nên đáng
+    tin ngay. Thành phần release-quality/settle (5-6) dùng ngưỡng CHƯA ĐO
+    thật (place_success_* — xem bảng "đã đo hay đoán" trong plan) nên giữ
+    biên độ nhỏ, không phải nguồn động lực chính — tiêu chí thành công thật
+    và terminal bonus/penalty để dành cho S5 sau khi đo hình học bát (S9).
+    """
+    dist_bottle_bowl = s["dist_bottle_bowl"]
+    dist_bottle_bowl_xy = s["dist_bottle_bowl_xy"]
+    height_above_bowl = s["height_above_bowl_floor"]
+    gripper_state = s["gripper_state"]
+    grip_threshold = getattr(env.cfg, "grasp_grip_threshold", 0.4)
+    gripped = gripper_state > grip_threshold
+
+    place_phase = getattr(env, "_place_phase", None)
+    if place_phase is None:
+        place_phase = torch.full((env.num_envs,), PLACE_IDLE, dtype=torch.long, device=env.device)
+    carrying = place_phase == PLACE_CARRY
+    descending = place_phase == PLACE_DESCEND
+    holding_place = place_phase == PLACE_HOLDING
+    moving = carrying | descending
+
+    # 1. Tiến triển XY về bát (mirror r_progress của REACH: thưởng ĐỘ GIẢM
+    # khoảng cách mỗi bước, không phải khoảng cách tuyệt đối — tránh thưởng
+    # đứng yên gần bát ngay từ đầu nếu random spawn tình cờ gần).
+    dist_improvement = env._prev_dist_bottle_bowl - dist_bottle_bowl
+    r_carry_progress = torch.clamp(dist_improvement * 40.0, min=-2.0, max=5.0)
+    env._prev_dist_bottle_bowl = dist_bottle_bowl.detach()
+
+    # 2. Hội tụ XY (giá trị tuyệt đối, để có gradient ổn định gần đích chứ
+    # không chỉ lúc đang tiến gần) — chỉ tính khi đang carry/descend.
+    r_xy_converge = torch.where(moving, torch.exp(-30.0 * dist_bottle_bowl_xy) * 15.0, 0.0)
+
+    # 3. Hạ xuống đúng trên bát — chỉ kích hoạt khi đã DESCEND (đã hội tụ XY
+    # đủ để bắt đầu hạ theo state machine, xem _update_place_state).
+    r_descend_over_bowl = torch.where(
+        descending, torch.exp(-20.0 * height_above_bowl.clamp(min=0.0)) * 20.0, 0.0
+    )
+
+    # 4. Giữ kẹp đóng trong lúc mang — suy giảm theo mốc THẬT (bước kể từ lúc
+    # PLACE thực sự bắt đầu, không phải từ lúc vào stage) để không lặp lại
+    # bug decay đã sửa ở GRASP (Phase 8): camp "mang mãi không thả" sẽ hết
+    # thưởng sau place_camp_decay_steps, nhưng thời gian carry/descend cần
+    # thiết (đo thật ở S9) không bị phạt nhầm.
+    place_steps = getattr(env, "_steps_since_place_start", torch.zeros(env.num_envs, device=env.device)).float()
+    decay_n = float(getattr(env.cfg, "place_camp_decay_steps", 150))
+    decay = (1.0 - place_steps / max(decay_n, 1.0)).clamp(0.0, 1.0)
+    r_hold_grip = torch.where(moving & gripped, 15.0, 0.0) * decay
+
+    # 5. Chất lượng thả — one-time khi vừa release (gripper vừa mở lúc đang
+    # HOLDING và place_release_ready). Thưởng theo độ chính xác XY/độ cao tại
+    # thời điểm mở — milestone tiers mirror REACH, ngưỡng khoảng cách dùng
+    # place_success_xy_radius_m (CHƯA đo thật, xem S9).
+    if not hasattr(env, "_dbg_prev_gripped_place"):
+        env._dbg_prev_gripped_place = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    just_released = holding_place & env._dbg_prev_gripped_place & ~gripped
+    env._dbg_prev_gripped_place = gripped.clone()
+    xy_radius = float(getattr(env.cfg, "place_success_xy_radius_m", 0.10))
+    r_release_quality = torch.where(
+        just_released,
+        (
+            (dist_bottle_bowl_xy < xy_radius * 2.0).float() * 10.0
+            + (dist_bottle_bowl_xy < xy_radius).float() * 20.0
+            + (dist_bottle_bowl_xy < xy_radius * 0.5).float() * 30.0
+        ),
+        0.0,
+    )
+
+    # 6. Settle sau khi thả — nhỏ, capped, chỉ khi đã ở gần bát và tốc độ
+    # chai đang giảm. Không phải nguồn thưởng chính (đó là terminal bonus
+    # thật ở S5) — chỉ giúp policy không vội bỏ đi ngay sau khi mở kẹp.
+    bottle_speed = s["bottle_lin_speed"]
+    max_settle_speed = float(getattr(env.cfg, "place_success_max_speed", 0.15))
+    settling = ~gripped & (dist_bottle_bowl_xy < xy_radius) & (bottle_speed < max_settle_speed)
+    r_settle = torch.where(settling, 8.0, 0.0)
+
+    return r_carry_progress + r_xy_converge + r_descend_over_bowl + r_hold_grip + r_release_quality + r_settle
+
+
 def _update_bottle_rest_baseline(env: ManagerBasedRLEnv) -> None:
     """Track the bottle's settled resting height during the post-reset drop.
 
@@ -592,7 +738,20 @@ def compute_curriculum_reward(env: ManagerBasedRLEnv) -> torch.Tensor:
 
     reach_reward = _compute_reach_reward(env, s, in_contact, hold_steps)
 
-    if uses_grasp_lift(task_phase):
+    if uses_place(task_phase):
+        # Cạm bẫy #2 đã sửa (xem plan Phase 10 / S4): trước đây chỉ có 2
+        # nhánh torch.where(in_grasp, grasp_reward, reach_reward) — ở
+        # STAGE_PLACE, in_grasp=False nên reward rơi nhầm về reach_reward
+        # (thưởng full-strength việc TCP gần thân chai, dương cao dù tay
+        # đứng yên không mang đi đâu). Giờ dispatch đủ 3 nhánh.
+        grasp_reward = _compute_grasp_reward(env, s, in_contact)
+        place_reward = _compute_place_reward(env, s, in_contact)
+        in_grasp = env._stage == STAGE_GRASP
+        in_place = env._stage == STAGE_PLACE
+        total_reward = torch.where(
+            in_place, place_reward, torch.where(in_grasp, grasp_reward, reach_reward)
+        )
+    elif uses_grasp_lift(task_phase):
         grasp_reward = _compute_grasp_reward(env, s, in_contact)
         in_grasp = env._stage == STAGE_GRASP
         total_reward = torch.where(in_grasp, grasp_reward, reach_reward)
@@ -646,4 +805,39 @@ def terminal_tipped_penalty(env: ManagerBasedRLEnv) -> torch.Tensor:
     except (KeyError, ValueError, AttributeError):
         return torch.zeros(env.num_envs, device=env.device)
     pen = float(getattr(env.cfg, "grasp_tipped_penalty", 30.0))
+    return -done.float() * (pen / env.step_dt)
+
+
+def terminal_place_success_bonus(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Thưởng một lần khi episode kết thúc vì ĐÃ ĐẶT chai đúng vào bát (S5).
+
+    Mirror ``terminal_success_bonus`` — ``success`` ở phase>=3 KHÔNG có
+    ``time_out=True`` nên là termination thật, ``V(s_cuối)=0``, không bootstrap.
+    Không có bonus này, hoàn thành PLACE sẽ tự xoá giá trị tương lai y hệt bug
+    gốc của GRASP/LIFT (xem LIFT_BUG_THEORY.md RC2).
+    """
+    if getattr(env.cfg, "task_phase", 1) < 3:
+        return torch.zeros(env.num_envs, device=env.device)
+    try:
+        done = env.termination_manager.get_term("success")
+    except (KeyError, ValueError, AttributeError):
+        return torch.zeros(env.num_envs, device=env.device)
+    bonus = float(getattr(env.cfg, "place_success_bonus", 90.0))
+    return done.float() * (bonus / env.step_dt)
+
+
+def terminal_place_drop_penalty(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Phạt một lần khi episode kết thúc vì LÀM RƠI/ĐẶT SAI chai ngoài bát (S5).
+
+    KHÔNG tuỳ chọn — cùng lý do với ``terminal_tipped_penalty``: nếu không có
+    phạt tường minh này, cố tình thả chai ra ngoài bát (kết thúc episode sớm,
+    tránh phạt-tích-luỹ camping) sẽ trở thành lối thoát rẻ hơn hoàn thành đúng.
+    """
+    if getattr(env.cfg, "task_phase", 1) < 3:
+        return torch.zeros(env.num_envs, device=env.device)
+    try:
+        done = env.termination_manager.get_term("bottle_misplaced")
+    except (KeyError, ValueError, AttributeError):
+        return torch.zeros(env.num_envs, device=env.device)
+    pen = float(getattr(env.cfg, "place_drop_penalty", 30.0))
     return -done.float() * (pen / env.step_dt)

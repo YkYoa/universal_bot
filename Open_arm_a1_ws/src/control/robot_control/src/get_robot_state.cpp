@@ -24,6 +24,8 @@ const std::vector<std::string> AHAND_JOINT_SUFFIXES = {
 // Detects which end effector is live from whichever joint names actually
 // show up in /joint_states, instead of requiring this tool to be told
 // ee_type separately - it already comes from the launch that's running.
+/// Which end effector (if any) was detected for one side, and its current
+/// value(s), read straight out of whatever joint names appear in /joint_states.
 struct EndEffectorState {
   bool is_gripper = false;
   bool is_ahand = false;
@@ -31,6 +33,9 @@ struct EndEffectorState {
   std::vector<double> ahand_values;  // parallel to AHAND_JOINT_SUFFIXES, NaN if missing
 };
 
+/// Scans `names`/`positions` for `side_prefix`'s gripper joint or amazing_hand
+/// alias joints (see AHAND_JOINT_SUFFIXES) and builds the EndEffectorState
+/// describing whichever (if either) is present.
 EndEffectorState detectEndEffector(const std::string& side_prefix,
                                     const std::vector<std::string>& names,
                                     const std::vector<double>& positions) {
@@ -55,6 +60,8 @@ EndEffectorState detectEndEffector(const std::string& side_prefix,
   return state;
 }
 
+/// Prints one side's end-effector state (amazing_hand joints, gripper grasp
+/// value, or a "not found" note) in sequences.yaml-ready form.
 void printHandState(const std::string& label, const EndEffectorState& state) {
   if (state.is_ahand) {
     std::cout << "  " << label << "Joints: ";
@@ -77,6 +84,9 @@ void printHandState(const std::string& label, const EndEffectorState& state) {
 
 }  // namespace
 
+/// CLI entry point: waits (up to 4s) for /joint_states + both arms' TF
+/// transforms, auto-detects each side's end effector, then prints joint
+/// angles/poses/hand state formatted for pasting into sequences.yaml.
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);

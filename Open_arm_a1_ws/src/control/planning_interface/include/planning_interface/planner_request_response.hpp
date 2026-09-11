@@ -38,39 +38,41 @@ public:
   PlannerRequest() = default;
   ~PlannerRequest() = default;
 
-  // Planning group (e.g. "left_arm", "right_arm", "both_arms")
+  /// Planning group (e.g. "left_arm", "right_arm", "both_arms")
   const std::string & getGroupName() const   { return group_name_; }
   void setGroupName(const std::string & g)   { group_name_ = g; }
 
-  // Profile name from planner_profiles.yaml (e.g. "safe_rrt", "linear_approach")
+  /// Profile name from planner_profiles.yaml (e.g. "safe_rrt", "linear_approach")
   const std::string & getProfileName() const { return profile_name_; }
   void setProfileName(const std::string & p) { profile_name_ = p; }
 
-  // Cartesian EE goal — mutually exclusive with joint targets
+  /// Cartesian EE goal — mutually exclusive with joint targets
   const std::optional<geometry_msgs::msg::PoseStamped> & getTargetPose() const {
     return target_pose_;
   }
+  /// Sets the pose goal; clears any previously set joint target.
   void setTargetPose(const geometry_msgs::msg::PoseStamped & pose) {
     target_pose_   = pose;
     joint_targets_.clear();
   }
 
-  // Joint-space goal — mutually exclusive with pose target
+  /// Joint-space goal — mutually exclusive with pose target
   const std::vector<double> & getJointTargets() const { return joint_targets_; }
+  /// Sets the joint-space goal; clears any previously set pose target.
   void setJointTargets(const std::vector<double> & joints) {
     joint_targets_ = joints;
     target_pose_.reset();
   }
 
-  // Optional explicit start state (nullptr = use current robot state)
+  /// Optional explicit start state (nullptr = use current robot state)
   moveit::core::RobotStateConstPtr getStartState() const { return start_state_; }
   void setStartState(moveit::core::RobotStateConstPtr s) { start_state_ = s; }
 
-  // Optional parameter overrides (fine-tuning on top of the profile)
+  /// Optional parameter overrides (fine-tuning on top of the profile)
   const PlanRequestParameters & getParameters() const   { return parameters_; }
   void setParameters(const PlanRequestParameters & p)   { parameters_ = p; }
 
-  // Cartesian path waypoints (used by CartesianMoveSkill)
+  /// Cartesian path waypoints (used by CartesianMoveSkill)
   const std::vector<geometry_msgs::msg::PoseStamped> & getWaypoints() const {
     return waypoints_;
   }
@@ -78,19 +80,20 @@ public:
     waypoints_ = wps;
   }
 
-  // Joint-space waypoint sequence (used by MoveToJointSequenceSkill) -
-  // mutually exclusive with pose target / single joint target. Each entry
-  // is one waypoint's joint values.
+  /// Joint-space waypoint sequence (used by MoveToJointSequenceSkill) -
+  /// mutually exclusive with pose target / single joint target. Each entry
+  /// is one waypoint's joint values.
   const std::vector<std::vector<double>> & getJointSequence() const {
     return joint_sequence_;
   }
+  /// Sets the joint-sequence goal; clears any previously set pose/joint target.
   void setJointSequence(const std::vector<std::vector<double>> & seq) {
     joint_sequence_ = seq;
     target_pose_.reset();
     joint_targets_.clear();
   }
 
-  // Position-only flag: skip orientation constraint in IK
+  /// Position-only flag: skip orientation constraint in IK
   bool isPositionOnly() const          { return position_only_; }
   void setPositionOnly(bool p)         { position_only_ = p; }
 

@@ -31,9 +31,13 @@ const std::vector<std::string> kJointNames = {
   "openarm_body_neck_joint", "openarm_body_head_joint"};
 }  // namespace
 
+/** Exposes std_srvs/Trigger service "head/go_home" that drives the neck
+ *  pan/tilt joints to their calibrated center via a FollowJointTrajectory
+ *  goal to head_controller, blocking until the move completes. */
 class HeadHomeNode : public rclcpp::Node
 {
 public:
+  /** Creates the FollowJointTrajectory action client and the go_home service. */
   HeadHomeNode() : Node("head_home_node")
   {
     action_client_ = rclcpp_action::create_client<FollowJointTrajectory>(
@@ -47,6 +51,9 @@ public:
   }
 
 private:
+  /** head/go_home service callback: sends the single-point home trajectory to
+   *  head_controller and blocks (via spin_until_future_complete) through goal
+   *  acceptance and execution, reporting failure at whichever stage rejects. */
   void handleGoHome(
     const std::shared_ptr<std_srvs::srv::Trigger::Request> /*request*/,
     std::shared_ptr<std_srvs::srv::Trigger::Response> response)
@@ -100,6 +107,7 @@ private:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr service_;
 };
 
+/** Entry point: spin a single HeadHomeNode until shutdown. */
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);

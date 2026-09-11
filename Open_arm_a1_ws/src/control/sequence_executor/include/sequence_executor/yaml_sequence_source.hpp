@@ -25,9 +25,12 @@
 
 namespace sequence_executor {
 
+/// SequenceSource backed by the legacy sequence.yaml file (see file header
+/// comment for the home/body -> step-list unrolling it performs).
 class YamlSequenceSource : public SequenceSource
 {
 public:
+  /// Wraps a SequenceYaml reader over `yaml_path`.
   explicit YamlSequenceSource(const std::string& yaml_path);
 
   std::vector<std::string> listSequences() override;

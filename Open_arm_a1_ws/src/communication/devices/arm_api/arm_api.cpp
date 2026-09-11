@@ -15,22 +15,29 @@
 #ifdef CLIENT_SIDE_REQUIRED
 #include <curl/curl.h>
 
+/** PC-side (ROS 2) client: packs ArmApiPayload commands and POSTs them as raw
+ *  binary over HTTP to the ESP32 endpoint, decoding the ArmFeedbackPayload
+ *  response. Only compiled when CLIENT_SIDE_REQUIRED is defined. */
 class OpenArmApiClient {
 private:
     std::string endpoint_url_;
 
 public:
+    /** Initializes libcurl globally; `endpoint_url` defaults to ARM_API_ENDPOINT. */
     explicit OpenArmApiClient(std::string endpoint_url = ARM_API_ENDPOINT)
         : endpoint_url_(std::move(endpoint_url)) {
         // Khởi tạo thư viện curl
         curl_global_init(CURL_GLOBAL_ALL);
     }
 
+    /** Releases libcurl's global state. */
     ~OpenArmApiClient() {
         curl_global_cleanup();
     }
 
-    // Hàm tiện ích hỗ trợ đọc dữ liệu trả về từ ESP32
+    /** libcurl write callback: copies the response body into `userp` (an
+     *  ArmFeedbackPayload*) only when its size exactly matches the struct,
+     *  otherwise silently drops malformed responses. */
     static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
         size_t total_size = size * nmemb;
         auto* feedback = static_cast<ArmFeedbackPayload*>(userp);
@@ -113,6 +120,9 @@ public:
     }
 
 private:
+    /** Shared implementation behind stopRobot() (and any other zero-target,
+     *  fire-and-forget command): builds and POSTs a payload for `cmd` with
+     *  speed_limit 0, ignoring the response body beyond the HTTP status. */
     bool sendCommandOnly(ArmCommandId cmd, const float targets[7], ArmFeedbackPayload& feedback) {
         CURL* curl = curl_easy_init();
         if (!curl) return false;
@@ -158,13 +168,14 @@ namespace OpenArmReceiver {
     const float JOINT_MIN_LIMITS[7] = {-1.57f, -1.57f, -2.00f, -1.57f, -1.57f, -3.14f, -3.14f};
     const float JOINT_MAX_LIMITS[7] = { 1.57f,  1.57f,  2.00f,  1.57f,  1.57f,  3.14f,  3.14f};
 
-    // Hàm chuyển góc từ Radians sang góc độ (Degrees) thường dùng cho Servo RC phổ thông
+    /** Converts an angle from radians to degrees. */
     float radToDeg(float rad) {
         return rad * (180.0f / 3.14159265f);
     }
 
-    // Hàm chuyển góc từ Radians sang độ rộng xung PWM (Microseconds) cho Servo PWM
-    // VD: 0 rad -> 1500us, -1.57 rad (-90 deg) -> 500us, +1.57 rad (+90 deg) -> 2500us
+    /** Maps a joint angle (radians, expected in [-90, 90] deg) to an RC-servo
+     *  PWM pulse width in microseconds: 0 rad -> 1500us, -90 deg -> 500us,
+     *  +90 deg -> 2500us; clamped to [500, 2500]us. */
     int radToPwmWidth(float rad) {
         float deg = radToDeg(rad);
         // map deg từ [-90, 90] sang [500, 2500] microseconds

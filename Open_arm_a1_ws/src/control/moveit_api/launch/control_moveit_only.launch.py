@@ -8,6 +8,10 @@ from ament_index_python.packages import get_package_share_directory
 import os
 
 def generate_launch_description():
+    """Bimanual stack with fake hardware: robot_state_publisher, MoveGroup,
+    ros2_control (bimanual_controllers.yaml), and the joint_state_broadcaster
+    + left/right arm controller spawners. No RViz, no REST API - just the
+    planning/control layer for headless testing."""
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
     robot_control_pkg = get_package_share_directory("robot_control")
 

@@ -23,7 +23,10 @@ namespace robot_control
 class DriveControl
 {
 public:
+  /// Opens `can_interface` via openarm_can (CAN FD if `can_fd`, hand-variant
+  /// wiring if `hand`). Motors start disabled - call servoOn() to enable them.
   explicit DriveControl(std::string can_interface, bool can_fd = true, bool hand = false);
+  /// Closes the underlying openarm_can connection.
   ~DriveControl();
 
   DriveControl(const DriveControl&) = delete;

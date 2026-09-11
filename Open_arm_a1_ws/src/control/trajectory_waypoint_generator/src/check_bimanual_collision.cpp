@@ -29,6 +29,7 @@
 
 namespace {
 
+/// Prints the CLI's expected argument shape to stderr.
 void printUsage(const char* prog)
 {
   std::cerr << "Usage: " << prog
@@ -43,6 +44,7 @@ void printUsage(const char* prog)
                "  own default).\n";
 }
 
+/// Runs `xacro <xacro_path> <args>` and returns captured stdout, "" on failure.
 std::string runXacro(const std::string& xacro_path, const std::string& args)
 {
   const std::string cmd = "xacro " + xacro_path + " " + args;
@@ -56,6 +58,8 @@ std::string runXacro(const std::string& xacro_path, const std::string& args)
   return result;
 }
 
+/// Reads a "key: v1, v2, ..." waypoint straight out of a sequence.yaml file
+/// (no live robot needed); nullopt if the key is absent or malformed.
 std::optional<std::vector<double>> readYamlKey(const std::string& file_path, const std::string& key)
 {
   std::ifstream in(file_path);
@@ -85,6 +89,9 @@ std::optional<std::vector<double>> readYamlKey(const std::string& file_path, con
 
 }  // namespace
 
+/// CLI entry point: see the file header comment - loads the robot model,
+/// then for each numbered waypoint index sets both arms' recorded joint
+/// angles into one both_arms state and reports self-collision.
 int main(int argc, char** argv)
 {
   std::string left_section, right_section, file_path;

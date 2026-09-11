@@ -44,26 +44,43 @@ namespace openarm_hardware {
 class AmazingHandHW : public hardware_interface::SystemInterface
 {
 public:
+  /// Parses hardware params + command joints, fetches robot_description
+  /// (see fetchRobotDescription()), and builds the HandSolver - so
+  /// state_joint_names_ (command joints + solver's passive joints) is known
+  /// before export_state_interfaces() is called right after this returns.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams& params) override;
 
+  /// No-op: everything needed is already built in on_init().
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;
 
+  /// Exports one position state interface per entry in state_joint_names_
+  /// (alias command joints, then the solver's passive joints).
   OPENARM_HARDWARE_PUBLIC
   std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
 
+  /// Exports one position command interface per alias command joint.
   OPENARM_HARDWARE_PUBLIC
   std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
 
+  /// Solves the hand directly from the current command_positions_ (no
+  /// topics - see class doc) and writes every state joint's solved value
+  /// into state_positions_.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::return_type read(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
+  /// No-op: read() solves directly from the command interfaces' own storage
+  /// every cycle, so there is nothing separate to send.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::return_type write(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 private:
+  /// Reads link_prefix/alias_prefix/command_space/robot_description_timeout_s
+  /// hardware parameters and populates command_joint_names_/
+  /// command_initial_positions_ from info_.joints. Fails if no command
+  /// joints are declared.
   bool parse_config();
   /// Blocks (bounded by robot_description_timeout_s_) until robot_description
   /// is fetched from robot_state_publisher via a SyncParametersClient on an

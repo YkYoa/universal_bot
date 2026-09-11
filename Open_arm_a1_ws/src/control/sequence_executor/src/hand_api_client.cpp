@@ -28,6 +28,8 @@ bool bodySaysSuccess(const std::string& body)
          body.find("\"success\":true") != std::string::npos;
 }
 
+/// Extracts the "message" field's literal value from a hand API JSON
+/// response body (same literal-string-search approach as bodySaysSuccess()).
 std::string extractMessage(const std::string& body)
 {
   for (const char* key : {"\"message\": \"", "\"message\":\""}) {

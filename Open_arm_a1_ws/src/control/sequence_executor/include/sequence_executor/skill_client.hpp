@@ -19,16 +19,20 @@
 
 namespace sequence_executor {
 
+/// See file header comment: thin event-driven ExecuteSkill action client,
+/// one method per skill.
 class SkillClient
 {
 public:
   using ExecuteSkill = openarm_messages::action::ExecuteSkill;
   using ResultCallback = std::function<void(bool success, const std::string& error_message)>;
 
+  /// Opens an ExecuteSkill action client at `action_name`.
   explicit SkillClient(
     const rclcpp::Node::SharedPtr& node,
     const std::string& action_name = "robot_skills_server/execute_skill");
 
+  /// Sends a "move_to_joint" goal for `arm` to `joint_targets`.
   void moveToJoint(
     const std::string& arm, const std::vector<double>& joint_targets, const std::string& planner_profile,
     double velocity_scaling, double acceleration_scaling, ResultCallback callback);
@@ -41,14 +45,17 @@ public:
   // which must match the live group's variable count exactly or
   // robot_skills_node aborts (RobotState::setJointGroupPositions asserts on
   // size mismatch).
+  /// Sends a "move_to_named_pose" goal for `arm` to `named_pose`.
   void moveToNamedPose(
     const std::string& arm, const std::string& named_pose, const std::string& planner_profile,
     double velocity_scaling, double acceleration_scaling, ResultCallback callback);
 
+  /// Sends a "move_to_joint_sequence" goal for `arm`'s flat, stride-DOF `joint_sequence`.
   void moveToJointSequence(
     const std::string& arm, const std::vector<double>& joint_sequence, const std::string& planner_profile,
     double velocity_scaling, double acceleration_scaling, ResultCallback callback);
 
+  /// Sends a "move_to_pose" goal for `arm` to Cartesian `target`.
   void moveToPose(
     const std::string& arm, const geometry_msgs::msg::PoseStamped& target, const std::string& planner_profile,
     double velocity_scaling, double acceleration_scaling, bool position_only, ResultCallback callback);
@@ -56,6 +63,7 @@ public:
   // One collision-checked Cartesian path through `waypoints`. Note the group:
   // the skill plans for a single end effector, so "both_arms" is not a valid
   // arm here - drive two arms with two concurrent calls.
+  /// Sends a "cartesian_move" goal for `arm` through `waypoints`.
   void cartesianMove(
     const std::string& arm, const std::vector<geometry_msgs::msg::PoseStamped>& waypoints,
     const std::string& planner_profile, double velocity_scaling, double acceleration_scaling,
@@ -73,7 +81,10 @@ public:
   bool cancelActiveGoal();
 
 private:
+  /// Sends `goal`, tracks its handle in active_goals_, and wires `callback`
+  /// to fire on the eventual result.
   void sendGoal(ExecuteSkill::Goal goal, ResultCallback callback);
+  /// Removes `goal_id` from active_goals_ once its result has been handled.
   void forgetGoal(const rclcpp_action::GoalUUID& goal_id);
 
   rclcpp::Node::SharedPtr node_;

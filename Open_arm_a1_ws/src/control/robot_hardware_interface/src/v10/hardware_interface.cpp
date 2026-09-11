@@ -33,6 +33,8 @@ struct OpenArm_v10HW::Impl
 
 #if defined(OPENARM_HARDWARE_HAS_OPENARMCAN)
 namespace {
+/// Maps this plugin's control_mode string ("position"/"velocity"/anything
+/// else -> "mit") to the damiao_motor ControlMode enum used at init time.
 openarm::damiao_motor::ControlMode damiaoControlModeFor(const std::string& control_mode)
 {
   if (control_mode == "position") {
@@ -486,11 +488,11 @@ hardware_interface::return_type OpenArm_v10HW::write(
 
 namespace {
 
-/* Minimal flat-JSON field extraction. Both ends of this socket (this
- * plugin and head_motor_driver_node) are written together for this one
- * fixed schema, so a full JSON library is unnecessary overhead - this is
- * NOT a general-purpose parser. */
-
+/** Minimal flat-JSON field extraction. Both ends of this socket (this
+ *  plugin and head_motor_driver_node) are written together for this one
+ *  fixed schema, so a full JSON library is unnecessary overhead - this is
+ *  NOT a general-purpose parser. Returns nullopt if `key` is absent or its
+ *  value doesn't parse as a number. */
 std::optional<double> extract_number(const std::string& line, const std::string& key)
 {
   std::string needle = "\"" + key + "\":";
@@ -506,6 +508,7 @@ std::optional<double> extract_number(const std::string& line, const std::string&
   }
 }
 
+/** Same idea as extract_number() but for a JSON `true`/`false` literal. */
 std::optional<bool> extract_bool(const std::string& line, const std::string& key)
 {
   std::string needle = "\"" + key + "\":";

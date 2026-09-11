@@ -78,6 +78,8 @@ constexpr const char* kTipLink = "openarm_left_hand_tcp";
 // that's a separate accessor, seg.getJoint().getName()).
 constexpr const char* kConnectorSegmentName = "openarm_left_ahand_connector";
 
+/// Blocks (spinning `node`) until the latched /robot_description topic
+/// delivers its URDF string, or throws after a 5s timeout.
 std::string fetchRobotDescription(const rclcpp::Node::SharedPtr& node)
 {
   std::promise<std::string> promise;
@@ -100,8 +102,8 @@ std::string fetchRobotDescription(const rclcpp::Node::SharedPtr& node)
   return future.get();
 }
 
-// Clone `chain`, replacing the named segment's inertia mass (keeping its
-// existing COG/rotational inertia shape) with `new_mass`.
+/// Clones `chain`, replacing the named segment's inertia mass (keeping its
+/// existing COG/rotational inertia shape) with `new_mass`.
 KDL::Chain withSegmentMass(const KDL::Chain& chain, const std::string& segment_name, double new_mass)
 {
   KDL::Chain out;
@@ -122,6 +124,8 @@ KDL::Chain withSegmentMass(const KDL::Chain& chain, const std::string& segment_n
   return out;
 }
 
+/// One captured (position, measured effort) pair across kArmJoints, taken at
+/// a settled pose in `position` control_mode.
 struct Sample
 {
   std::vector<double> position;  // kArmJoints order
@@ -130,6 +134,10 @@ struct Sample
 
 }  // namespace
 
+/// Interactive CLI: see the file header comment for the full calibration
+/// procedure and the linear-in-mass fitting method. Captures samples on
+/// Enter, fits the hand's lumped mass on 'done', and prints per-joint
+/// residuals.
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);

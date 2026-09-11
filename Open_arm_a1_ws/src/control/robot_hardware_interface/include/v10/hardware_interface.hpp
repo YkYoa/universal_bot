@@ -24,32 +24,52 @@ class OpenArm_v10HW : public hardware_interface::SystemInterface
 public:
   OpenArm_v10HW();
 
+  /// Parses hardware params, generates joint names, sizes the command/state
+  /// buffers, and (when built with openarm_can) opens the CAN interface and
+  /// inits the arm motors (+ gripper motor if `hand`) in the configured
+  /// damiao control mode.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams& params) override;
 
+  /// Refreshes/receives once from the CAN bus so initial state is populated
+  /// before activation.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_configure(
     const rclcpp_lifecycle::State& previous_state) override;
 
+  /// Exports position/velocity/effort state interfaces for every joint.
   OPENARM_HARDWARE_PUBLIC
   std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
 
+  /// Exports position/velocity/effort command interfaces for every joint.
   OPENARM_HARDWARE_PUBLIC
   std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
 
+  /// Enables the motors and calls return_to_zero() so the arm starts each
+  /// activation from a known commanded position instead of wherever the
+  /// stale command buffers last pointed.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_activate(
     const rclcpp_lifecycle::State& previous_state) override;
 
+  /// Drives the arm home (drive_home_blocking()) then disables the motors,
+  /// retrying disable_all() shutdown_disable_retries_ times.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_deactivate(
     const rclcpp_lifecycle::State& previous_state) override;
 
+  /// Reads back position/velocity/torque for every arm motor (and, if
+  /// present, the gripper/hand-rotate motor via motor_radians_to_joint())
+  /// into the exported state interfaces.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::return_type read(
     const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
+  /// Sends pos_commands_/vel_commands_/tau_commands_ to the motors using
+  /// whichever damiao control primitive matches control_mode_ (mit/position/
+  /// torque; "velocity" is not implemented against the current openarm_can
+  /// and logs an error instead of sending anything - see the .cpp for why).
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::return_type write(
     const rclcpp::Time& time, const rclcpp::Duration& period) override;
@@ -63,8 +83,18 @@ private:
   static constexpr double DEFAULT_GRIPPER_KP = 5.0;
   static constexpr double DEFAULT_GRIPPER_KD = 0.1;
 
+  /// Reads hardware_parameters (can_interface, arm_prefix, ee_type, hand,
+  /// can_fd, control_mode, per-joint kp/kd, gripper gains, timing/tolerance
+  /// knobs) into this instance's members. Returns false on an invalid
+  /// control_mode value.
   bool parse_config();
+  /// Builds joint_names_ ("openarm_<prefix>joint1..7", plus a finger joint
+  /// if `hand_`) from arm_prefix_/hand_.
   void generate_joint_names();
+  /// Commands every arm (and gripper, if present) motor to its zero/closed
+  /// reference position in whichever primitive control_mode_ supports
+  /// (mit/position; a no-op for velocity/torque, which have no position
+  /// reference).
   void return_to_zero();
   // Sends the zero-position command repeatedly (a single send_all() only
   // sets a target the motor's own firmware then chases - on_deactivate()
@@ -75,7 +105,12 @@ private:
   // position reference to home to - see return_to_zero()).
   void drive_home_blocking();
 
+  /// Converts a URDF joint value to the motor-shaft radians the end effector
+  /// motor expects: passthrough for pinch_gripper, ratio-scaled passthrough
+  /// for amazing_hand's direct-drive connector, or linear-stroke-to-angle
+  /// scaling for openarm_hand's 0-0.044m gripper jaw.
   double joint_to_motor_radians(double joint_value) const;
+  /// Inverse of joint_to_motor_radians().
   double motor_radians_to_joint(double motor_radians) const;
 
   std::string can_interface_{"can0"};
@@ -147,36 +182,56 @@ private:
 class HeadHW : public hardware_interface::SystemInterface
 {
 public:
+  /// Parses hardware params (socket path, retry timing, filter alpha),
+  /// builds joint_names_, and sizes the command/state/filter buffers.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams& params) override;
 
+  /// Exports position (physically meaningful) plus inert 0.0 velocity/effort
+  /// state interfaces for both neck joints (see class doc for why).
   OPENARM_HARDWARE_PUBLIC
   std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
 
+  /// Exports position (physically meaningful) plus inert 0.0 velocity/effort
+  /// command interfaces for both neck joints.
   OPENARM_HARDWARE_PUBLIC
   std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
 
+  /// Connects to head_motor_driver_node's UDS socket (retrying up to
+  /// retry_timeout_s_), failing activation if it never comes up.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_activate(
     const rclcpp_lifecycle::State& previous_state) override;
 
+  /// Closes the UDS socket.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::CallbackReturn on_deactivate(
     const rclcpp_lifecycle::State& previous_state) override;
 
+  /// Polls the socket for the latest NDJSON state line (poll_latest_line())
+  /// and updates the filtered position state (see position_filter_alpha_)
+  /// plus is_healthy_.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::return_type read(
     const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
+  /// Sends the current pos_commands_ as one NDJSON command line to
+  /// head_motor_driver_node.
   OPENARM_HARDWARE_PUBLIC
   hardware_interface::return_type write(
     const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 private:
+  /// Reads socket_path/retry_interval_s/retry_timeout_s/position_filter_alpha
+  /// hardware parameters, falling back to their defaults when absent.
   bool parse_config();
+  /// Opens the UDS socket at socket_path_, retrying every retry_interval_s_
+  /// up to retry_timeout_s_ total; returns false on final failure.
   bool connect_socket();
+  /// Closes and invalidates the socket, if open.
   void close_socket();
+  /// Sends one line (newline-terminated) to the connected socket.
   bool send_line(const std::string& line);
   /// Non-blocking: pulls whatever bytes are available into rx_buffer_ and
   /// returns the LAST complete NDJSON line found (older ones are dropped -

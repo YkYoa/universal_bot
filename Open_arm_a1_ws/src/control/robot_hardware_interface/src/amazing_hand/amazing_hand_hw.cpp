@@ -13,6 +13,9 @@ namespace openarm_hardware {
 
 namespace {
 
+/// Replaces every non-alphanumeric/underscore character in `s` with '_' and
+/// strips trailing underscores, so alias_prefix_ can be embedded in a valid
+/// ROS 2 node name.
 std::string sanitizeForNodeName(const std::string& s)
 {
   std::string out;

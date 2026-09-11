@@ -34,6 +34,10 @@ const std::string PLAN_DIR = std::string(std::getenv("HOME") ? std::getenv("HOME
 // connector joint became revolute), so it must be validated before reaching
 // that call instead of trusted. Returns "" if `count` is valid for
 // `group_name`, otherwise a message describing the mismatch.
+/// Validates that a joint-target/joint-sequence vector of length `count`
+/// matches group `group_name`'s actual variable count before it reaches
+/// RobotState::setJointGroupPositions() (which asserts/aborts on mismatch).
+/// Returns "" if valid, otherwise a message describing the mismatch.
 std::string checkJointVectorSize(const moveit::core::RobotModelConstPtr& model,
                                   const std::string& group_name, size_t count)
 {
@@ -51,6 +55,9 @@ std::string checkJointVectorSize(const moveit::core::RobotModelConstPtr& model,
     return "";
 }
 
+/// Deterministic cache filename for `request`'s goal (pose/joints/waypoints/
+/// joint-sequence, whichever is set), collapsed to a bounded hash when the
+/// baked-in joint values would otherwise exceed a safe filename length.
 std::string get_plan_filename(const planning_interface::PlannerRequest& request)
 {
     std::stringstream ss;
@@ -112,6 +119,9 @@ std::string get_plan_filename(const planning_interface::PlannerRequest& request)
     return s + ".yaml";
 }
 
+/// Serializes a RobotTrajectory (joint names + per-point positions/
+/// velocities/accelerations/effort/time_from_start) to a YAML tree for the
+/// on-disk plan cache.
 YAML::Node serialize_trajectory(const moveit_msgs::msg::RobotTrajectory& trajectory)
 {
     YAML::Node node;
@@ -131,6 +141,8 @@ YAML::Node serialize_trajectory(const moveit_msgs::msg::RobotTrajectory& traject
     return node;
 }
 
+/// Inverse of serialize_trajectory(): rebuilds a RobotTrajectory from a
+/// cached plan's YAML tree.
 moveit_msgs::msg::RobotTrajectory deserialize_trajectory(const YAML::Node& node)
 {
     moveit_msgs::msg::RobotTrajectory trajectory;
@@ -173,19 +185,19 @@ moveit_msgs::msg::RobotTrajectory deserialize_trajectory(const YAML::Node& node)
     return trajectory;
 }
 
-// Rounds the sharp direction-change at each interior waypoint of a joint-
-// space path with a local quadratic Bezier corner-cut, instead of routing
-// exactly through it. For each corner index c (not the first/last state in
-// `states`), takes a point a few samples before it (P_before) and a few
-// samples after it (P_after) - both already inside the neighboring,
-// already-planned segments - and replaces the points between them with
-// samples along B(t) = (1-t)^2*P_before + 2t(1-t)*P_apex + t^2*P_after per
-// joint. This starts exactly at P_before, ends exactly at P_after (so it
-// splices cleanly into the untouched rest of the path), and passes near -
-// not exactly over - the original corner, eliminating the vertex that
-// forces TOTG/Ruckig to slow down there. Blend windows are clamped so they
-// never overlap a neighboring corner or run off the ends of the path; a
-// corner whose neighbors are too close to leave any room is left unblended.
+/// Rounds the sharp direction-change at each interior waypoint of a joint-
+/// space path with a local quadratic Bezier corner-cut, instead of routing
+/// exactly through it. For each corner index c (not the first/last state in
+/// `states`), takes a point a few samples before it (P_before) and a few
+/// samples after it (P_after) - both already inside the neighboring,
+/// already-planned segments - and replaces the points between them with
+/// samples along B(t) = (1-t)^2*P_before + 2t(1-t)*P_apex + t^2*P_after per
+/// joint. This starts exactly at P_before, ends exactly at P_after (so it
+/// splices cleanly into the untouched rest of the path), and passes near -
+/// not exactly over - the original corner, eliminating the vertex that
+/// forces TOTG/Ruckig to slow down there. Blend windows are clamped so they
+/// never overlap a neighboring corner or run off the ends of the path; a
+/// corner whose neighbors are too close to leave any room is left unblended.
 std::vector<moveit::core::RobotStatePtr> blendJointSequenceCorners(
     const std::vector<moveit::core::RobotStatePtr>& states, const std::vector<size_t>& corner_indices,
     const std::string& group_name)

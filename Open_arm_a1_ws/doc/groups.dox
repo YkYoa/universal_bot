@@ -1,0 +1,76 @@
+/**
+ * \defgroup control Control
+ * \brief Motion planning, hardware interface, and manipulation packages for the OpenArm A1 bimanual arm.
+ */
+
+/**
+ * \defgroup control_planning Planning & Trajectories
+ * \ingroup control
+ * \brief Path/motion planning, trajectory shaping, and waypoint generation.
+ */
+
+/**
+ * \defgroup control_moveit MoveIt Integration
+ * \ingroup control
+ * \brief MoveIt-based planning interface and the generated MoveIt configuration package.
+ */
+
+/**
+ * \defgroup control_hw Hardware & Execution
+ * \ingroup control
+ * \brief ros2_control hardware interface, sequence execution, skills, and gravity compensation.
+ */
+
+/**
+ * \defgroup communication Communication
+ * \brief Message/action/service definitions and device bridges (camera, database, head/arm peripherals).
+ */
+
+/**
+ * \defgroup utilities Utilities
+ * \brief Shared math/computation helpers reused across control and communication packages.
+ */
+
+/**
+ * \defgroup description Description
+ * \brief URDF/Xacro robot description, meshes, and ros2_control configuration.
+ */
+
+/**
+ * \defgroup builds Builds
+ * \brief Top-level demo/test/deployment bring-up packages (openarm_demo, openarm_test, qvic_2026).
+ */
+
+/** \dir src/control \ingroup control */
+/** \dir src/control/motion_planner \ingroup control_planning */
+/** \dir src/control/planning_interface \ingroup control_planning */
+/** \dir src/control/trajectory_shapes \ingroup control_planning */
+/** \dir src/control/trajectory_waypoint_generator \ingroup control_planning */
+/** \dir src/control/waypoint_recorder \ingroup control_planning */
+/** \dir src/control/moveit_api \ingroup control_moveit */
+/** \dir src/control/openarm_moveit_config \ingroup control_moveit */
+/** \dir src/control/robot_hardware_interface \ingroup control_hw */
+/** \dir src/control/robot_control \ingroup control_hw */
+/** \dir src/control/sequence_executor \ingroup control_hw */
+/** \dir src/control/robot_skills \ingroup control_hw */
+/** \dir src/control/gravity_compensation_controller \ingroup control_hw */
+/** \dir src/control/amazing_hand_kinematics \ingroup control_hw */
+
+/** \dir src/communication \ingroup communication */
+/** \dir src/communication/camera_bridge \ingroup communication */
+/** \dir src/communication/database \ingroup communication */
+/** \dir src/communication/devices \ingroup communication */
+/* src/communication/messages holds only .msg/.srv/.action files - no
+ * Doxygen-recognized source, so no \dir entry (it would warn: no matching
+ * directory found). */
+
+/** \dir src/utilities \ingroup utilities */
+/** \dir src/utilities/common \ingroup utilities */
+/** \dir src/utilities/computation \ingroup utilities */
+
+/** \dir src/openarm_description \ingroup description */
+
+/** \dir src/builds \ingroup builds */
+/** \dir src/builds/openarm_demo \ingroup builds */
+/** \dir src/builds/openarm_test \ingroup builds */
+/** \dir src/builds/qvic_2026 \ingroup builds */

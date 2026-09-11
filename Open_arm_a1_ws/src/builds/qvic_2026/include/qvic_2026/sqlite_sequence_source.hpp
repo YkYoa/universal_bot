@@ -25,11 +25,14 @@ struct sqlite3;
 
 namespace qvic_2026 {
 
+/// SequenceSource backed by the qvic_2026 SQLite store (see file header
+/// comment for the read-only, connection-per-call design).
 class SqliteSequenceSource : public sequence_executor::SequenceSource
 {
 public:
-  // Throws std::runtime_error if the file cannot be opened or does not carry
-  // the expected tables.
+  /// Validates `db_path` opens and carries the expected tables.
+  /// Throws std::runtime_error if the file cannot be opened or does not carry
+  /// the expected tables.
   explicit SqliteSequenceSource(const std::string& db_path);
 
   std::vector<std::string> listSequences() override;
@@ -40,19 +43,22 @@ public:
   bool hasSection(const std::string& section) override;
   std::string describe() const override;
 
-  // Where the store lives when nothing overrides it: QVIC_DB_PATH, else the
-  // same source-tree path store.py's DEFAULT_DB_PATH names.
+  /// Where the store lives when nothing overrides it: QVIC_DB_PATH, else the
+  /// same source-tree path store.py's DEFAULT_DB_PATH names.
   static std::string defaultPath();
 
 private:
-  // RAII around one sqlite3 handle so every early return closes it.
+  /// RAII around one sqlite3 handle so every early return closes it.
   class Connection
   {
   public:
+    /// Opens `path`; get() returns nullptr on failure (caller checks).
     explicit Connection(const std::string& path);
+    /// Closes the handle if open.
     ~Connection();
     Connection(const Connection&) = delete;
     Connection& operator=(const Connection&) = delete;
+    /// The underlying sqlite3 handle, or nullptr if opening failed.
     sqlite3* get() const { return handle_; }
 
   private:

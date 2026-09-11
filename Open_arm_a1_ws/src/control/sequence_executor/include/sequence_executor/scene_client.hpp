@@ -20,12 +20,14 @@
 
 namespace sequence_executor {
 
+/// See file header comment: async client for robot_skills_server/scene_command.
 class SceneClient
 {
 public:
   using SceneCommand = openarm_messages::srv::SceneCommand;
   using ResultCallback = std::function<void(bool success, const std::string& message)>;
 
+  /// Opens a SceneCommand service client at `service_name`.
   explicit SceneClient(const rclcpp::Node::SharedPtr& node,
                        const std::string& service_name = "robot_skills_server/scene_command");
 
@@ -34,6 +36,7 @@ public:
   // throwing, so the FSM handles it on the same path as a failed motion.
   void sendForStep(const Step& step, ResultCallback callback);
 
+  /// Sends a raw SceneCommand request.
   void send(const SceneCommand::Request& request, ResultCallback callback);
 
 private:

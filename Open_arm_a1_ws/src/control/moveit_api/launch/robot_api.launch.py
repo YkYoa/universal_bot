@@ -31,6 +31,10 @@ from openarm_moveit_config.srdf_utils import load_srdf_for_ee_type
 
 
 def launch_setup(context, *args, **kwargs):
+    """OpaqueFunction body: builds robot_description/SRDF for the requested
+    ee_type/body_type and assembles the (individually toggle-able)
+    robot_state_publisher, ros2_control, MoveGroup, robot_api_server, RViz,
+    and optional Foxglove bridge nodes."""
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
 
     # ── Launch Configurations ──
@@ -260,6 +264,10 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
+    """Declares this launch file's arguments (see module docstring) and
+    defers node construction to launch_setup() via OpaqueFunction, since
+    ee_type/body_type must be resolved to real strings before the URDF/SRDF
+    can be built."""
     return LaunchDescription([
         DeclareLaunchArgument("use_rviz", default_value="false"),
         DeclareLaunchArgument("use_moveit", default_value="true"),

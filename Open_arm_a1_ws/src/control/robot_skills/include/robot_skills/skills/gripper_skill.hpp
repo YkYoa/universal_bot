@@ -6,10 +6,15 @@
 
 namespace robot_skills
 {
+    /// "open_gripper"/"close_gripper" (per `skill_name`): resolves req.arm to
+    /// its left_gripper/right_gripper planning group, looks up that group's
+    /// "open"/"close" SRDF group_state, and plans/executes a joint-target
+    /// move to it via SkillServer::execute_trajectory().
     class GripperSkill : public RobotSkill
     {
     public:
-        GripperSkill(SkillServer* server, const std::string& skill_name) 
+        /// `skill_name` is "open_gripper" or "close_gripper" - what name() reports.
+        GripperSkill(SkillServer* server, const std::string& skill_name)
           : server_(server), skill_name_(skill_name) {}
         ~GripperSkill() override = default;
 

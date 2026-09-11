@@ -9,6 +9,9 @@
 #include "robot_skills/skills/gripper_skill.hpp"
 #include "robot_skills/scene_manager.hpp"
 
+/// Entry point: builds the in-process MoveItCppPlannerManager, registers all
+/// 7 skills onto a SkillServer, starts the (non-fatal-on-failure) SceneManager,
+/// then spins a multi-threaded executor for the life of the process.
 int main(int argc, char** argv)
 {
     rclcpp::init(argc, argv);

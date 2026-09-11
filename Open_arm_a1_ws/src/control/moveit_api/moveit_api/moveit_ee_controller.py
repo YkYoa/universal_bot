@@ -112,6 +112,9 @@ class MoveItEEController(Node):
     }
 
     def __init__(self):
+        """Sets up MoveGroup/gripper/head action clients, FK/IK service
+        clients, and the joint_states/robot_description subscribers this
+        controller's methods rely on."""
         super().__init__('moveit_ee_controller')
         
         self._cb_group = ReentrantCallbackGroup()
@@ -201,18 +204,22 @@ class MoveItEEController(Node):
         return future.result()
         
     def _joint_state_cb(self, msg: JointState):
+        """Subscription callback: caches the latest /joint_states message."""
         with self._joint_state_lock:
             self._current_joint_state = msg
 
     def get_current_joint_state(self) -> JointState:
+        """Returns the last received JointState, or None before the first message."""
         with self._joint_state_lock:
             return self._current_joint_state
 
     def _urdf_cb(self, msg: String):
+        """Subscription callback: caches the latched /robot_description URDF string."""
         with self._urdf_lock:
             self._urdf_string = msg.data
 
     def get_urdf(self) -> str:
+        """Returns the cached URDF string, or None before it's been received."""
         with self._urdf_lock:
             return self._urdf_string
 
@@ -836,6 +843,8 @@ class MoveItEEController(Node):
     # ──────────────────────────────────────────────
     
     def get_status(self) -> dict:
+        """Snapshot of whether each arm is currently mid-move, plus every
+        joint's latest position if joint states are available."""
         js = self.get_current_joint_state()
         with self._state_lock:
             moving = dict(self._is_moving)

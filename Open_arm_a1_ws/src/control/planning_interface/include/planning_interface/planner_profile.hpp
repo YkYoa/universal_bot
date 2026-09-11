@@ -62,6 +62,8 @@ public:
   void reload();
 
 private:
+  /// Parses `yaml_path`'s "default_profile" and "profiles" map into
+  /// profiles_/default_profile_name_, replacing any previously loaded set.
   void load(const std::string & yaml_path);
 
   std::string yaml_path_;

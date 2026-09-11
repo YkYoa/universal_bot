@@ -79,6 +79,12 @@ def _ensure_can_up(interface_name, bitrate, dbitrate):
 
 
 def launch_setup(context, *args, **kwargs):
+    """OpaqueFunction body: reads hardware_config.yaml to decide real-vs-fake
+    per component (head, left arm, right arm - auto-detected via NIC/CAN
+    carrier unless overridden), brings up needed CAN interfaces, builds the
+    URDF/SRDF accordingly, and starts the full ros2_control + MoveIt +
+    head-board bring-up. See each DeclareLaunchArgument below for the
+    head/arms/left_arm/right_arm override semantics."""
     hw_config_pkg = get_package_share_directory("robot_hardware_interface")
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
 
@@ -120,9 +126,6 @@ def launch_setup(context, *args, **kwargs):
     can_bitrate = can_cfg.get("bitrate", 1000000)
     can_dbitrate = can_cfg.get("dbitrate", 5000000)
     arms_mode = LaunchConfiguration("arms").perform(context)
-    if arms_mode != "false":
-        _ensure_can_up(left_can_interface, can_bitrate, can_dbitrate)
-        _ensure_can_up(right_can_interface, can_bitrate, can_dbitrate)
     if arms_mode == "auto":
         arms_real = (
             hw_cfg["hardware_enable"]["arms"] == 1
@@ -132,15 +135,54 @@ def launch_setup(context, *args, **kwargs):
     else:
         arms_real = arms_mode == "true"
 
+    # left_arm/right_arm:=same (default) - follow arms_real above, i.e. today's
+    # existing all-or-nothing behavior is unchanged unless you explicitly pass
+    # left_arm:=/right_arm:= to override just one side (e.g. to bring up the
+    # left arm for real while the right arm isn't physically connected/ready
+    # yet - forcing arms:=true for that used to make ros2_control_node try to
+    # activate the right side too and crash the whole node, taking the left
+    # arm down with it).
+    def _resolve_side(mode, can_interface):
+        """Real/fake decision for one arm: 'same' follows arms_real, 'auto'
+        checks hardware_enable + this side's own CAN carrier, 'true'/'false'
+        force the answer."""
+        if mode == "same":
+            return arms_real
+        if mode == "auto":
+            return hw_cfg["hardware_enable"]["arms"] == 1 and _interface_has_carrier(can_interface)
+        return mode == "true"
+
+    def _side_could_be_real(mode):
+        """Whether it's worth calling _ensure_can_up() for this side at all.
+        'same' defers to arms_mode for whether CAN is worth bringing up at
+        all - preserves the old "skip entirely when arms:=false" behavior
+        for callers that don't know about left_arm/right_arm."""
+        if mode == "same":
+            return arms_mode != "false"
+        return mode != "false"
+
+    left_arm_mode = LaunchConfiguration("left_arm").perform(context)
+    right_arm_mode = LaunchConfiguration("right_arm").perform(context)
+    if _side_could_be_real(left_arm_mode):
+        _ensure_can_up(left_can_interface, can_bitrate, can_dbitrate)
+    if _side_could_be_real(right_arm_mode):
+        _ensure_can_up(right_can_interface, can_bitrate, can_dbitrate)
+    left_arm_real = _resolve_side(left_arm_mode, left_can_interface)
+    right_arm_real = _resolve_side(right_arm_mode, right_can_interface)
+
     control_mode = hw_cfg.get("control_mode", "mit")
-    print(f"[bringup] arms hardware: {'REAL' if arms_real else 'FAKE'} "
-          f"(mode={arms_mode}, left={left_can_interface}, right={right_can_interface}, "
+    print(f"[bringup] arms hardware: left={'REAL' if left_arm_real else 'FAKE'} "
+          f"(mode={left_arm_mode}, interface={left_can_interface}), "
+          f"right={'REAL' if right_arm_real else 'FAKE'} "
+          f"(mode={right_arm_mode}, interface={right_can_interface}), "
           f"control_mode={control_mode})")
-    if control_mode == "torque" and arms_real:
-        print("[bringup] WARNING: control_mode=torque - gravity_comp_controller will be "
-              "auto-loaded, activated, AND auto-enabled on both arms. Real torque will be "
-              "applied with NO manual confirmation step. Support both arms by hand NOW if "
-              "you have not already - the ramp starts as soon as controller_manager comes up.")
+    if control_mode == "torque" and (left_arm_real or right_arm_real):
+        sides = " and ".join(s for s, real in (("left", left_arm_real), ("right", right_arm_real)) if real)
+        print(f"[bringup] WARNING: control_mode=torque - gravity_comp_controller will be "
+              f"auto-loaded, activated, AND auto-enabled on the {sides} arm(s). Real torque "
+              f"will be applied with NO manual confirmation step. Support the {sides} arm(s) "
+              f"by hand NOW if you have not already - the ramp starts as soon as "
+              f"controller_manager comes up.")
 
     shutdown_disable_retries = str(hw_cfg["shutdown"]["disable_retries"])
     shutdown_retry_delay_ms = str(hw_cfg["shutdown"]["retry_delay_ms"])
@@ -150,6 +192,8 @@ def launch_setup(context, *args, **kwargs):
     hand_rotate_ratio = str(hw_cfg.get("hand_rotate_ratio", 1.0))
 
     use_fake_hardware = "false" if arms_real else "true"
+    left_use_fake_hardware = "false" if left_arm_real else "true"
+    right_use_fake_hardware = "false" if right_arm_real else "true"
     head_use_fake_hardware = "false" if head_real else "true"
 
     # ── Robot Description (URDF) ──
@@ -163,6 +207,10 @@ def launch_setup(context, *args, **kwargs):
         "ros2_control:=true",
         " ",
         "use_fake_hardware:=", use_fake_hardware,
+        " ",
+        "left_use_fake_hardware:=", left_use_fake_hardware,
+        " ",
+        "right_use_fake_hardware:=", right_use_fake_hardware,
         " ",
         "head_use_fake_hardware:=", head_use_fake_hardware,
         " ",
@@ -438,6 +486,10 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
+    """Declares this launch file's real/fake-hardware override arguments
+    (head, arms, left_arm, right_arm, ee_type, body_type, use_rviz - see
+    each arg's own description) and defers node construction to
+    launch_setup() via OpaqueFunction."""
     head_arg = DeclareLaunchArgument(
         "head",
         default_value="auto",
@@ -451,7 +503,22 @@ def generate_launch_description():
         default_value="auto",
         description="'auto' (default): read hardware_config.yaml and auto-detect whether both "
                      "CAN interfaces are up, use real hardware only if both say yes. "
-                     "'true'/'false': force real/fake, skipping detection.",
+                     "'true'/'false': force real/fake, skipping detection. Sets the fallback "
+                     "both left_arm and right_arm follow unless overridden individually.",
+    )
+    left_arm_arg = DeclareLaunchArgument(
+        "left_arm",
+        default_value="same",
+        description="Override the left arm's real/fake decision independently of the right: "
+                     "'same' (default) follows whatever arms:= resolved to. 'auto' auto-detects "
+                     "via left_can's carrier only. 'true'/'false' forces real/fake for the left "
+                     "arm alone - e.g. left_arm:=true right_arm:=false to bring up only the "
+                     "left arm for real while the right isn't connected/ready.",
+    )
+    right_arm_arg = DeclareLaunchArgument(
+        "right_arm",
+        default_value="same",
+        description="Same as left_arm, mirrored for the right side.",
     )
     use_rviz_arg = DeclareLaunchArgument(
         "use_rviz", default_value="true", description="Whether to launch RViz."
@@ -469,6 +536,8 @@ def generate_launch_description():
         [
             head_arg,
             arms_arg,
+            left_arm_arg,
+            right_arm_arg,
             use_rviz_arg,
             ee_type_arg,
             body_type_arg,

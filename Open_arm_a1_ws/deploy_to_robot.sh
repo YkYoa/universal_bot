@@ -2,7 +2,7 @@
 
 # Configuration
 REMOTE_USER="ubuntu"
-REMOTE_HOST="100.92.66.138"
+REMOTE_HOST="192.168.1.226"
 REMOTE_WS="~/arm_ws"
 LOCAL_WS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

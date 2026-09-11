@@ -22,6 +22,7 @@
 
 namespace sequence_executor {
 
+/// One `sequences:` block entry, parsed from sequence.yaml.
 struct SequenceDef
 {
   std::string arm;                          // left_arm | right_arm | both_arms
@@ -36,10 +37,10 @@ struct SequenceDef
                                               // that point - see check_bimanual_collision)
 };
 
-// Yaw+flex (4 values each) found in a section under one side prefix
-// ("lh"/"rh"), via a generalized `<prefix><anything>Yaw`/`<prefix><anything>Flex`
-// key match (e.g. "lhHomeYaw", "lhOpenFlex") - NOT tied to one literal
-// middle word, since sections used by body_sections aren't literally "home".
+/// Yaw+flex (4 values each) found in a section under one side prefix
+/// ("lh"/"rh"), via a generalized `<prefix><anything>Yaw`/`<prefix><anything>Flex`
+/// key match (e.g. "lhHomeYaw", "lhOpenFlex") - NOT tied to one literal
+/// middle word, since sections used by body_sections aren't literally "home".
 struct HandPose
 {
   bool has_yaw = false;
@@ -48,44 +49,50 @@ struct HandPose
   std::vector<double> flex;
 };
 
+/// Optional per-section velocity/acceleration override read from sequence.yaml.
 struct SectionSpeed
 {
   double velocity = -1.0;      // -1 = not set, caller omits the override
   double acceleration = -1.0;
 };
 
+/// Read-only accessor over one sequence.yaml file (see file header comment
+/// for the flat waypoint-section + `sequences:` block shape it parses).
 class SequenceYaml
 {
 public:
+  /// Stores `yaml_path`; parsing happens lazily per-call, not eagerly here.
   explicit SequenceYaml(const std::string& yaml_path);
 
-  // Throws std::runtime_error if `name` isn't in the `sequences:` block.
+  /// Throws std::runtime_error if `name` isn't in the `sequences:` block.
   SequenceDef sequence(const std::string& name) const;
 
-  // Every entry under `sequences:`, in file order.
+  /// Every entry under `sequences:`, in file order.
   std::vector<std::string> sequenceNames() const;
 
-  // One key's parsed values, looked up section-first because names repeat
-  // across sections (laHomeAngle exists in both homePoses and waveHome).
-  // Empty if the section or key is absent.
+  /// One key's parsed values, looked up section-first because names repeat
+  /// across sections (laHomeAngle exists in both homePoses and waveHome).
+  /// Empty if the section or key is absent.
   std::vector<double> value(const std::string& section, const std::string& key) const;
 
+  /// True if `section` exists in the YAML.
   bool hasSection(const std::string& section) const;
 
-  // Literal "laHomeAngle"/"raHomeAngle"-style lookup (side_prefix "la" or
-  // "ra") - used only for home_section's fixed arm pose, matching
-  // --home-section's exact-key-name convention. Empty if not present.
+  /// Literal "laHomeAngle"/"raHomeAngle"-style lookup (side_prefix "la" or
+  /// "ra") - used only for home_section's fixed arm pose, matching
+  /// --home-section's exact-key-name convention. Empty if not present.
   std::vector<double> armAngle(const std::string& section, const std::string& side_prefix) const;
 
-  // Generalized hand yaw/flex scan for one side ("lh" or "rh") within a
-  // section - used for both home_section's hand hold and body_sections'
-  // per-step hand pose.
+  /// Generalized hand yaw/flex scan for one side ("lh" or "rh") within a
+  /// section - used for both home_section's hand hold and body_sections'
+  /// per-step hand pose.
   HandPose handPose(const std::string& section, const std::string& side_prefix) const;
 
-  // Every *Angle-valued entry in a section, in file order, as parsed
-  // doubles - the waypoint list for a joint_sequence body step.
+  /// Every *Angle-valued entry in a section, in file order, as parsed
+  /// doubles - the waypoint list for a joint_sequence body step.
   std::vector<std::vector<double>> waypoints(const std::string& section) const;
 
+  /// This section's velocity/acceleration override, if any (both -1 if unset).
   SectionSpeed speedForSection(const std::string& section) const;
 
 private:

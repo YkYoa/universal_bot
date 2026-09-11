@@ -24,7 +24,7 @@ from isaaclab.envs.mdp.actions.task_space_actions import OperationalSpaceControl
 from isaaclab.utils.configclass import configclass
 
 from .grasp_assist import apply_grasp_arm_assist
-from .helpers import STAGE_GRASP, STAGE_REACH, finger_descended_for_close, finger_grasp_ready, finger_pad_asymmetric, finger_pad_severe_asymmetric, finger_ready_for_close, finger_symmetric_ready, uses_grasp_lift
+from .helpers import STAGE_GRASP, STAGE_PLACE, STAGE_REACH, finger_descended_for_close, finger_grasp_ready, finger_pad_asymmetric, finger_pad_severe_asymmetric, finger_ready_for_close, finger_symmetric_ready, place_release_ready, uses_grasp_lift, uses_place
 
 _JOINT_POS_WARNED = False
 
@@ -325,6 +325,18 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
 
             actions[force_close, 0] = -1.0
             actions[env._stage == STAGE_REACH, 0] = 1.0
+
+            if uses_place(getattr(env.cfg, "task_phase", 1)) and s is not None:
+                in_place = env._stage == STAGE_PLACE
+                release_ready = place_release_ready(env, s)
+                # Bootstrap tuỳ chọn (mirror grasp_hold_closed): ép giữ đóng
+                # cứng suốt carry/descend để verify state machine + assist +
+                # release trọn vẹn bằng scripted-assist trước khi có policy
+                # nào học giữ kẹp qua reward (tắt khi train thật, S10).
+                if getattr(env.cfg, "place_hold_closed", True):
+                    actions[in_place & ~release_ready, 0] = -1.0
+                actions[in_place & release_ready, 0] = 1.0
+
             self._want_close[:] = False
             if s is not None:
                 self._want_close[:] = force_close

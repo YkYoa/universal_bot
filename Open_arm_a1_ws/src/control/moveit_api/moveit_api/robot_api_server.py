@@ -31,6 +31,7 @@ import signal
 from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 
 def euler_to_quaternion(roll, pitch, yaw):
+    """Converts intrinsic roll/pitch/yaw (radians) to a {w,x,y,z} quaternion dict."""
     cr = math.cos(roll * 0.5)
     sr = math.sin(roll * 0.5)
     cp = math.cos(pitch * 0.5)
@@ -88,6 +89,7 @@ fsm: FsmBridge = None
 
 @app.after_request
 def add_cors_headers(response):
+    """Allows any origin to call this API (the UI team's browser/app)."""
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
@@ -118,6 +120,9 @@ def index():
 # ─────────────────────────────────────────────
 
 def _web_visualizer_dir():
+    """Resolves the web_visualizer/ directory to serve: the installed
+    package's share dir if available, else the source-tree copy (for
+    running straight out of the workspace, uninstalled)."""
     try:
         share_dir = get_package_share_directory('moveit_api')
         candidate = os.path.join(share_dir, 'web_visualizer')
@@ -132,6 +137,7 @@ def _web_visualizer_dir():
 @app.route('/dashboard/', methods=['GET'])
 @app.route('/dashboard/<path:filename>', methods=['GET'])
 def dashboard(filename='index.html'):
+    """GET /dashboard/[path]: serves the 3D web dashboard's static files."""
     return send_from_directory(_web_visualizer_dir(), filename)
 
 
@@ -867,6 +873,8 @@ FSM_UNAVAILABLE = (
 
 
 def _require_fsm():
+    """Common guard for every FSM-backed route: fails if the bridge never
+    started, or if sequence_executor_node has never published a state."""
     if fsm is None:
         return False, 'the ROS bridge did not start'
     if not fsm.is_connected():
@@ -1114,12 +1122,14 @@ def ws_subscribe(data=None):
 
 @socketio.on('unsubscribe_joint_states')
 def ws_unsubscribe(data=None):
+    """Stops the ~10Hz joint_states stream started by ws_subscribe()."""
     global _streaming
     _streaming = False
 
 
 @socketio.on('disconnect')
 def ws_disconnect():
+    """Stops streaming when the WebSocket client disconnects."""
     global _streaming
     _streaming = False
     app.logger.info('WebSocket client disconnected')
@@ -1244,6 +1254,9 @@ def _register_project_blueprint():
 # ─────────────────────────────────────────────
 
 def main():
+    """Entry point: brings up the ROS 2 node/executor in a background thread,
+    waits briefly for joint states, then runs the Flask+SocketIO server in
+    the foreground until interrupted."""
     # Initialize ROS 2
     # Initialize ROS 2 without signal handlers to avoid conflict with Flask
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)

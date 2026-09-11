@@ -54,23 +54,26 @@ std::string trim(const std::string& s)
 namespace
 {
 
+/// True if `line` is empty or all whitespace.
 bool isBlank(const std::string& line)
 {
   return line.find_first_not_of(" \t\r\n") == std::string::npos;
 }
 
+/// True if `line` starts with a space or tab (i.e. is an indented/nested
+/// line rather than a top-level key).
 bool startsWithWhitespace(const std::string& line)
 {
   return !line.empty() && (line[0] == ' ' || line[0] == '\t');
 }
 
-// Reserved top-level keys that aren't a poses/waypoints section (so they're
-// left out of the --loop section picker's suggestion list).
+/// Reserved top-level keys that aren't a poses/waypoints section (so they're
+/// left out of the --loop section picker's suggestion list).
 const std::set<std::string> kReservedTopLevelKeys = {"speed"};
 
-// Top-level ("unindented, bare 'name:'") section headers already present in
-// file_path, in file order, skipping kReservedTopLevelKeys. Empty (not an
-// error) if the file can't be read - callers just get no suggestions.
+/// Top-level ("unindented, bare 'name:'") section headers already present in
+/// file_path, in file order, skipping kReservedTopLevelKeys. Empty (not an
+/// error) if the file can't be read - callers just get no suggestions.
 std::vector<std::string> listSections(const std::string& file_path)
 {
   std::vector<std::string> sections;
@@ -92,10 +95,10 @@ std::vector<std::string> listSections(const std::string& file_path)
   return sections;
 }
 
-// Scans `section`'s body in file_path for keys already following the
-// "<arm_prefix><PascalCase(section)><N>Angle" auto-numbering scheme and
-// returns the next unused N (1 if the section doesn't exist yet, or none of
-// its keys match the scheme).
+/// Scans `section`'s body in file_path for keys already following the
+/// "<arm_prefix><PascalCase(section)><N>Angle" auto-numbering scheme and
+/// returns the next unused N (1 if the section doesn't exist yet, or none of
+/// its keys match the scheme).
 int nextOrdinal(const std::string& file_path, const std::string& arm_prefix, const std::string& section)
 {
   std::ifstream in(file_path);
@@ -243,11 +246,11 @@ sensor_msgs::msg::JointState::SharedPtr WaypointRecorder::captureJointState()
 namespace
 {
 
-// Extracts arm_prefix's 7 joint positions from an already-captured
-// JointState message and writes them as a waypoint. Shared by recordOne()
-// (captures then writes once) and recordBoth() (captures once, writes
-// twice from the same message so both arms' keys reflect the exact same
-// instant).
+/// Extracts arm_prefix's 7 joint positions from an already-captured
+/// JointState message and writes them as a waypoint. Shared by recordOne()
+/// (captures then writes once) and recordBoth() (captures once, writes
+/// twice from the same message so both arms' keys reflect the exact same
+/// instant).
 bool writeArmFromMessage(
   const sensor_msgs::msg::JointState::SharedPtr& msg, const std::string& arm_prefix, const std::string& section,
   const std::string& waypoint_name, const std::string& file_path, std::string& out_error)

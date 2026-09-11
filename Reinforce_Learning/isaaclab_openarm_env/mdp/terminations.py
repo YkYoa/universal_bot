@@ -15,16 +15,42 @@
 import torch
 from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.utils.math import sample_uniform
-from .helpers import check_init_buffers, reset_action_terms, STAGE_REACH, STAGE_GRASP
+from .helpers import (
+    check_init_buffers,
+    reset_action_terms,
+    STAGE_REACH,
+    STAGE_GRASP,
+    STAGE_PLACE,
+    place_in_bowl_success,
+    place_release_ready,
+)
 
 
 def success_termination(env: ManagerBasedRLEnv) -> torch.Tensor:
-    """Phase 1: TCP hold at bottle. Phase 2+: bottle lifted with gripper closed."""
+    """Phase 1: TCP hold at bottle. Phase 2: bottle lifted with gripper closed.
+
+    Phase 3+ (PLACE, S5): đã thả tay (place_release_ready qua state machine
+    PLACE) VÀ đã "nằm yên trong bát" đủ `place_success_hold_steps` bước liên
+    tiếp (`_steps_bottle_settled`, tăng trong rewards.py::_update_contact_and_
+    stages — chỉ tăng khi ĐÃ mở kẹp + tốc độ thấp + đúng vị trí/nghiêng theo
+    place_in_bowl_success, dựa trên hình học bát ĐÃ ĐO THẬT ở S9). Không neo
+    vào thời gian/stage — đúng kỷ luật đã áp dụng cho _steps_since_latch
+    (Phase 8) và _steps_since_place_start (S4).
+    """
     check_init_buffers(env)
     task_phase = getattr(env.cfg, "task_phase", 1)
     if task_phase <= 1:
         hold_steps = getattr(env.cfg, "success_hold_steps", 5)
         return env._steps_in_contact >= hold_steps
+    if task_phase >= 3:
+        if not hasattr(env, "_last_state") or env._last_state is None:
+            return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        release_ready = place_release_ready(env, env._last_state)
+        settled_steps = getattr(env, "_steps_bottle_settled", None)
+        if settled_steps is None:
+            return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        hold_req = int(getattr(env.cfg, "place_success_hold_steps", 10))
+        return release_ready & (settled_steps >= hold_req) & place_in_bowl_success(env, env._last_state)
     lift_hold = getattr(env.cfg, "grasp_lift_hold_steps", 5)
     return env._steps_bottle_lifted >= lift_hold
 
@@ -33,8 +59,10 @@ def tipped_bottle_termination(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Phase 2+: terminate early when bottle is knocked over beyond recovery.
 
     Saves the ~700 wasted steps observed when the arm tips the bottle to 90° and
-    the episode has no way to recover. Only fires in GRASP stage so that an upright
-    bottle that hasn't been grasped yet is not incorrectly terminated.
+    the episode has no way to recover. Fires in GRASP and PLACE stages so that an
+    upright bottle that hasn't been grasped yet is not incorrectly terminated —
+    tipping while being CARRIED to the bowl (phase 3+) is just as catastrophic as
+    tipping during GRASP, and reuses the same threshold.
     """
     check_init_buffers(env)
     task_phase = getattr(env.cfg, "task_phase", 1)
@@ -45,17 +73,43 @@ def tipped_bottle_termination(env: ManagerBasedRLEnv) -> torch.Tensor:
 
     max_tilt = getattr(env.cfg, "bottle_tipped_termination_deg", 60.0)
     tilt = env._last_state["bottle_tilt_deg"]
-    in_grasp = env._stage == STAGE_GRASP
+    in_grasp_or_place = (env._stage == STAGE_GRASP) | (env._stage == STAGE_PLACE)
 
     # Track consecutive tipped steps to avoid premature termination from transient tilts
     if not hasattr(env, "_steps_bottle_tipped"):
         env._steps_bottle_tipped = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
-    tipped_now = in_grasp & (tilt > max_tilt)
+    tipped_now = in_grasp_or_place & (tilt > max_tilt)
     env._steps_bottle_tipped[tipped_now] += 1
     env._steps_bottle_tipped[~tipped_now] = 0
 
     min_steps = getattr(env.cfg, "bottle_tipped_min_steps", 5)
     return env._steps_bottle_tipped >= min_steps
+
+
+def bottle_misplaced_termination(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Phase 3+ (S5): terminate when the bottle has been released, has come to
+    rest, but is NOT correctly placed in the bowl (thả sớm/xa, bị hất văng
+    khỏi bát, hay rơi ra bàn/sàn — cả 3 kịch bản đều có cùng đặc điểm quan sát
+    được: "đã buông + đã dừng + không ở trong bát", nên gộp chung một
+    termination duy nhất thay vì nhiều đường phạt chồng chéo có thể trở thành
+    lối thoát rẻ hơn nhau — xem plan Phase 10 / S5).
+
+    Mirror 1-1 cấu trúc tipped_bottle_termination: đếm số bước liên tiếp thoả
+    điều kiện (`_steps_bottle_misplaced`, tăng trong rewards.py::
+    _update_contact_and_stages) để không kết thúc oan vì dao động tức thời.
+    """
+    check_init_buffers(env)
+    task_phase = getattr(env.cfg, "task_phase", 1)
+    if task_phase < 3:
+        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    if not hasattr(env, "_last_state") or env._last_state is None:
+        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+
+    misplaced_steps = getattr(env, "_steps_bottle_misplaced", None)
+    if misplaced_steps is None:
+        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    min_steps = int(getattr(env.cfg, "place_dropped_min_steps", 10))
+    return misplaced_steps >= min_steps
 
 
 def reset_robot(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
@@ -88,6 +142,8 @@ def reset_robot(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
         env._lift_ready_steps[env_ids] = 0
     if hasattr(env, "_lift_slip_steps"):
         env._lift_slip_steps[env_ids] = 0
+    if hasattr(env, "_lift_zf_abort_steps"):
+        env._lift_zf_abort_steps[env_ids] = 0
     if hasattr(env, "_lift_slip_pause"):
         env._lift_slip_pause[env_ids] = False
     if hasattr(env, "_prev_lift_z_f"):
@@ -96,6 +152,18 @@ def reset_robot(env: ManagerBasedRLEnv, env_ids: torch.Tensor):
         env._prev_lift_bottle[env_ids] = 0.0
     if hasattr(env, "_steps_bottle_tipped"):
         env._steps_bottle_tipped[env_ids] = 0
+    if hasattr(env, "_place_phase"):
+        env._place_phase[env_ids] = 0  # PLACE_IDLE
+    if hasattr(env, "_place_carry_steps"):
+        env._place_carry_steps[env_ids] = 0
+    if hasattr(env, "_steps_since_place_start"):
+        env._steps_since_place_start[env_ids] = 0
+    if hasattr(env, "_steps_place_holding"):
+        env._steps_place_holding[env_ids] = 0
+    if hasattr(env, "_steps_bottle_settled"):
+        env._steps_bottle_settled[env_ids] = 0
+    if hasattr(env, "_steps_bottle_misplaced"):
+        env._steps_bottle_misplaced[env_ids] = 0
     env._dbg_prev_lift_steps = 0
     env._dbg_logged_grip = False
     env._dbg_logged_lift = False

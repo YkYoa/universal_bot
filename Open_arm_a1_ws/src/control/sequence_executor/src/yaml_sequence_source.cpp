@@ -9,11 +9,15 @@ namespace {
 // Matches kHandMoveDurationS from the sequence interpreter this replaced.
 constexpr double kHandMoveDurationS = 1.0;
 
+/// Maps "left_arm"/"right_arm" (else defaults to left) to the "la"/"ra"
+/// waypoint-key prefix convention.
 const char* prefixForArm(const std::string& arm)
 {
   return arm == "right_arm" ? "ra" : "la";
 }
 
+/// Splits a "section/key" waypoint ref into (section, key); an unqualified
+/// ref (no '/') returns ("", ref).
 std::pair<std::string, std::string> splitRef(const std::string& ref)
 {
   const auto slash = ref.find('/');
@@ -23,9 +27,10 @@ std::pair<std::string, std::string> splitRef(const std::string& ref)
   return {ref.substr(0, slash), ref.substr(slash + 1)};
 }
 
-// One hand_pose step carrying whichever of the four vectors the section holds,
-// so both hands move together - the same concurrent fan-out the old
-// runHandPoseSection() did.
+/// One hand_pose step carrying whichever of the four vectors the section holds,
+/// so both hands move together - the same concurrent fan-out the old
+/// runHandPoseSection() did. Returns false (leaving `step` untouched) if the
+/// section has no hand yaw/flex keys at all.
 bool buildHandStep(SequenceYaml& yaml, const std::string& section, Step& step)
 {
   const HandPose left = yaml.handPose(section, "lh");

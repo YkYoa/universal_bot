@@ -313,6 +313,16 @@ class RewardsCfg:
         func=mdp.terminal_tipped_penalty,
         weight=1.0,
     )
+    # S5: mirror success_bonus/tipped_penalty cho PLACE (phase>=3). Tự trả 0
+    # khi task_phase<3 nên không ảnh hưởng phase 1/2.
+    place_success_bonus_term = RewardTermCfg(
+        func=mdp.terminal_place_success_bonus,
+        weight=1.0,
+    )
+    place_drop_penalty_term = RewardTermCfg(
+        func=mdp.terminal_place_drop_penalty,
+        weight=1.0,
+    )
 
 
 from isaaclab.envs.mdp import time_out
@@ -325,6 +335,11 @@ class TerminationsCfg:
     )
     tipped_bottle = TerminationTermCfg(
         func=mdp.tipped_bottle_termination,
+    )
+    # S5: rơi/đặt sai chai ngoài bát khi task_phase>=3 — tự trả all-zeros khi
+    # task_phase<3 nên vô hại với phase 1/2.
+    bottle_misplaced = TerminationTermCfg(
+        func=mdp.bottle_misplaced_termination,
     )
     time_out = TerminationTermCfg(
         func=time_out,
@@ -422,6 +437,52 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     grasp_dist_threshold: float = 0.10
     grasp_grip_threshold: float = 0.4
     place_dist_threshold: float = 0.10
+
+    # Bowl geometry (qvic.usd) — S9, đo thật bằng UsdGeom.BBoxCache 2026-09-08:
+    #   world AABB min=(0.4140,0.2199,0.6512) max=(0.5737,0.3796,0.7033) size=(0.1597,0.1597,0.0520)
+    #   root (init_state.pos)=(0.58, 0.22, 0.67) — LỆCH TÂM tới ~8cm cả X/Y, gần
+    #   bằng nửa bề rộng bát (0.1597/2=0.07985) → root nằm ở một GÓC bbox, không
+    #   phải tâm/đáy. Trước đây bowl_pos (root) được dùng thẳng làm mục tiêu
+    #   carry/descend — luôn nhắm lệch ra rìa bát, rất có thể là nguyên nhân
+    #   carry không hội tụ XY quan sát được ở S1-S3.
+    bowl_center_local_xy_x: float = -0.0862   # bbox_center_x - root_x
+    bowl_center_local_xy_y: float = 0.0798    # bbox_center_y - root_y
+    bowl_floor_local_z: float = -0.0188       # bbox_min_z - root_z (đáy trong)
+    bowl_rim_local_z: float = 0.0333          # bbox_max_z - root_z (miệng bát)
+
+    # PLACE success/failure criteria (S5) — bát rộng bán kính ~8cm, sâu 5.2cm
+    # (đo thật S9). Đăng ký thành field thật (thay vì chỉ sống trong getattr
+    # default rải rác) để có MỘT giá trị canonical duy nhất — trước khi đăng
+    # ký, place_success_xy_radius_m từng có 2 default khác nhau (0.05 ở
+    # helpers.py, 0.10 ở rewards.py) không ai phát hiện vì chưa field nào
+    # từng override cả hai cùng lúc.
+    place_success_xy_radius_m: float = 0.05
+    place_success_max_height_above_floor_m: float = 0.03
+    place_success_max_speed: float = 0.15
+    place_success_hold_steps: int = 10
+    place_success_max_tilt_deg: float = 60.0
+    place_dropped_min_steps: int = 10
+    place_success_bonus: float = 90.0      # > grasp_success_bonus=60.0 (mốc khó hơn)
+    place_drop_penalty: float = 30.0       # mirror grasp_tipped_penalty
+
+    # PLACE state machine + carry/descend assist (S6) — đăng ký field thật cho
+    # các key đã sống bằng getattr rời rạc từ S2, GIỮ NGUYÊN đúng giá trị mặc
+    # định hiện có trong code (đăng ký không đổi hành vi, chỉ để 1 nguồn duy
+    # nhất thay vì rải rác trong grasp_assist.py/helpers.py/actions.py).
+    assist_place: bool = False               # mirror grasp_lift_assist_enabled; bật qua phase2_overrides khi --stage place
+    place_hold_closed: bool = True           # bootstrap: ép giữ đóng kẹp cứng suốt carry khi chưa train (verify state machine)
+    place_carry_height_m: float = 0.15
+    place_carry_onset_ramp_steps: int = 15
+    place_carry_speed_scale: float = 0.35    # chậm hơn hẳn max speed — chống tilt khi mang (xem grasp_assist.py)
+    place_carry_align_blend: float = 0.5
+    place_xy_arrival_radius_m: float = 0.03
+    place_arrival_settle_steps: int = 5
+    place_descend_world_m: float = 0.02
+    place_release_height_m: float = 0.02     # siết từ 0.05 (S9: bát chỉ sâu 5.2cm)
+    place_release_hold_steps: int = 5
+    place_abort_tilt_deg: float = 25.0
+    place_abort_dist_ee_m: float = 0.15
+    place_camp_decay_steps: float = 150      # placeholder — CHƯA đo thời gian carry thật (S9 mục 2, còn thiếu)
 
     # Phase 1 reach
     success_dist_threshold: float = 0.07
@@ -560,6 +621,17 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     # slip phải liên tiếp N bước mới hủy nhấc (1 bước đơn lẻ là nhiễu).
     grasp_lift_hold_hysteresis_m: float = 0.008
     grasp_lift_abort_slip_steps: int = 8
+    # Phase 26: bổ sung phát hiện trượt DẦN (khác slip đột ngột ở trên) — đo
+    # trực tiếp bằng DEBUG_STALL/DEBUG_LIFT trên demo thật (terminal_command.md):
+    # chai tách khỏi kẹp ngay đầu RISING nhưng z_error_finger chỉ tăng
+    # ~0.7-2.2mm MỖI BƯỚC (dưới hẳn ngưỡng slip đột ngột ~9.9mm/bước) nên không
+    # bao giờ bị bắt — cộng dồn tới 800mm+ trước khi episode hết giờ, lãng phí
+    # gần hết ngân sách episode cho MỘT lần thử đã chắc chắn thất bại. Ngưỡng
+    # tuyệt đối (không phải delta/bước) — đủ lớn để không huỷ oan dao động quán
+    # tính thật (chai rung nhẹ khi đang nhấc thành công vẫn ở z_error_finger
+    # thấp), đủ nhỏ để huỷ SỚM một lần trượt thật thay vì đợi hết episode.
+    grasp_lift_abort_z_finger: float = 0.05
+    grasp_lift_abort_z_finger_steps: int = 5
     grasp_lift_max_lat_f: float = 0.09
     grasp_lift_max_dist_f: float = 0.10
     grasp_open_until_dist: float = 0.15      # giữ gripper mở khi ngón xa thân chai

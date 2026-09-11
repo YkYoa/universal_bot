@@ -35,6 +35,7 @@ DEFAULT_SEQUENCE_YAML = os.path.join(
 
 
 def cmd_import(args):
+    """`import`: loads a sequence.yaml file into the store and prints a summary."""
     summary = yaml_sync.import_yaml(args.file, path=args.db, replace=not args.no_replace)
     print(f"waypoints: {summary['waypoints']} across {summary['sections']} sections")
     print(f"sequences: {', '.join(summary['sequences']) or '(none)'}")
@@ -43,12 +44,14 @@ def cmd_import(args):
 
 
 def cmd_export(args):
+    """`export`: writes the store's contents out to a sequence.yaml file."""
     summary = yaml_sync.export_yaml(args.file, path=args.db)
     print(f"wrote {summary['waypoints']} waypoints, "
           f"{len(summary['sequences'])} sequences to {args.file}")
 
 
 def cmd_list(args):
+    """`list`: prints every sequence with its step count, arm, repeat, and control mode."""
     rows = store.list_sequences(path=args.db)
     if not rows:
         print("(no sequences - run `import` first)")
@@ -62,22 +65,27 @@ def cmd_list(args):
 
 
 def cmd_sections(args):
+    """`sections`: prints every waypoint section with its per-kind counts."""
     for section, counts in store.list_sections(path=args.db).items():
         parts = ", ".join(f"{n} {kind}" for kind, n in counts.items() if n)
         print(f"{section:<24} {parts}")
 
 
 def cmd_show(args):
+    """`show <name>`: dumps one sequence's full definition as JSON."""
     seq = store.get_sequence(args.name, path=args.db)
     print(json.dumps(seq, indent=2))
 
 
 def cmd_delete(args):
+    """`delete <name>`: deletes one sequence."""
     store.delete_sequence(args.name, path=args.db)
     print(f"deleted '{args.name}'")
 
 
 def main(argv=None):
+    """CLI entry point: parses subcommand args and dispatches to the matching
+    cmd_* function, reporting store/file errors as exit code 1."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--db", default=None,

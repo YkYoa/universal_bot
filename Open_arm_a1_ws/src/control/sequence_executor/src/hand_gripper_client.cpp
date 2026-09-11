@@ -4,6 +4,7 @@ namespace sequence_executor {
 
 namespace {
 
+/// Maps "left_arm"/"right_arm" (else defaults to left) to "left"/"right".
 std::string sideOf(const std::string& arm)
 {
   return (arm == "right_arm") ? "right" : "left";

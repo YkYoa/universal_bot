@@ -18,12 +18,14 @@ constexpr double kGripperDurationS = 1.0;
 // purpose - it only has to be finer than a human notices in a hold.
 constexpr std::chrono::milliseconds kWaitTickPeriod{50};
 
+/// True if `type` is one of the planning-scene edit step types.
 bool isSceneStep(const std::string& type)
 {
   return type == "add_object" || type == "remove_object" || type == "attach_object" ||
          type == "detach_object" || type == "allow_collision" || type == "disallow_collision";
 }
 
+/// Maps a step's "left"/"right" side field to its SRDF planning group name.
 std::string sideToArm(const std::string& side)
 {
   return side == "right" ? "right_arm" : "left_arm";

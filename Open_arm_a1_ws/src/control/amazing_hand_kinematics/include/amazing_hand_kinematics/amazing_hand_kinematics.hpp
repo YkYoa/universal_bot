@@ -45,9 +45,16 @@ struct JointInfo
 class Kinematics
 {
 public:
+  /// Parses joints/links out of a URDF string into the lookup tables used by
+  /// fk()/childLinks()/ancestors().
   explicit Kinematics(const std::string& urdf_xml);
 
+  /// Transform contributed by joint `jname` at `value`: its fixed origin
+  /// composed with its motion (revolute/continuous rotate about `axis`,
+  /// prismatic translates along it).
   Eigen::Matrix4d jointLocalT(const std::string& jname, double value) const;
+  /// World-from-root transform of `link`, walking the parent chain (joints
+  /// missing from `values` default to 0).
   Eigen::Matrix4d fk(const std::string& link, const std::map<std::string, double>& values = {}) const;
   /// jtype empty = any type, matching python's child_links(link, jtype=None).
   std::vector<std::pair<std::string, std::string>> childLinks(
@@ -116,7 +123,14 @@ struct FingerInfo
   std::vector<Eigen::Vector3d> rod_warm_start;
 };
 
+/// Finds each finger's gimbal/servo/rod-ball/knuckle joints and links by
+/// structure (joint types + tree ancestry), scoped to one hand's links via
+/// `link_prefix` when a combined robot_description holds both hands. Port of
+/// hand_kinematics_node.py's discover_fingers().
 std::vector<FingerInfo> discoverFingers(const Kinematics& hand, const std::string& link_prefix = "");
+/// Computes rod lengths and knuckle offset from the assembled rest pose,
+/// pairing each rod ball with its servo by rest-pose distance. Port of
+/// hand_kinematics_node.py's calibrate().
 std::vector<FingerInfo> calibrate(const Kinematics& hand, std::vector<FingerInfo> fingers);
 
 /// Bounded (box-constrained) Levenberg-Marquardt with a numerically
@@ -130,6 +144,9 @@ struct LeastSquaresResult
   double cost{0.0};
 };
 
+/// Minimizes `residual_fn` starting from `x0` within [`lower`, `upper`] via
+/// Levenberg-Marquardt with a numerically estimated Jacobian; see the
+/// LeastSquaresResult doc above for why this mirrors scipy's least_squares.
 LeastSquaresResult boundedLeastSquares(
   const std::function<Eigen::VectorXd(const Eigen::VectorXd&)>& residual_fn,
   const Eigen::VectorXd& x0,
@@ -147,6 +164,10 @@ LeastSquaresResult boundedLeastSquares(
 class HandSolver
 {
 public:
+  /// Discovers and calibrates the hand's fingers from `urdf_xml`, builds the
+  /// alias<->real joint name maps, and prepares per-finger solve state ready
+  /// for solve(). See hand_kinematics_node.py's HandKinematicsNode.__init__
+  /// for the numbered-alias / thumb-reorder logic this mirrors.
   HandSolver(
     const std::string& urdf_xml, const std::string& link_prefix, const std::string& alias_prefix,
     const std::string& command_space);
@@ -173,13 +194,25 @@ public:
   const std::vector<std::string>& lastOutOfReachFingers() const { return last_out_of_reach_; }
 
 private:
+  /// Forward-solve residual: how far the 6 unknowns in `x` are from
+  /// satisfying the two rod-length constraints and the distal_dup/distal_real
+  /// match, given commanded servo angles `theta_a`/`theta_b`.
   Eigen::VectorXd residualServo(const FingerInfo& f, const Eigen::VectorXd& x, double theta_a, double theta_b) const;
+  /// Inverse-solve residual: same constraints as residualServo(), but with
+  /// `q1`/`q_prox` (knuckle command) fixed and the two servo angles unknown.
   Eigen::VectorXd residualKnuckle(const FingerInfo& f, const Eigen::VectorXd& x, double q1, double q_prox) const;
 
+  /// Forward solve for one finger (servo angles -> passive joints), with
+  /// warm-start/cache reuse when the commanded angles haven't changed.
   std::pair<LeastSquaresResult, std::map<std::string, double>> solveFingerServo(
     FingerInfo& f, const std::map<std::string, double>& raw);
+  /// Inverse solve for one finger (knuckle command -> servo angles + passives),
+  /// with the same warm-start/cache reuse as solveFingerServo().
   std::pair<LeastSquaresResult, std::map<std::string, double>> solveFingerKnuckle(
     FingerInfo& f, const std::map<std::string, double>& raw);
+  /// Aims each rod's ball-joint chain at the opposite ball so the lever/rod
+  /// meshes stay visually connected; skipped when `solved` is unchanged since
+  /// the last call (see solve_generation/rod_solved_generation on FingerInfo).
   void solveRodChains(FingerInfo& f, const std::map<std::string, double>& raw, std::map<std::string, double>& solved);
 
   std::unique_ptr<Kinematics> hand_;

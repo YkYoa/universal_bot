@@ -20,7 +20,9 @@
 
 namespace sequence_executor {
 
-// Throws std::runtime_error naming the sequence and step index on bad input.
+/// Builds a Step from a store row's (type, params_json) pair (see file header
+/// comment). Throws std::runtime_error naming the sequence and step index on
+/// bad input (wrong vector lengths, missing ids, etc).
 Step parseStep(const std::string& sequence_name, int index, const std::string& name,
                const std::string& type, const std::string& params_json,
                const std::string& required_control_mode, bool enabled);

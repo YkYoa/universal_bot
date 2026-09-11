@@ -11,6 +11,10 @@
 
 namespace robot_skills
 {
+    /// Everything one ExecuteSkill goal needs, decoded from the action goal
+    /// into whichever target fields the requested skill actually reads
+    /// (target_pose / named_pose / waypoints / joint_targets / joint_sequence
+    /// are mutually exclusive in practice, per skill).
     struct SkillRequest
     {
         std::string arm;
@@ -28,6 +32,7 @@ namespace robot_skills
         std::vector<double> joint_sequence;  // flat, stride-7 chunks
     };
 
+    /// Outcome of one execute() call, reported back as the ExecuteSkill result.
     struct SkillResult
     {
         bool success = false;
@@ -36,18 +41,27 @@ namespace robot_skills
         double execution_time_sec = 0.0;
     };
 
+    /// Interface every concrete skill (CartesianMoveSkill, GripperSkill, ...)
+    /// implements; SkillServer dispatches ExecuteSkill goals to whichever
+    /// skill matches the request by name().
     class RobotSkill
     {
     public:
         virtual ~RobotSkill() = default;
+        /// One-time setup against the shared node/planner; returns false on
+        /// unrecoverable init failure.
         virtual bool initialize(
             const std::shared_ptr<rclcpp::Node>& node,
             const std::shared_ptr<motion_planner::MoveItCppPlannerManager>& planner) = 0;
-        
+
+        /// Runs the skill for `req`, reporting feedback/cancellation through
+        /// `goal_handle`, and returns the final SkillResult.
         virtual SkillResult execute(
             const SkillRequest& req,
             const std::shared_ptr<rclcpp_action::ServerGoalHandle<openarm_messages::action::ExecuteSkill>>& goal_handle) = 0;
-        
+
+        /// The skill name SkillServer dispatches on (matches the ExecuteSkill
+        /// goal's skill_name field).
         virtual std::string name() const = 0;
     };
 }

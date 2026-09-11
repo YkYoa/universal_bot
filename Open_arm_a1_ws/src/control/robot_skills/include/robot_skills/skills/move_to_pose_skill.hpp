@@ -6,9 +6,13 @@
 
 namespace robot_skills
 {
+    /// "move_to_pose": plans a Cartesian end-effector target (req.target_pose,
+    /// optionally position-only) for req.arm and dispatches it via
+    /// SkillServer::execute_trajectory().
     class MoveToPoseSkill : public RobotSkill
     {
     public:
+        /// `server` is used to dispatch the planned trajectory for execution.
         MoveToPoseSkill(SkillServer* server) : server_(server) {}
         ~MoveToPoseSkill() override = default;
 

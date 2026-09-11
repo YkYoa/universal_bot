@@ -16,6 +16,7 @@
 namespace
 {
 
+/// Prints the CLI's expected argument shape to stderr.
 void printUsage(const char* prog)
 {
   std::cerr << "Usage: " << prog
@@ -34,6 +35,8 @@ void printUsage(const char* prog)
 
 }  // namespace
 
+/// CLI entry point: parses args, then dispatches to a single recordOne() or
+/// to recordLoop() (--loop) - see printUsage() for the full argument shape.
 int main(int argc, char** argv)
 {
   std::string arm_prefix, section, name, file_path;

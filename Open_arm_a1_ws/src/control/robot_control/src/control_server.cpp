@@ -63,6 +63,7 @@ void ControlServer::handle_drive_command(
 
 }  // namespace robot_control
 
+/// Entry point: spin a single ControlServer until shutdown.
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);

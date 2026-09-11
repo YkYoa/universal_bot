@@ -53,13 +53,22 @@ struct JointCalibration {
     double max_velocity_rad_s = 3.0;
     double max_accel_rad_s2 = 8.0;
 
+    /** Converts a calibrated joint angle (radians) to a PWM pulse width (us),
+     *  applying `invert` and clamping to [pwm_min_us, pwm_max_us]. */
     uint16_t rad_to_pwm(double rad) const;
+    /** Converts a raw ADC reading to a joint angle (radians): interpolates
+     *  through `points` when calibrated with the multi-point tool, otherwise
+     *  falls back to the linear adc_to_deg_slope/intercept fit. */
     double adc_to_rad(int adc) const;
 };
 
+/** Exponential moving average filter: value_ += alpha_ * (sample - value_),
+ *  seeded with the first sample it sees. */
 class EmaFilter {
 public:
+    /** `alpha` in (0, 1]; higher = less smoothing, more responsive. */
     explicit EmaFilter(double alpha) : alpha_(alpha) {}
+    /** Folds in one new `sample`, returning the updated filtered value. */
     double update(double sample);
 
 private:
@@ -67,20 +76,24 @@ private:
     std::optional<double> value_;
 };
 
-// Persistent TCP client to the STM32 board. Reconnects lazily on the next
-// command() call after any failure - never lets a dead connection wedge
-// the 100Hz loop for more than one round trip.
+/** Persistent TCP client to the STM32 board. Reconnects lazily on the next
+ *  command() call after any failure - never lets a dead connection wedge
+ *  the 100Hz loop for more than one round trip. */
 class Stm32Link {
 public:
+    /** Stores the target `host`/`port`; the socket is opened lazily on first command(). */
     Stm32Link(std::string host, uint16_t port);
+    /** Closes the socket if still open. */
     ~Stm32Link();
 
-    // Sends one line (CRLF appended), returns the reply line or nullopt on
-    // any I/O failure. Thread-safe.
+    /** Sends one line (CRLF appended), returns the reply line or nullopt on
+     *  any I/O failure. Thread-safe. */
     std::optional<std::string> command(const std::string& line);
 
 private:
+    /** Opens the socket if not already connected; returns false on failure. */
     bool ensureConnected();
+    /** Closes and invalidates the socket, if open. */
     void closeSocket();
 
     std::string host_;
@@ -89,25 +102,39 @@ private:
     std::mutex mutex_;
 };
 
+/** Server side of HEAD_DRIVER_SPEC.md's UDS/NDJSON contract, consumed by
+ *  robot_hardware_interface's HeadHW plugin. Owns the persistent Stm32Link and
+ *  runs the 100Hz control loop that converts commands to PWM and STM32 ADC
+ *  replies back to filtered joint angles. */
 class HeadMotorDriver {
 public:
+    /** Loads calibration from `calibration_path`, connects Stm32Link to
+     *  `stm32_host:stm32_port`, and prepares (without yet binding) the UDS
+     *  server at `uds_path`. */
     HeadMotorDriver(std::string calibration_path, std::string stm32_host,
                      uint16_t stm32_port, std::string uds_path);
 
-    // Binds the UDS socket, accepts one hardware_interface client at a
-    // time. Blocks until shutdown() is called from another thread.
+    /** Binds the UDS socket, accepts one hardware_interface client at a
+     *  time. Blocks until shutdown() is called from another thread. */
     void udsServerLoop();
 
-    // 100Hz round trip with the STM32: writes both servos' commanded PWM,
-    // reads back both ADC channels, filters/stall-checks, streams state.
+    /** 100Hz round trip with the STM32: writes both servos' commanded PWM,
+     *  reads back both ADC channels, filters/stall-checks, streams state. */
     void controlLoop();
 
+    /** Signals udsServerLoop()/controlLoop() to exit and unblocks any pending accept(). */
     void shutdown();
 
 private:
+    /** Reads NDJSON command lines from `conn_fd` (the current UDS client)
+     *  until it disconnects or shutdown() is called, updating pan_cmd_/tilt_cmd_. */
     void readCmdsFrom(int conn_fd);
+    /** Writes one NDJSON state line (pan/tilt angle, health, sequence number,
+     *  optional error) to the current UDS client, if any. */
     void sendState(double pan_rad, double tilt_rad, bool is_healthy,
                    const std::string& error_msg);
+    /** Parses the STM32's ADC reply string into an integer count, or nullopt
+     *  if `reply` is absent or not parseable. */
     static std::optional<int> parseAdc(const std::optional<std::string>& reply);
 
     JointCalibration pan_cal_;

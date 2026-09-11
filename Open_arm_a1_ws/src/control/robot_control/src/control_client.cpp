@@ -76,6 +76,7 @@ bool ControlClient::homeDrives(int timeout_sec)
 namespace
 {
 
+/// Prints the CLI's expected argument shape to stderr.
 void print_usage(const char* prog)
 {
   std::cerr << "Usage: " << prog
@@ -85,6 +86,9 @@ void print_usage(const char* prog)
 
 }  // namespace
 
+/// CLI entry point: sends one DriveCommand (servo_on/servo_off/halt/
+/// reset_halt/quick_stop/reset_quick_stop/home) to `[server_name]`
+/// (default "control_server") and prints the result.
 int main(int argc, char** argv)
 {
   if (argc < 2) {

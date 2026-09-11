@@ -19,7 +19,7 @@
 
 namespace qvic_2026 {
 
-// Adds action_01 .. action_10 to `registry`.
+/// Adds action_01 .. action_10 to `registry`.
 void registerQvicActions(sequence_executor::BuiltinActionRegistry& registry);
 
 }  // namespace qvic_2026

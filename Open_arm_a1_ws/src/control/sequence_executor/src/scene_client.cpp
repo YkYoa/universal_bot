@@ -8,8 +8,8 @@ namespace {
 
 constexpr const char* kDefaultFrame = "openarm_body_link0";
 
-// Step type -> the SceneCommand action it maps to. Anything not listed here is
-// not a scene step and never reaches this client.
+/// Step type -> the SceneCommand action it maps to. Anything not listed here is
+/// not a scene step and never reaches this client.
 std::string actionForStep(const std::string& type)
 {
   if (type == "add_object") return "add";

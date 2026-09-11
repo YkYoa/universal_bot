@@ -33,6 +33,11 @@ SRC_SEQUENCE_YAML = os.path.join(
 
 
 def launch_setup(context, *args, **kwargs):
+    """OpaqueFunction body: optionally re-seeds the sequence store from
+    SRC_SEQUENCE_YAML, resolves arm:=/sequence:= to a concrete sequence name
+    and ee_type, then includes sequence_executor.launch.py configured to run
+    either qvic_fsm_node (use_db:=true, default) or the plain
+    sequence_executor_node."""
     sequence_executor_pkg = get_package_share_directory("sequence_executor")
 
     arm = LaunchConfiguration("arm").perform(context)
@@ -107,6 +112,10 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
+    """Declares this launch file's arguments (arm/sequence selection, use_db/
+    auto_seed_db/autostart, ee_type, and the hardware toggles it forwards to
+    sequence_executor.launch.py - see each arg's own description) and defers
+    node construction to launch_setup() via OpaqueFunction."""
     return LaunchDescription([
         DeclareLaunchArgument(
             "arm", default_value="left",

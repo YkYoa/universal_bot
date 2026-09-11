@@ -150,18 +150,20 @@ PHASE2_LIFT = {
     "grasp_lift_threshold": 0.03,
 }
 
-_VALID_STAGES = frozenset({"reach", "grasp", "lift", "all"})
+_VALID_STAGES = frozenset({"reach", "grasp", "lift", "place", "all"})
 
 
 def parse_stages(stage: str | None) -> frozenset[str]:
     """Map CLI --stage to enabled override blocks."""
-    if not stage or stage == "all" or stage == "lift":
+    if not stage or stage == "all" or stage == "place":
+        return frozenset({"reach", "grasp", "lift", "place"})
+    if stage == "lift":
         return frozenset({"reach", "grasp", "lift"})
     if stage == "grasp":
         return frozenset({"reach", "grasp"})
     if stage == "reach":
         return frozenset({"reach"})
-    raise ValueError(f"Unknown phase2 stage {stage!r}; use reach | grasp | lift | all")
+    raise ValueError(f"Unknown phase2 stage {stage!r}; use reach | grasp | lift | place | all")
 
 
 def _apply_overrides(env_cfg, overrides: dict) -> None:
@@ -191,10 +193,15 @@ def apply_phase2_overrides(
 
     has_grasp = "grasp" in active
     has_lift = "lift" in active
+    has_place = "place" in active
 
     overrides["grasp_descent_assist_enabled"] = has_grasp or assist_curriculum
     overrides["grasp_descent_assist_grasp"] = has_grasp
     overrides["grasp_lift_assist_enabled"] = has_lift
+    # S1-S3 (state machine PLACE) — chỉ bật cờ assist, chưa có override dict
+    # riêng (PHASE2_PLACE) vì các threshold PLACE vẫn đang dùng default qua
+    # getattr; sẽ thêm khi làm S6/S9 (đo hình học bát + chốt số thật).
+    overrides["assist_place"] = has_place
 
     if assist_curriculum:
         overrides["grasp_assist_schedule_enabled"] = True

@@ -8,6 +8,8 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
+    """Build base.urdf.xacro (no args) and start joint_state_publisher +
+    robot_state_publisher + RViz to visualize the mobile base alone."""
     robot_description_content = Command(
         [
             PathJoinSubstitution([FindExecutable(name="xacro")]),

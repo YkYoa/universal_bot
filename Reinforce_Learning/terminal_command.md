@@ -854,3 +854,581 @@ Server training chạy hết ~5.0M bước (log cuối cùng: `total_timesteps=5
 ### Hướng tiếp theo (chưa làm)
 1. Dùng `policy_1M_success57.pt` làm checkpoint chính, chạy demo/eval kỹ hơn (100 episode, nhiều seed) để xác nhận 57% không phải may mắn thống kê.
 2. Vấn đề "policy không tự chủ được khi assist=0" vẫn CHƯA giải quyết — đây là công việc Giai đoạn 2 riêng (residual action, xem kế hoạch cũ S2.3), không nằm trong phạm vi 2 fix đã làm hôm nay (vật lý gripper + reward decay). Có thể thử: giữ `assist` không về hẳn 0 (đặt `grasp_assist_blend_end` > 0, ví dụ 0.2-0.3) thay vì ép policy tự chủ 100% ngay, hoặc tăng `anneal_frac` để quá trình chuyển giao chậm hơn/êm hơn.
+
+---
+
+## Phase 10 — PLACE stage: S1-S3 (state machine + chuyển stage), 2 bug tìm ra qua demo thật
+
+Kế hoạch đầy đủ ở `/home/hans/.claude/plans/expressive-honking-possum.md` (phần "Phase 10"). Theo yêu cầu user, chỉ làm S1-S3 (nền tảng + state machine PLACE + chuyển stage GRASP→PLACE) rồi dừng lại để demo/báo cáo trước khi làm S4+ (reward/termination/config đầy đủ/train).
+
+### Đã cài (S1-S3)
+- `helpers.py`: `uses_grasp_lift` đổi `==2`→`>=2`, thêm `uses_place` (`>=3`); hằng số `PLACE_IDLE/CARRY/DESCEND/HOLDING` cạnh `STAGE_*`; `compute_state()` thêm `dist_bottle_bowl_xy`, `height_above_bowl_floor` (placeholder thô = `bottle_pos_z - bowl_pos_z`, CHƯA đo hình học bát thật — xem S9); `place_release_ready()` mới.
+- `grasp_assist.py`: state machine PLACE (`_place_can_start`, `_place_must_abort`, `_update_place_state`) mirror kỷ luật LIFT; `_osc_carry_to_bowl`/`_osc_descend_to_bowl`; block assist mới trong `apply_grasp_arm_assist` (override/residual blend giống LIFT).
+- `actions.py`: điểm chèn thả kẹp (`actions[STAGE_PLACE & place_release_ready, 0]=1.0`) + bootstrap `place_hold_closed` (ép đóng cứng suốt carry, để test scripted-only trước khi có policy).
+- `rewards.py`: chuyển stage GRASP→PLACE trong `_update_contact_and_stages`, tái dùng đúng tín hiệu lift-hold-đạt (không terminate nữa).
+- `terminations.py`: mở rộng `tipped_bottle_termination` sang cả PLACE.
+- `phase2_overrides.py`/`isaaclab_demo.py`: thêm stage `"place"` tối thiểu (chỉ bật `assist_place`) để test được qua demo — chưa phải S8 đầy đủ.
+
+### Bug #1 tìm ra qua demo thật: "cạm bẫy #1" trong kế hoạch xảy ra ĐÚNG như dự đoán
+Demo đầu tiên: `[Success] PLACE stage started` in ra, rồi NGAY LẬP TỨC `🎉 EPISODE SUCCESS` cùng bước — `success_termination` (chưa sửa, thuộc S5) vẫn đọc `_steps_bottle_lifted >= lift_hold` không phân biệt stage. Vì `termination_manager` chạy TRƯỚC `reward_manager` trong cùng `env.step()`, nó đọc giá trị "lift_hold đã đạt" từ CUỐI bước chuyển stage (trước khi reward-side kịp reset counter ở bước kế), nên luôn fire đúng 1 bước sau transition — bất kể tôi reset counter ngay trong cùng lệnh chuyển stage.
+
+**Fix tối thiểu** (kéo một phần S5 lên sớm, cần thiết để test được S1-S3 có ý nghĩa): `success_termination` trả `False` cứng cho `task_phase>=3` (chưa cài tiêu chí thành công thật, để dành cho S5 đầy đủ).
+
+### Bug #2 tìm ra qua demo thật: carry motion làm chai lật quá ngưỡng
+Sau khi sửa bug #1, PLACE chạy được nhưng chai TILT leo dần (5°→16°+) trong ~30-50 bước rồi bị `tipped_bottle_termination` kết liễu. Tưởng nhầm ngưỡng là 60° (default trong `config.py`), thực ra `phase2_overrides.py` (`PHASE2_GRASP`) đã siết còn **15°** cho GRASP — và tôi vừa mở rộng ngưỡng NÀY (không phải 60°) sang PLACE.
+
+Nguyên nhân thật: `_osc_carry_to_bowl` tính lệnh theo `err/pos_scale` (kiểu P-controller) thay vì magnitude hằng số nhỏ như `_osc_world_up_lift` — với lỗi XY 176mm+ và carry_height 150mm, lệnh BÃO HOÀ ở tốc độ tối đa liên tục hàng chục bước trên CẢ 3 TRỤC cùng lúc (không giảm dần), làm chai đung đưa như con lắc.
+
+**Fix**: thêm `place_carry_speed_scale=0.35` (chậm hẳn lại) + `place_carry_align_blend=0.5` (chủ động giữ hướng thẳng đứng bằng `_align_vertical_rot_action` đã có sẵn cho descend). Kết quả đo được: tilt ổn định quanh 10° (không leo tiếp), episode chạy hết 1200 bước không còn bị coi là lật.
+
+### Vấn đề còn mở (chưa giải quyết, để lại cho lần sau)
+Chai KHÔNG hội tụ XY về bát trong 426 bước available (từ lúc vào PLACE tới hết episode) — chưa từng thấy `CARRY→DESCEND`. Nghi vấn: `height_above_bowl_floor` placeholder thô (`bottle_pos_z - bowl_pos_z`, đo được `-14mm` ngay cả khi chai đã nhấc cao — gợi ý `bowl_pos` (root frame của RigidObject bát) KHÔNG nằm ở đáy bát mà ở đâu đó cao hơn nhiều, ví dụ miệng/tâm bát) khiến Z-target (`bowl_pos_z + carry_height`) bị đặt sai/quá cao, chai vẫn đang leo lên lúc episode kết thúc (`lift:0.132m` và còn tăng) thay vì ổn định — có thể chiếm phần lớn "ngân sách tốc độ" thay vì hội tụ XY. **Đây chính là lý do S9 (đo hình học bát thật bằng UsdGeom.BBoxCache) cần làm TRƯỚC khi tinh chỉnh thêm bất kỳ threshold carry/descend nào** — mọi con số hiện tại đều là placeholder chưa đo, đúng như đã cảnh báo trong kế hoạch.
+
+### File đã sửa (S1-S3, đang ở working tree, CHƯA commit)
+`isaaclab_openarm_env/mdp/helpers.py`, `mdp/grasp_assist.py`, `mdp/actions.py`, `mdp/rewards.py`, `mdp/terminations.py`, `phase2_overrides.py`, `isaaclab_demo.py`.
+
+### Hướng tiếp theo khi user quay lại
+1. Đo hình học bát thật (S9, bbox thật) trước khi tune thêm carry/descend threshold.
+2. Sau khi có số đo thật, xem lại `_osc_carry_to_bowl`'s Z-target formula — có thể cần tách riêng "leo cao" và "hội tụ XY" thành 2 pha rõ ràng hơn thay vì làm đồng thời (ví dụ: leo cao TRƯỚC, giữ nguyên, rồi mới di chuyển ngang) để tránh cạnh tranh ngân sách tốc độ.
+3. Tiếp tục S4+ (reward/termination đầy đủ, config S6, observation S7, plumbing S8) theo đúng kế hoạch đã duyệt, CHỈ SAU KHI carry/descend đã hội tụ ổn định qua scripted-assist thật (không train trên state machine còn lỗi).
+
+---
+
+## Phase 10 tiếp — S4 (reward PLACE) + phát hiện & sửa lỗi kiến trúc lớn: dùng chung assist scale
+
+User yêu cầu vô train luôn (bỏ qua đo hình học bát S9 để đi nhanh). Đã cảnh báo train sẽ vô nghĩa nếu chưa có S4 (reward PLACE) — user đồng ý làm S4 trước.
+
+### S4 — Đã cài
+- `rewards.py::compute_curriculum_reward`: dispatch 3 nhánh (`in_place → place_reward`, `in_grasp → grasp_reward`, else `reach_reward`) — sửa đúng cạm bẫy #2 đã ghi trong plan.
+- `_compute_place_reward` mới: `r_carry_progress` (mirror r_progress, tái dùng `_prev_dist_bottle_bowl` đã có sẵn nhưng chết từ trước), `r_xy_converge`, `r_descend_over_bowl` (chỉ khi `_place_phase>=DESCEND`), `r_hold_grip_during_carry` (suy giảm theo `_steps_since_place_start` — bộ đếm mới, neo vào `_place_phase != IDLE`, mirror đúng cách `_steps_since_latch` đã sửa cho GRASP, KHÔNG lặp lại bug neo-vào-thời-gian-vào-stage), `r_release_quality` (one-time khi vừa mở kẹp), `r_settle` (nhỏ, khi đã gần bát + tốc độ giảm). KHÔNG thêm phạt tích luỹ (bài học từ GRASP v4). Terminal bonus/penalty để dành S5.
+- Regression gate ngay sau khi viết xong: eval `policy_1M_success57.pt` ở `--task_phase 2` → **y hệt số cũ** (success=0.03, grasp=0.83, latch=0.47, lift_start=0.43) — an toàn.
+
+### Verify training đầu tiên (assist_place=1.0 cố định, không anneal) — CHỈ để test reward, không test policy
+`ep_rew_mean`: **-3820 → +56.6** trong 300K bước, hội tụ mượt, `explained_variance` 0.95-0.998. Xác nhận: hàm reward PLACE hoạt động hợp lý, không vỡ. **Lưu ý bắt buộc**: vì `assist_place=1.0` cố định (không `--assist-schedule`), TOÀN BỘ hành động tay trong PLACE bị override cứng bởi kịch bản — policy KHÔNG hề điều khiển được gì. Đường cong reward tăng chỉ xác nhận reward tốt, không phải bằng chứng policy học được.
+
+### Fine-tune thật lần 1 (`--assist-schedule`, server 4090) — CUDA OOM
+Server GPU chỉ còn ~1.9GB rảnh (job khác chiếm 22.6/24.5GB). Thử 32 env → `PxgCudaDeviceMemoryAllocator failed to allocate memory` → crash. Chuyển sang **local** ngay (GPU rảnh hoàn toàn).
+
+### Fine-tune thật lần 2 (local, `--assist-schedule`) — PHÁT HIỆN LỖI KIẾN TRÚC LỚN
+`grasp_rate` sập từ ~0.99 xuống **0.40** ngay sau khi `[Assist] scale=0.000 @ 1,000,000 steps` — kèm `fail_modes.reach=18/30` (60%!) khi eval lại checkpoint 1M. Đối chứng: `policy_1M_success57.pt` GỐC (chưa fine-tune) chạy thẳng ở `task_phase=3 --stage place` vẫn cho `grasp=0.83` bình thường → xác nhận **regression do CHÍNH quá trình fine-tune này gây ra**, không phải do code S1-S4 mới.
+
+**Nguyên nhân gốc**: `apply_grasp_arm_assist` (grasp_assist.py) dùng **DUY NHẤT 1 biến `scale = _assist_scale(env)`** cho TẤT CẢ — REACH-descent, GRASP-descent, LIFT, và giờ cả PLACE — VÀ có `if scale <= 1e-6: return actions` sớm ngay đầu hàm. Khi lịch anneal đưa `scale` về 0 để "dạy" LIFT/PLACE tự chủ, REACH/GRASP-descent (vốn không liên quan gì, đã hoạt động tốt từ Phase 9) cũng bị TẮT LUÔN theo — đúng rủi ro đã cảnh báo từ Giai đoạn 2 cũ (S2.3 "tách 2 scale") nhưng chưa từng cài. Trước đây không phát hiện ra vì Phase 9 (GRASP/LIFT) không có gì "khác" để so sánh — regression này chỉ lộ rõ khi thêm PLACE vào và REACH/GRASP bắt đầu bị ảnh hưởng lây.
+
+### Fix: tách 2 scale (đã làm, xác nhận đúng)
+- `grasp_assist.py`: thêm `_assist_scale_descent(env)` — đọc `_assist_blend_scale_descent` NẾU CÓ (do `AssistScheduleCallback` set khi train thật, cố định 1.0, không anneal), NẾU KHÔNG thì fallback về CHÍNH `_assist_scale(env)` (đảm bảo mọi lệnh `--assist-scale X` cũ ở eval/demo không đổi hành vi, vì các script đó chỉ set `_assist_blend_scale`).
+- Đổi gate đầu hàm: `if scale <= 1e-6 and descent_scale <= 1e-6: return actions` (thay vì chỉ dựa vào `scale`).
+- Đổi TOÀN BỘ chỗ dùng `scale` cho REACH-descent/GRASP-descent (khối `assist_reach`/`assist_grasp`, các closure `_apply_force`/`_apply_blend_world_z`/`_apply_blend`, khối `need_down` z-loop) sang `descent_scale`. Khối LIFT (`assist_lift`) và PLACE (`assist_place`) GIỮ NGUYÊN dùng `scale` (annealed) — đúng ý định.
+- `isaaclab_train.py::AssistScheduleCallback._on_step()`: thêm `unwrapped._assist_blend_scale_descent = 1.0` (cố định, set song song với `_assist_blend_scale` đã anneal).
+- Regression gate ngay sau khi sửa: eval phase 2 → **y hệt số cũ** (0.03/0.83/0.47/0.43) — an toàn tuyệt đối cho eval/demo.
+
+### Kết quả training lần 3 (local, có fix) — THÀNH CÔNG, ổn định nhất từ trước đến giờ
+Chạy `--task_phase 3 --stage place --assist-schedule`, checkpoint `policy_1M_success57.pt`, 2.5M bước. So với lần 2 (không có fix):
+```
+                trước fix (ts=1.7M)    sau fix (ts=2.25M, xa hơn nhiều)
+grasp_rate      SẬP xuống 0.40         GIỮ VỮNG 0.99-1.0 suốt
+latch_rate      SẬP về 0.00            ỔN ĐỊNH 0.40-0.58 xuyên suốt
+lift_start_rate SẬP về 0.00            ỔN ĐỊNH 0.39-0.53 xuyên suốt
+success_rate    0.00                   dao động nhẹ 0.00-0.03 (ổn định, không sập)
+```
+`grasp/latch/lift_start` **hoàn toàn KHÔNG sập** dù đã rất lâu sau mốc `[Assist] scale=0.000 @ 1,000,000 steps` — khác hẳn MỌI lần fine-tune trước đó trong toàn bộ investigation (GRASP/LIFT lẫn PLACE lần 2). Đây là bằng chứng mạnh: fix tách scale không chỉ bảo vệ REACH/GRASP mà còn giúp cả LIFT/PLACE ổn định hơn hẳn (có thể vì REACH/GRASP không còn thoái hoá kéo theo cascade collapse).
+
+**Lưu ý**: `success_rate` ở đây vẫn đo theo tiêu chí GRASP+LIFT cũ (`_steps_bottle_lifted>=hold`), CHƯA phải tiêu chí PLACE thật (đặt vào bát) — S8 (metric riêng cho PLACE trong `eval_lift_metrics.py`) và S5 (termination/bonus thật) vẫn chưa làm. Số liệu này xác nhận training ỔN ĐỊNH, chưa xác nhận robot có thực sự đặt được chai vào bát hay chưa.
+
+### Sự cố: máy tự khởi động lại giữa chừng (đã biết từ trước, không phải bug mới)
+Training dừng đột ngột ở ts=2,305,024/2,500,000 (92%) — không Traceback, không OOM. `uptime` sau đó cho thấy máy vừa reboot. Khớp với ghi nhận cũ trong session này ("laptop tự khởi động lại như một phần thói quen dùng máy hàng ngày" — `systemd-inhibit --what=sleep:idle` chỉ chặn NGỦ, không chặn REBOOT/SHUTDOWN). Checkpoint đã lưu: `rl_model_1000000_steps.zip`, `rl_model_2000000_steps.zip` — đủ dùng, không cần train lại từ đầu vì xu hướng đã rõ ràng và ổn định suốt 900K→2.3M.
+
+### File đã sửa thêm (S4 + fix tách scale, CHƯA commit)
+`isaaclab_openarm_env/mdp/rewards.py` (dispatch 3 nhánh + `_compute_place_reward` + `_steps_since_place_start`), `isaaclab_openarm_env/mdp/grasp_assist.py` (`_assist_scale_descent`, đổi hàng loạt `scale`→`descent_scale`), `isaaclab_train.py` (`_assist_blend_scale_descent=1.0` trong callback), `eval_lift_metrics.py`/`isaaclab_train.py` (thêm `"place"` vào `--stage` choices).
+
+### Hướng tiếp theo
+1. Demo trực quan checkpoint `rl_model_2000000_steps.zip` (GUI) để xem thực tế có carry+release vào bát không — số liệu train hiện tại (success theo tiêu chí GRASP/LIFT cũ) không trả lời được câu này.
+2. Nếu carry vẫn chưa hội tụ tốt (nghi vấn cũ từ S1-S3 về `height_above_bowl_floor` placeholder sai) → làm S9 (đo bbox bát thật) trước khi tune tiếp.
+3. Cân nhắc commit sớm — đã tích luỹ nhiều thay đổi giá trị (S4 + fix tách scale, cả hai đều verify kỹ) qua 2 lần máy tự khởi động lại giữa chừng.
+
+---
+
+## Phase 10 — Train PLACE thật trên server (128 env, 5M bước) — kết quả tốt nhất từ trước tới giờ cho PLACE
+
+Sau khi máy local tự khởi động lại (ngắt training ở 2.3M/2.5M), chuyển hẳn sang server 4090 (lúc này GPU đã rảnh hơn nhiều, ~11.4GB, so với ~1.9GB lần trước gây OOM). Deploy code mới nhất (đã có S4 + fix tách assist scale), train `train_place_s4_server2`: `--task_phase 3 --stage place --assist-schedule --num-envs 128 --timesteps 5000000`, checkpoint gốc `policy_1M_success57.pt`. Tốc độ ~1670-1700 fps (nhanh hơn local ~16 env một cách đáng kể, không chỉ do env count mà cả GPU mạnh hơn).
+
+### Xu hướng đầy đủ (assist scale=0 tại 2M, đúng frac=0.4 của 5M)
+```
+ts=131K   (assist cao) grasp=1.00 latch=0.92 lift=0.52 success=0.45  maxlift=13.5cm  ← đỉnh sớm
+ts=300K-1M (assist cao) success dao động 0.10-0.40, maxlift 4-9cm — vùng ổn định tốt
+ts=1M-2M  (assist giảm dần) success giảm dần 0.24→0.03
+ts=2M-3.2M (assist=0, vùng thấp nhất) success 0.02-0.09, maxlift 1-3cm — KHÔNG sập về 0 tuyệt đối (khác mọi lần trước)
+ts=3.5M-5M (assist=0, HỒI PHỤC) success tăng dần trở lại 0.15→0.215, maxlift lên 6.2cm
+ts=5.005M (bước cuối) grasp=0.995 latch=0.385 lift_start=0.33 success=0.215 maxlift=6.2cm
+```
+`grasp_rate` giữ vững 0.97-1.0 **xuyên suốt toàn bộ 5M bước**, kể cả 3M bước sau khi assist LIFT/PLACE về 0 — xác nhận dứt điểm fix tách assist scale hoạt động đúng ở quy mô lớn (128 env, không chỉ ở quy mô nhỏ 16 env đã test trước đó).
+
+**Phát hiện mới, khác hẳn mọi lần trước**: sau khi tụt xuống vùng thấp (ts=2M-3.2M, đúng lúc assist vừa về 0), performance **KHÔNG đứng yên ở đáy** như 3 lần chạy trước (GRASP/LIFT fine-tune, PLACE lần 1, PLACE lần 2 local) — mà **hồi phục dần** trong 1.8M bước còn lại, kết thúc ở mức success=0.215, gần bằng mức đã đạt được lúc còn nhiều assist. Đây có thể là bằng chứng cho thấy: khi REACH/GRASP không còn bị kéo theo collapse (nhờ fix tách scale), phần còn lại của mạng có đủ "nền" ổn định để tự phục hồi kỹ năng LIFT/PLACE qua thời gian, dù chậm.
+
+### Sự cố cuối run (giống Phase 9, vô hại)
+Sau khi đạt ts=5,005,312 (hết 5M), Kit/Isaac Sim crash lúc dọn dẹp cuối (không Traceback, không liên quan RL) — nhưng lần này **đã kịp lưu đầy đủ** `best_policy.pt`/`final_policy.pt`/checkpoint 5M trước khi crash (khác Phase 9, không mất gì).
+
+### Checkpoint đã lưu về local
+- `logs/train_place_s4_server2_1M.zip` — checkpoint ~1M bước (SB3 zip đầy đủ, vùng ổn định sớm, success~0.24).
+- `logs/train/policy_place_server2_final.pt` — `best_policy.pt` cuối cùng (= final, do không có EvalCallback, đã biết từ Phase 9), success=0.215 tại đúng bước cuối — **là checkpoint TỐT lần này**, không phải bản tệ nhất như các lần fine-tune trước.
+
+### Lưu ý phương pháp luận — CHƯA giải quyết
+`eval_lift_metrics.py --assist-scale 1.0` cho kết quả **rất khác** (grasp=0.07!) so với chỉ số nội bộ lúc train (grasp~0.98) khi test lại checkpoint 2M từ run local trước đó. Nguyên nhân nghi vấn: `--assist-scale 1.0` bật LẠI TOÀN BỘ assist (cả phần LIFT/PLACE đã bị anneal về 0 lúc train) — không khớp "chế độ" mà checkpoint đó thực sự được fine-tune ở giai đoạn cuối (`descent=1.0` cố định, `lift/place=0`). `eval_lift_metrics.py` hiện CHƯA hỗ trợ set 2 scale độc lập (thuộc phạm vi S8 chưa làm) — số liệu train-time (TrainMetricsCallback) đáng tin hơn số liệu eval CLI đơn giản cho tới khi sửa việc này.
+
+### Hướng tiếp theo
+1. Demo GUI trực quan `policy_place_server2_final.pt` để xác nhận bằng mắt có thực sự carry+release vào bát không.
+2. Sửa `eval_lift_metrics.py` để nhận `--assist-scale-descent` riêng (khớp đúng S8), tránh đo sai như trên.
+3. Cân nhắc train tiếp dài hơn (>5M) từ chính `policy_place_server2_final.pt` — xu hướng hồi phục cuối run gợi ý còn cải thiện được nếu train thêm.
+4. ~~Vẫn cần S9 (đo bbox bát thật)~~ → **Đã làm, xem Phase 11 bên dưới.**
+
+---
+
+## Phase 11 — Demo thật cho thấy PLACE chưa hoạt động + làm S9 (đo bbox bát thật) — SUÝT gây regression nghiêm trọng
+
+### Quan sát trực tiếp qua demo: LIFT chậm, PLACE chưa hề đặt được vào bát
+User tự chạy demo GUI, quan sát bằng mắt: robot **nhấc được chai nhưng rất chậm**, và **chưa bao giờ đặt được vào bát**. Đối chiếu lại code: `success_rate` log lúc train (qua `TrainMetricsCallback`) hoá ra **CHỈ tính `_steps_bottle_lifted >= hold_req`** — y hệt tiêu chí GRASP+LIFT cũ, HOÀN TOÀN không liên quan gì tới việc đặt vào bát. Toàn bộ con số "success=0.215" đẹp đẽ ở Phase 10 chỉ đo được "đã nhấc chai lên đủ cao 5 bước", không đo được PLACE thật — khớp chính xác với quan sát của user. Đây là hệ quả trực tiếp của việc chưa làm S5 (tiêu chí thành công PLACE thật).
+
+### S9 — Đo hình học bát thật bằng UsdGeom.BBoxCache
+Viết script đo (`measure_bowl.py`, scratchpad) — traverse toàn bộ prim tìm "Bowl", tính world AABB bằng `UsdGeom.BBoxCache`. Kết quả đo được (lặp lại 2 lần, world AABB của mesh KHÔNG đổi dù `root_pos_w` đổi theo randomization — vì randomization ghi thẳng vào physics view, không sync ngược lại USD stage transform; phải so với `init_state.pos` GỐC = (0.58, 0.22, 0.67), không phải `root_pos_w` runtime):
+```
+World AABB min=(0.4140, 0.2199, 0.6512) max=(0.5737, 0.3796, 0.7033)
+Size (x,y,z) = (0.1597, 0.1597, 0.0520) m  — bát rộng ~16cm, SÂU CHỈ 5.2cm
+bbox_center = (0.4938, 0.2998)
+```
+**Phát hiện lớn**: root của Bowl (0.58, 0.22, 0.67) **lệch tâm hình học tới 8-8.6cm** cả X lẫn Y — gần đúng bằng NỬA bề rộng bát (0.1597/2=0.07985cm) → root nằm ở một GÓC của bounding box, không phải tâm hay đáy. Toàn bộ code PLACE viết ở S1-S3 (`_osc_carry_to_bowl`, `dist_bottle_bowl_xy`, `height_above_bowl_floor`) đều dùng thẳng `bowl_pos` (root) làm mục tiêu — **luôn nhắm lệch ra rìa bát 8cm**, gần như chắc chắn là lý do carry chưa từng hội tụ XY quan sát được từ S1-S3.
+
+Offset đo được, lưu vào config:
+```python
+bowl_center_local_xy_x = -0.0862   # bbox_center_x - root_x
+bowl_center_local_xy_y = 0.0798    # bbox_center_y - root_y
+bowl_floor_local_z = -0.0188       # bbox_min_z - root_z (đáy trong thật)
+bowl_rim_local_z = 0.0333          # bbox_max_z - root_z (miệng bát)
+```
+
+### SUÝT gây regression nghiêm trọng — bài học lặp lại đúng nguyên lý đã ghi trong `LIFT_BUG_THEORY.md`
+Sửa `compute_state()` (helpers.py) để `bottle_to_bowl` dùng `bowl_center_pos` (đã sửa lệch tâm) thay vì `bowl_pos` thô — nghe có vẻ "chỉ ảnh hưởng PLACE". Chạy regression gate ngay theo thói quen → **`grasp_rate` sập 0.83→0.47, `success` về 0.00, `fail_modes.reach=15/30`**.
+
+**Nguyên nhân**: `bottle_to_bowl` không chỉ dùng nội bộ cho PLACE — nó còn là **một phần observation 26-D** (`obs[20:23]`, dùng cho MỌI task_phase≥2 kể cả policy đã train từ lâu). Đổi CÔNG THỨC tính nó (dù giữ nguyên SHAPE 3 chiều) vẫn tương đương đổi observation — policy đã train quen với phân bố giá trị CŨ, phân bố MỚI (lệch ~8cm) đủ để phá vỡ hành vi REACH/GRASP đã ổn định. Đây CHÍNH XÁC là bug "lỗi kiến trúc — dùng chung núm vặn" đã viết trong `LIFT_BUG_THEORY.md`, chỉ khác là lần này biến dùng chung là một quan sát, không phải một assist scale.
+
+**Fix**: tách riêng — `bottle_to_bowl` (feed observation) giữ NGUYÊN công thức cũ (`bowl_pos - bottle_pos`), thêm biến MỚI `bottle_to_bowl_center` (dùng `bowl_center_pos` đã sửa) CHỈ dùng cho `dist_bottle_bowl`/`dist_bottle_bowl_xy` (nội bộ reward/state-machine PLACE, KHÔNG vào observation). Chạy lại regression gate → khôi phục đúng số cũ (0.03/0.83/0.47/0.43).
+
+### File đã sửa (S9, CHƯA commit)
+`isaaclab_openarm_env/mdp/helpers.py` (`bowl_center_pos`, `bowl_floor_z`, `bowl_rim_z`, tách `bottle_to_bowl` khỏi `bottle_to_bowl_center`, sửa `height_above_bowl_floor`), `isaaclab_openarm_env/mdp/grasp_assist.py` (`_osc_carry_to_bowl`/`_osc_descend_to_bowl` dùng `bowl_center_pos`/`bowl_rim_z` thay vì `bowl_pos` thô, siết `place_release_height_m` 0.05→0.02 do bát chỉ sâu 5.2cm), `isaaclab_openarm_env/config.py` (4 key offset bát đo được).
+
+### Hướng tiếp theo
+1. ~~**S5 thật**: tiêu chí thành công PLACE thật...~~ → **Đã làm, xem bên dưới.**
+2. Train lại/verify PLACE với target bowl đã sửa đúng tâm — kỳ vọng carry hội tụ XY tốt hơn hẳn so với S1-S3 (lúc đó luôn nhắm lệch 8cm).
+3. Luôn nhớ: **bất kỳ thay đổi nào trong `compute_state()` phải kiểm tra xem giá trị đó có lọt vào observation vector hay không** trước khi cho là "an toàn vì chỉ ảnh hưởng tính năng mới".
+
+## Phase 12 — S5: tiêu chí thành công/thất bại PLACE thật (dựa trên số đo S9)
+
+Thay `success_termination` nhánh `task_phase>=3` (trước là stopgap `return zeros`) bằng tiêu chí thật:
+- `place_in_bowl_success(env, s)` (mới, `helpers.py`): `dist_bottle_bowl_xy < place_success_xy_radius_m` **&** `height_above_bowl_floor < place_success_max_height_above_floor_m` **&** `bottle_lin_speed < place_success_max_speed` **&** `bottle_tilt_deg < place_success_max_tilt_deg`.
+- `success` (phase≥3) = `place_release_ready` **&** `_steps_bottle_settled >= place_success_hold_steps` **&** `place_in_bowl_success` — đếm bằng bộ đếm liên tiếp (`_steps_bottle_settled`, tăng trong `_update_contact_and_stages` khi đã buông + đứng yên + đúng vị trí), đúng kỷ luật "neo vào mốc thật" đã dùng cho `_steps_since_latch`/`_steps_since_place_start`.
+- Termination thất bại mới `bottle_misplaced_termination` (mirror 1-1 `tipped_bottle_termination`): fire khi `_steps_bottle_misplaced >= place_dropped_min_steps` (đã buông + đứng yên + KHÔNG đúng vị trí — gộp chung 3 kịch bản thả sớm/hất văng/rơi sàn thành 1 đường phạt duy nhất, tránh nhiều lối thoát rẻ hơn nhau).
+- 2 reward term mới mirror `terminal_success_bonus`/`terminal_tipped_penalty`: `terminal_place_success_bonus` (đọc termination `success`, bonus=90.0 > `grasp_success_bonus=60.0` vì mốc khó hơn) và `terminal_place_drop_penalty` (đọc termination `bottle_misplaced`, penalty=30.0). Cả 2 tự trả 0 khi `task_phase<3`.
+
+**Bug nhỏ tự phát hiện lúc đăng ký field**: `place_success_xy_radius_m` từng có 2 default rời rạc khác nhau nằm im trong 2 lệnh `getattr` (0.05 ở `helpers.py`, 0.10 ở `rewards.py::_compute_place_reward`) — vô hại vì chưa field nào override, nhưng là quả bom hẹn giờ: nếu ai đó đăng ký field với giá trị khác 2 default này thì `_release_quality`/`r_settle` (đọc default cũ tại chỗ chúng đứng) và `place_in_bowl_success` (đọc field mới) sẽ lệch nhau ngầm. Chốt **1 giá trị canonical 0.05** (theo bán kính bát đo được ~8cm ở S9, cho biên an toàn) khi đăng ký field thật vào `config.py` — giờ cả 2 nơi đọc cùng 1 số.
+
+Đăng ký field/term:
+- `config.py::ApplePickPlaceEnvCfg`: 8 field mới — `place_success_xy_radius_m=0.05`, `place_success_max_height_above_floor_m=0.03`, `place_success_max_speed=0.15`, `place_success_hold_steps=10`, `place_success_max_tilt_deg=60.0`, `place_dropped_min_steps=10`, `place_success_bonus=90.0`, `place_drop_penalty=30.0`.
+- `config.py::RewardsCfg`: `place_success_bonus_term`, `place_drop_penalty_term`.
+- `config.py::TerminationsCfg`: `bottle_misplaced`.
+- `mdp/__init__.py`: export `terminal_place_success_bonus`, `terminal_place_drop_penalty`, `bottle_misplaced_termination` (config.py dùng `from . import mdp` nên mọi hàm mới PHẢI qua `__init__.py` mới `mdp.xxx` gọi được — thiếu bước này sẽ ra `AttributeError` khi load config, không phải lỗi âm thầm).
+
+**Regression gate bắt buộc** (`eval_lift_metrics.py --model-path policy_1M_success57.pt --episodes 30 --num-envs 8 --bottle-noise 0.05 --assist-scale 1.0 --stage all --seed 0 --task_phase 2`) sau khi đăng ký xong: **PASS, khớp CHÍNH XÁC baseline** — `success_rate=0.0333 (1/30)`, `grasp_rate=0.8333 (25/30)`, `latch_rate=0.4667 (14/30)`, `lift_start_rate=0.4333 (13/30)`. Toàn bộ thay đổi S5 (thêm counter trong `_update_contact_and_stages`, thêm reward/termination term mới) đều gate đúng sau `task_phase<3` nên vô hại với phase 2 — xác nhận bằng số đo, không chỉ bằng đọc code.
+
+### File đã sửa (S5, CHƯA commit)
+`isaaclab_openarm_env/mdp/helpers.py` (`place_in_bowl_success`), `isaaclab_openarm_env/mdp/rewards.py` (counter `_steps_bottle_settled`/`_steps_bottle_misplaced` trong `_update_contact_and_stages`, `terminal_place_success_bonus`, `terminal_place_drop_penalty`), `isaaclab_openarm_env/mdp/terminations.py` (`success_termination` phase≥3 thật, `bottle_misplaced_termination` mới, reset `_steps_bottle_misplaced`), `isaaclab_openarm_env/mdp/__init__.py` (export 3 hàm mới), `isaaclab_openarm_env/config.py` (8 field mới + 2 reward term + 1 termination term).
+
+### Verify bằng demo thật (`--task-phase 3 --stage place --visualizer none`, `DEBUG_PLACE=1`) — PHÁT HIỆN BUG NGAY LẦN CHẠY ĐẦU
+Lần chạy đầu: **100% episode chết ở đúng 13 bước, `stage:0` (còn ở REACH, chưa từng chạm chai), Return ≈ −28.7** — không phải timeout, không phải thành công.
+
+**Nguyên nhân**: block tính `_steps_bottle_settled`/`_steps_bottle_misplaced` trong `_update_contact_and_stages` chỉ gate bằng `if place_phase is not None` — tức "thuộc tính `_place_phase` có tồn tại trên env hay chưa" (đúng ngay từ episode đầu vì `uses_place(task_phase)`), KHÔNG gate theo "env NÀY hiện có đang ở STAGE_PLACE hay không". Hậu quả: `at_rest = released & (speed < max_settle_speed)` đúng cho MỌI env ngay ở REACH — gripper mặc định mở (`released=True`) và chai đang nằm yên trên bàn chưa ai đụng vào (`speed` thấp) → `at_rest=True` gần như ngay bước đầu. `in_bowl=False` (chai còn ở bàn, cách xa bát) → `misplaced_now = at_rest & ~in_bowl = True` liên tục từ bước 1 → `_steps_bottle_misplaced` chạm `place_dropped_min_steps=10` ở bước ~13 → `bottle_misplaced_termination` fire oan cho MỌI episode, mọi lúc, bất kể đã từng gắp chai hay chưa. Đây là lỗi kinh điển **"chưa từng làm" bị hiểu nhầm thành "đã làm rồi làm hỏng"** — `at_rest & ~in_bowl` về mặt toán học đúng cho cả 2 tình huống hoàn toàn khác nhau: "chưa gắp" và "đã thả nhưng thả sai".
+
+**Fix**: thêm gate `in_place_stage = env._stage == STAGE_PLACE` (mirror đúng cách `tipped_bottle_termination` đã gate bằng `in_grasp_or_place`), nhân vào `at_rest` — `bottle_misplaced`/`bottle_settled` giờ chỉ có thể đúng khi env ĐANG ở STAGE_PLACE thật.
+
+**Kết quả sau fix** (chạy lại cùng seed/config): không còn episode nào chết ở 13 bước — 23/24 episode chạy hết `TIMEOUT` (1200 bước), 1 episode `TERMINATED` ở bước 928 vì `tilt:44.8°` (lật chai thật lúc grasp lần 2, đúng bản chất, không phải bug). Quan sát được đúng 1 lần chuyển `IDLE→CARRY` (env0, step_ct=818, `xy=150.8mm h_bowl=5.0mm tilt=4.8°`) — episode đó chạy tới hết TIMEOUT không bị `bottle_misplaced` bắn oan giữa chừng (carry chưa xong vì `place_carry_speed_scale=0.35` cố tình chậm + quãng đường 150mm, không đủ 382 bước còn lại để tới DESCEND — hợp lý, không phải lỗi). Return dương (509.70) trong episode đó, khớp kỳ vọng reward PLACE đã thiết kế.
+
+**Bài học lặp lại lần thứ 3 trong cùng investigation** (sau assist-scale-coupling và bottle_to_bowl-observation): **một điều kiện boolean đúng về mặt công thức nhưng thiếu ngữ cảnh stage/thời điểm sẽ luôn tìm ra cách đúng "ở sai chỗ"** — không có cách nào phát hiện qua đọc code tĩnh, chỉ lộ ra khi chạy demo thật. Củng cố thêm nguyên tắc: **regression gate ở phase cũ (2) không đủ để tin cậy code mới ở phase mới (3)** — phải luôn demo/eval trực tiếp ở đúng phase vừa thêm tính năng trước khi tin nó "chắc đúng vì gate cũ vẫn pass".
+
+File sửa thêm: `isaaclab_openarm_env/mdp/rewards.py` (`_update_contact_and_stages`, thêm `in_place_stage` gate).
+
+### Hướng tiếp theo
+1. ~~Test state machine + termination mới qua demo~~ → **Đã làm và fix xong 1 bug, xem trên.**
+2. ~~S6/S7/S8~~ → **Đã làm, xem Phase 13 bên dưới.**
+3. Train lại PLACE chỉ sau khi cả bowl geometry (S9) VÀ success/failure criteria (S5) đã đúng — 2 lần train PLACE trước (Phase 10/11) đều dùng criteria/geometry sai, số liệu của chúng không phản ánh khả năng thật.
+
+## Phase 13 — S6 (đăng ký config keys PLACE) + S7 (obs branch) + S8 (plumbing eval) — phát hiện thêm 2 bug cũ
+
+### S6 — Đăng ký formal field cho các key PLACE sống bằng `getattr` rời rạc từ S2
+Thêm vào `config.py::ApplePickPlaceEnvCfg`: `assist_place=False`, `place_hold_closed=True`, `place_carry_height_m=0.15`, `place_carry_onset_ramp_steps=15`, `place_carry_speed_scale=0.35`, `place_carry_align_blend=0.5`, `place_xy_arrival_radius_m=0.03`, `place_arrival_settle_steps=5`, `place_descend_world_m=0.02`, `place_release_height_m=0.02`, `place_release_hold_steps=5`, `place_abort_tilt_deg=25.0`, `place_abort_dist_ee_m=0.15`, `place_camp_decay_steps=150`. Tất cả giữ ĐÚNG giá trị mặc định hiện có trong code — đăng ký không đổi hành vi, chỉ gom về 1 nguồn.
+
+### S7 — Nhánh PLACE của `ee_to_target` (observations.py)
+Thêm `torch.where(in_place, place_delta, ee_to_target_cũ)` bọc ngoài — target khi CARRY = `(bowl_center_pos_xy, bowl_rim_z + carry_height)`, khi DESCEND/HOLDING = `(bowl_center_pos_xy, bowl_floor_z + release_height)`. Dùng ĐÚNG `bowl_center_pos`/`bowl_rim_z`/`bowl_floor_z` (đã sửa lệch tâm ở S9) — không dùng `bowl_pos` thô, tránh lặp lại bug lệch 8cm. An toàn phase 2: `in_place` luôn `False` (STAGE_PLACE không bao giờ gán khi task_phase<3) nên nhánh cũ giữ nguyên y hệt.
+
+### S8 — Plumbing `eval_lift_metrics.py` — phát hiện 2 bug cũ trong lúc thêm metrics PLACE
+
+**Bug 1 (nghiêm trọng, cùng họ với bug đã đốt `TrainMetricsCallback`)**: `is_success = success_t OR (lift_hold>=req AND task_phase>=2)` — viết `>=2` thay vì `==2` khiến heuristic "đã nhấc = thành công" áp dụng luôn cho phase≥3, che mất `success_t` thật (S5) mỗi khi cả 2 đều đúng. Nếu không bắt kịp, mọi eval PLACE sau này sẽ tiếp tục báo "success" giả giống hệt bài học đau đã trả giá ở Phase 11. **Fix**: đổi điều kiện thành `task_phase == 2` — ở phase≥3, `success_t` (termination thật) là thẩm quyền DUY NHẤT.
+
+**Bug 2 (khiến toàn bộ việc test S10 "eval ở --task_phase 3 trên checkpoint train ở phase 2" trở nên bất khả thi nếu không bắt)**: `_apply_env_cfg_snapshot()` (nạp `env_cfg.pkl` lưu lúc TRAIN checkpoint) chạy SAU khi set `env_cfg.task_phase = args.task_phase` → snapshot ÂM THẦM đè `--task_phase 3` về lại 2 (giá trị lúc `policy_1M_success57.pt` được train). Bug này VÔ HÌNH trong suốt session vì mọi regression gate trước giờ đều chạy đúng `--task_phase 2` (trùng với snapshot) — chỉ lộ ra khi thử `--task_phase 3` lần đầu (chạy xong không lỗi, nhưng `place_start_rate`/metrics PLACE không xuất hiện trong output vì `cfg.task_phase` thực tế vẫn là 2). **Fix**: đảo thứ tự — nạp snapshot TRƯỚC, set `task_phase` từ CLI SAU (mirror đúng cách `isaaclab_demo.py` đã làm) — CLI luôn là thẩm quyền cuối cho eval.
+
+Thêm accumulator (`max_place_phase`, `place_start_step`, `released`, `release_dist_bottle_bowl`, `min_dist_bottle_bowl`), 5 fail_mode PLACE mới (`no_place_transition`, `no_release`, `early_release`, `dropped_outside_bowl`, `place_timeout`), 4 metric tổng hợp mới (`place_start_rate`, `release_rate`, `p50_place_dist_m`/`p90_place_dist_m`, `dropped_rate`) — chỉ tính khi `task_phase>=3`, vô hại ở phase<3.
+
+**Verify**: regression gate phase 2 chạy lại 2 lần (trước và sau fix thứ tự snapshot) — cả 2 lần khớp CHÍNH XÁC baseline (0.0333/0.8333/0.4667/0.4333). Eval `--task_phase 3 --stage place` (20 episode, checkpoint `policy_1M_success57.pt`, chưa hề fine-tune PLACE): chạy sạch không crash, `place_start_rate=0.05` (1/20 episode tới PLACE, khớp `lift_start_rate=0.30`× tỉ lệ latch thực tế), episode đó có `fail_mode=place_timeout` (chưa kịp release trong episode — hợp lý, checkpoint chưa từng học carry).
+
+**Chưa làm** (biết trước, thuộc S8 gốc, không phải lỗi): `--assist-scale-descent` CLI riêng cho eval (tách 2 scale như train đã có) — vẫn là gap đã ghi nhận từ Phase 9, không chặn train PLACE tiếp theo.
+
+### File sửa (S6/S7/S8, CHƯA commit)
+`isaaclab_openarm_env/config.py` (14 field PLACE mới), `isaaclab_openarm_env/mdp/observations.py` (nhánh PLACE của `ee_to_target`), `eval_lift_metrics.py` (2 bug fix + accumulator/fail_mode/metrics PLACE mới).
+
+### Hướng tiếp theo
+Toàn bộ S1-S9 của kế hoạch PLACE đã xong và verify thật (không chỉ đọc code). Sẵn sàng cho S10: train thử PLACE với bowl geometry (S9) + success/failure criteria (S5) đã đúng lần đầu tiên trong project — 2 lần train PLACE trước (Phase 10/11) đều dùng số liệu sai nên không phản ánh khả năng thật của policy.
+
+## Phase 14 — S10: train PLACE lần đầu với criteria/geometry ĐÚNG (server 4090, 5M bước) — kết quả đầu tiên đáng tin cậy
+
+Deploy code S1-S9 lên server, upload `policy_1M_success57.pt` (verify md5 khớp, tránh lặp lỗi nhầm checkpoint Phase 10), chạy:
+```
+--task_phase 3 --stage all --assist-schedule --num-envs 128 --timesteps 5000000 \
+--checkpoint logs/policy_1M_success57.pt --lr-start 1e-4 --lr-end 1e-5 --clip-range 0.1 --ent-coef 0.002 --progress
+```
+Chạy đủ 5,005,312/5,000,000 bước (~639 it/s, ~1h35), Kit crash lúc dọn dẹp cuối (đúng pattern benign đã biết) nhưng **mọi checkpoint đều lưu sạch** (`best_policy.pt`=`final_policy.pt` timestamp 13:31, đủ `rl_model_{1,2,3,4}M_steps.zip`).
+
+**Quỹ đạo `success_rate` (S5 thật, KHÔNG phải heuristic lift-hold cũ) theo `assist scale`**:
+
+| step | scale | success | grasp | latch |
+|---|---|---|---|---|
+| 180k | ~1.0 | **0.59** | 1.00 | 0.765 |
+| 344k | 0.9 | 0.25 | 0.99 | 0.525 |
+| 1.16M | 0.5 | 0.03 | 0.99 | 0.435 |
+| 2.15M | 0.0 (vừa chạm đáy) | 0.035 | 0.995 | 0.39 |
+| ~3-5M | 0.0 (ổn định) | dao động 0.01-0.09, không có đỉnh rõ | 0.98-1.0 | 0.26-0.39 |
+| 5.0M (cuối) | 0.0 | 0.07 | 0.995 | 0.36 |
+
+**Ý nghĩa (2 phần, một tốt một đã biết trước)**:
+1. **TIN TỐT — xác nhận S5+S9 đúng end-to-end**: ở scale gần 1.0 (script điều khiển CARRY/DESCEND/HOLDING, policy gần như chưa can thiệp), `success_rate=0.59` — nghĩa là state machine PLACE + `place_in_bowl_success` (hình học bát đo thật S9, tiêu chí settle thật S5) **hoạt động đúng, đặt được chai vào bát thật hơn một nửa số lần**. Đây là con số ĐẦU TIÊN trong toàn bộ investigation phản ánh đúng "có đặt được vào bát hay không" — khác hẳn `success_rate=0.215` giả ở Phase 10/11 (đo nhầm lift-hold).
+2. **ĐÃ BIẾT TRƯỚC, không phải bug mới**: giống hệt pattern GRASP/LIFT đã gặp 2 lần ở Phase 9 — khi `_assist_blend_scale` anneal về 0, policy CHƯA tự chủ được PLACE (carry+release), `success_rate` rơi về vùng thấp (~0.01-0.09) và không hồi phục, dù `grasp_rate`/`latch_rate` vẫn giữ vững (xác nhận fix tách assist-scale ở Phase 9 tiếp tục đúng — không có hồi quy GRASP/LIFT dù train PLACE dài 5M bước). Đây là giới hạn ĐÃ GHI NHẬN trong kế hoạch (mục S10, "không debug lạc đề vấn đề này trong lúc làm PLACE") — chưa có checkpoint nào tự chủ hoàn toàn PLACE, cần một vòng nữa (curriculum anneal chậm hơn, hoặc học riêng PLACE trước khi ghép full pipeline) để giải quyết, KHÔNG thuộc phạm vi Phase 10-14.
+
+**Checkpoint tải về**: `logs/train/policy_place_fixed_server_final.pt` (5M, best=final, success=0.07 @ scale 0.0 — mức ổn định cuối, không có điểm giữa nào vượt trội hẳn để chọn thay), `logs/train_place_fixed_server_1M.zip` (checkpoint 1M, gần vùng scale còn cao ~0.6, success cao hơn nhưng phần lớn là do assist chưa anneal hết — không phải năng lực tự chủ), `logs/train_place_fixed_server_full.log` (log đầy đủ).
+
+### Hướng tiếp theo (ĐÃ CẬP NHẬT — xem Phase 15, phát hiện quan trọng hơn)
+~~1. Demo GUI...~~ → Đã làm, phát hiện mâu thuẫn nghiêm trọng, xem Phase 15.
+
+## Phase 15 — PHÁT HIỆN NGHIÊM TRỌNG: policy DETERMINISTIC hỏng hoàn toàn, khác hẳn số liệu train (STOCHASTIC)
+
+### Mâu thuẫn ban đầu
+Demo `policy_place_fixed_server_final.pt` (`--task-phase 3 --stage grasp`, deterministic mặc định): **100% episode (20/20) kẹt ở REACH, `top↓≈0.49` phẳng suốt episode, KHÔNG BAO GIỜ vào được GRASP** — trong khi log train báo `grasp_rate=0.995` suốt từ step ~300k tới hết 5M. Đây không phải sai khác nhỏ — là 0% vs 99.5%.
+
+### Điều tra bằng đo trực tiếp (không đoán, không tin số cũ)
+1. Nghi vấn "checkpoint .pt lưu/nạp sai" → test bằng file `.zip` đầy đủ (`rl_model_4999680_steps.zip`, chứa optimizer + toàn bộ state, nạp qua `PPO.load` không qua `state_dict` thủ công): **`grasp_rate=0.0417` (1/24)** — vẫn gần như hỏng. Loại bỏ giả thuyết lỗi format lưu `.pt`; checkpoint THẬT SỰ hỏng khi chạy deterministic.
+2. Nghi vấn "lệch giữa deterministic (mean action, dùng trong demo/eval mặc định) và stochastic (sampling, dùng trong rollout lúc train để tính `grasp_rate`)" → test lại checkpoint 5M với cờ `--stochastic`: **`grasp_rate` nhảy từ 0.0 lên 0.5** — xác nhận ĐÚNG cơ chế: policy stochastic còn cứu được một phần nhờ nhiễu sampling (kết hợp assist descent=1.0), còn deterministic (mean) đã hỏng gần hết.
+3. Test checkpoint SỚM hơn cùng run (`rl_model_999936_steps.zip`, ~1M bước, lúc `_assist_blend_scale` còn ~0.6): deterministic `grasp_rate=0.5` — **tệ hơn train-log báo (0.985) nhưng còn dùng được, chưa hỏng hẳn như bản 5M cuối**.
+
+### Kết luận
+Policy DETERMINISTIC (mean action — chính là thứ demo/eval/deploy thật sự dùng) **thoái hoá dần trong suốt quá trình fine-tune PLACE**: ~50% grasp ở 1M bước → gần 0% ở 5M bước — trong khi metric train (đo trên STOCHASTIC rollout, xem `TrainMetricsCallback._on_step`, đã đọc lại code — logic đếm episode ĐÚNG, không phải bug đếm) giữ nguyên ~0.98-1.0 suốt. Tức là **tự nó không phải bug đo lường (như các lần trước) — mà là một pha bệnh lý thật của PPO**: `entropy_loss`/`std` không đổi ("std≈3.98" hằng số suốt cả log, gợi ý `log_std` gần như không học/không giảm — `ent_coef=0.002` cố định suốt 5M bước, không có lịch giảm entropy) khiến chính sách dựa vào NHIỄU SAMPLING (kết hợp assist descent=1.0 luôn bật) để "qua bài" trong lúc train, còn **mean action (deterministic) không hề được ép hội tụ về một lời giải tốt** — sampling che giấu hoàn toàn một mean đang trôi dạt xấu dần.
+
+**So sánh để loại trừ "đây là vấn đề chung của cả pipeline"**: `policy_1M_success57.pt` (checkpoint GRASP+LIFT trước đó, KHÔNG qua vòng fine-tune PLACE 5M bước này) đã được demo/eval deterministic NHIỀU LẦN trong Phase 9/12/13 và luôn hoạt động đúng (GRASP/LIFT/vào được PLACE state machine bình thường) — nên đây KHÔNG phải lỗi cấu trúc/pipeline cũ, mà là hậu quả CỦA RIÊNG lần fine-tune PLACE 5M bước vừa rồi (train_place_fixed_server), rất có thể do tổ hợp `ent_coef=0.002` cố định + không có entropy decay + train dài (5M bước) khiến drift tích luỹ đủ lớn để lộ ra.
+
+### Hệ quả — TOÀN BỘ bảng quỹ đạo success/grasp ở Phase 14 phải đọc lại với hiểu biết mới
+Con số `success_rate=0.59` ở step 180k và mọi con số grasp/latch trong bảng Phase 14 đều đo trên STOCHASTIC rollout (đúng cách `TrainMetricsCallback` hoạt động) — vẫn ĐÚNG như một phép đo "chính sách CÓ sampling làm được gì", và **kết luận về S5/S9 đúng (state machine + tiêu chí bát thật hoạt động đúng khi có scripted assist) vẫn giữ nguyên, không đổi** — vì phép đo đó dùng scripted assist scale gần 1.0, ít phụ thuộc vào chất lượng mean của policy. Nhưng kết luận "policy tự chủ được GRASP/LIFT, chỉ PLACE còn yếu" ở Phase 14 là **sai/thiếu** — với chính sách DEPLOY THẬT (deterministic), ngay cả GRASP cũng gần như hỏng ở checkpoint cuối.
+
+### Chưa làm / hướng tiếp theo (cần quyết định của user)
+1. **Không dùng `policy_place_fixed_server_final.pt` (5M) để demo/deploy** — deterministic gần như vô dụng. Nếu cần một checkpoint PLACE tạm dùng được, ưu tiên bản SỚM hơn (~1M, dù vẫn chỉ 50% deterministic, còn hơn 5M).
+2. **Nghi vấn cần fix trước khi train vòng tiếp**: thêm lịch giảm `ent_coef` (hiện cố định suốt run) hoặc dùng LR/clip-range khác để ép `log_std` hội tụ giảm dần — chưa làm, cần thiết kế + đo (không đoán số).
+3. Cân nhắc thêm: đánh giá NÊN dùng eval/demo mặc định là stochastic hay deterministic để MATCH đúng cái sẽ deploy thật (robot thật rất có thể chạy deterministic) — nếu deploy thật cũng deterministic thì đây là lỗi PHẢI sửa trước khi train tiếp bất kỳ thứ gì, không phải optional.
+4. Chưa retrain lại — cần user xác nhận hướng (thêm entropy decay rồi train lại PLACE, hay điều tra sâu hơn nguyên nhân log_std không giảm trước).
+
+User chọn: "Thêm entropy decay rồi train lại" — implement + chạy diagnostic NGẮN trước (không cam kết 5M ngay), đúng kỷ luật "đo trước khi tin" của cả project.
+
+## Phase 16 — Implement entropy decay, chạy diagnostic 500k bước — kết quả KHÔNG rõ ràng, giả thuyết Phase 15 cần xét lại
+
+### Implement
+`isaaclab_train.py`: thêm `--ent-coef-end` (mirror `--lr-end`), `EntCoefScheduleCallback` (mirror `AssistScheduleCallback` — set trực tiếp `self.model.ent_coef` mỗi step vì SB3 KHÔNG hỗ trợ `ent_coef` dạng schedule callable như `learning_rate`/`clip_range`). Cố ý ĐỒNG BỘ cùng `grasp_assist_anneal_frac` (0.4) thay vì một anneal_frac riêng — ý định: entropy về 0 đúng lúc assist về 0.
+
+### Diagnostic 500k bước (server, từ `policy_1M_success57.pt`, `--ent-coef 0.002 --ent-coef-end 0.0`)
+Verify log: `[EntCoef] ent_coef=0.00000 @ 200,064 steps` — schedule hoạt động đúng thiết kế (về 0 đúng lúc 40% = 200k/500k).
+
+**PHÁT HIỆN LÀM LUNG LAY GIẢ THUYẾT PHASE 15**: `std` đã là **3.85 NGAY TỪ BƯỚC ĐẦU TIÊN** (step 16,384, tức NGAY SAU KHI nạp `policy_1M_success57.pt`) — KHÔNG phải một giá trị "tăng dần trong lúc fine-tune PLACE" như tôi suy luận ở Phase 15. `std` cao vốn đã BAKED SẴN trong chính checkpoint `policy_1M_success57.pt` (nạp qua `load_state_dict`, copy nguyên `log_std`), từ trước khi vòng train PLACE này bắt đầu. Suốt 500k bước với `ent_coef=0.0` (60% cuối), `std` chỉ nhích nhẹ 3.85→3.84 — gần như không đổi.
+
+**Ý nghĩa**: `std` cao là ĐẶC ĐIỂM VỐN CÓ của checkpoint gốc (vẫn deterministic tốt — đã demo/eval thành công nhiều lần ở Phase 9/12/13), KHÔNG PHẢI nguyên nhân trực tiếp gây "mean action thoái hoá" — vì std chỉ chi phối MỨC ĐỘ NHIỄU quanh mean lúc sampling, không ảnh hưởng trực tiếp tới giá trị mean (thứ deterministic action đọc thẳng). Giả thuyết "ent_coef cố định → std không giảm → mean không hội tụ" ở Phase 15 có thể ĐÚNG MỘT PHẦN nhưng KHÔNG ĐẦY ĐỦ — cần tìm thêm cơ chế khiến MEAN tự trôi dạt xấu trong 5M bước, độc lập với std.
+
+**Kết quả eval deterministic checkpoint 500k (có entropy decay)**: `grasp_rate=0.583` — chỉ nhỉnh hơn chút so với checkpoint 1M-bước của run GỐC (không có entropy decay, `grasp_rate=0.5` cùng phép đo). **Không đủ mạnh để kết luận entropy decay là fix đúng** — cần so sánh ở CÙNG mốc bước, và quan trọng hơn: cần xem liệu nó có NGĂN được đà thoái hoá tiếp diễn ở vùng 1M-5M (nơi run gốc sập từ 0.5 xuống ~0) hay không — 500k bước CHƯA đủ để trả lời.
+
+### Trạng thái — CHƯA quyết định hướng tiếp
+Bằng chứng hiện tại KHÔNG đủ để tự tin chạy full 5M với entropy decay (rủi ro lặp lại tốn ~1h35 cho một fix chưa chắc đúng cơ chế). Cần: hoặc (a) điều tra sâu hơn nguyên nhân MEAN trôi dạt (không phải std) trước khi thử tiếp, hoặc (b) chạy diagnostic dài hơn (vd 2M bước) để xem entropy decay có chặn được đà sập ở vùng 1M-2M hay không, trước khi cam kết 5M đầy đủ. Đã báo user, đang chờ quyết định hướng.
+
+User chọn: "Chạy diagnostic dài hơn (2M bước) trước khi cam kết 5M".
+
+## Phase 17 — Diagnostic 2M bước — GIẢ THUYẾT ENTROPY DECAY BỊ BÁC BỎ, tìm ra nghi phạm thật (gradient interference đa nhiệm vụ)
+
+### Kết quả — cùng pattern thoái hoá, KHÔNG bị chặn lại bởi entropy decay
+Chạy đủ 2,007,040/2,000,000 bước (server, cấu hình y hệt diagnostic 500k, chỉ tăng budget), `std` cuối = 3.82 (gần như không đổi từ 3.85 ban đầu, khớp quan sát Phase 16). Eval deterministic (`eval_lift_metrics.py`, `--assist-scale 1.0 --stage all`, cùng seed=1, cùng phương pháp):
+
+| Bước | Có entropy decay (run này) | KHÔNG entropy decay (run gốc Phase 14) |
+|---|---|---|
+| 500k | grasp=0.583 | (chưa đo ở mốc này) |
+| 1M | **grasp=0.333** | grasp=0.5 |
+| 2M | **grasp=0.083** | (chưa đo, nhưng cùng xu hướng giảm) |
+| 5M | (chưa chạy) | grasp≈0.0-0.04 |
+
+**Kết luận dứt khoát**: entropy decay KHÔNG ngăn được đà thoái hoá — pattern giống hệt run gốc (đơn điệu giảm dần theo số bước/số lần update), thậm chí ở mốc 1M-2M route MỚI (có entropy decay) còn giảm NHANH hơn route gốc một chút (0.333/0.083 vs 0.5 ở cùng早 giai đoạn) — trong sai số thống kê của 24 episode, nhưng chắc chắn KHÔNG có cải thiện rõ rệt nào. **Giả thuyết Phase 15/16 ("ent_coef cố định → std không giảm → mean không hội tụ") bị bác bỏ bằng thực nghiệm.**
+
+### Nghi phạm mới, hợp lý hơn nhiều: gradient interference đa nhiệm vụ (catastrophic forgetting)
+Cả 2 run (có/không entropy decay) đều thoái hoá theo ĐÚNG MỘT quy luật: giảm dần đơn điệu theo số bước train/số lần cập nhật gradient (`n_updates`), bất kể entropy/std thay đổi hay không. Điều này trỏ tới nguyên nhân khác hẳn: `PPO(policy="MlpPolicy", ...)` mặc định dùng **một mạng CHUNG** (`net_arch=[256,256]`, KHÔNG tách riêng `pi`/`vf`, càng không tách riêng theo stage) cho TẤT CẢ 4 giai đoạn REACH/GRASP/LIFT/PLACE cùng lúc trong cùng 1 batch rollout (128 env chạy song song, mỗi env có thể đang ở stage khác nhau). PLACE là nhiệm vụ CÒN CHƯA HỌC ĐƯỢC (reward thấp, value-estimate nhiễu) — gradient từ phần PLACE của rollout, chảy qua CHUNG một mạng với REACH/GRASP, nhiều khả năng đang **ghi đè dần lên trọng số REACH/GRASP đã tốt** (catastrophic forgetting kinh điển khi fine-tune đa nhiệm vụ trên mạng chia sẻ, không có cơ chế bảo vệ nào — không tách head, không KL-penalty giữ gần policy gốc, không đóng băng layer nào).
+
+**Bằng chứng gián tiếp ủng hộ giả thuyết này**: `descent_scale` (assist REACH/GRASP-descent) được xác nhận CỐ ĐỊNH=1.0 suốt run (đã fix ở Phase 9/12) — nghĩa là MÔI TRƯỜNG vật lý cho REACH/GRASP không hề đổi. Cái đổi là CHÍNH SÁCH (mean action) — càng train lâu (n_updates tăng), càng lệch xa khỏi giải pháp REACH/GRASP tốt ban đầu, đúng đặc trưng "trôi dạt do gradient từ nhiệm vụ khác", không phải đặc trưng "khám phá ngẫu nhiên do entropy cao".
+
+### CHƯA làm — cần quyết định trước khi thử tiếp (tốn kém hơn hẳn, cần thiết kế cẩn thận)
+1. Xác nhận thêm giả thuyết (rẻ, không cần train): kiểm tra xem SB3 `MlpPolicy` mặc định có thực sự share toàn bộ trunk giữa policy/value hay không (đọc code SB3, không đoán).
+2. Hướng fix khả dĩ (đắt hơn hẳn các fix trước, cần thiết kế): (a) KL-penalty hoặc trust-region ràng buộc policy mới không lệch quá xa `policy_1M_success57.pt` ở các state thuộc REACH/GRASP; (b) tách kiến trúc mạng riêng theo stage/nhiệm vụ; (c) giảm mạnh `n_epochs`/`batch_size` hoặc learning rate để giảm tốc độ trôi dạt (rẻ nhất để thử, nhưng chỉ làm chậm vấn đề chứ không chắc giải quyết gốc rễ); (d) chỉ fine-tune riêng các layer/tham số liên quan PLACE, đóng băng phần còn lại.
+3. Chưa chạy thêm bất kỳ diagnostic/train nào — đây là điểm dừng cần user xác nhận hướng, vì các hướng fix ở trên đều tốn công sức thiết kế đáng kể hơn hẳn những gì đã thử (khác các bug reward/config/logic đã sửa xuyên suốt project, đây là vấn đề tối ưu hoá đa nhiệm vụ ở tầng thuật toán PPO).
+
+User yêu cầu: "Find out the reason why" — xác nhận cơ chế TRƯỚC KHI sửa, bằng cách đọc trực tiếp source code SB3 2.9.0 (không train thêm, rẻ và dứt khoát).
+
+## Phase 18 — Xác nhận cơ chế thật bằng code SB3, ĐÍNH CHÍNH giả thuyết Phase 17
+
+### Đọc `stable_baselines3.common.torch_layers.MlpExtractor.__init__` và `ActorCriticPolicy._build`
+```python
+if isinstance(net_arch, dict):
+    pi_layers_dims = net_arch.get("pi", [])
+    vf_layers_dims = net_arch.get("vf", [])
+else:
+    pi_layers_dims = vf_layers_dims = net_arch   # net_arch=[256,256] (flat list, đúng cấu hình đang dùng)
+...
+self.policy_net = nn.Sequential(*policy_net)   # network RIÊNG
+self.value_net  = nn.Sequential(*value_net)    # network RIÊNG, KHÔNG chia sẻ trọng số với policy_net
+```
+`ActorCriticPolicy` mặc định `share_features_extractor=True`, nhưng với observation vector phẳng 26-D (không phải ảnh), `features_extractor` = `FlattenExtractor` — **không có tham số học được** (chỉ reshape) → chia sẻ này là no-op về mặt trọng số.
+
+**ĐÍNH CHÍNH giả thuyết (b) ở Phase 17**: "value net và policy net dùng chung 1 trunk [256,256]" là **SAI** — đã verify trực tiếp qua source code, 2 mạng hoàn toàn tách biệt trọng số. Đây KHÔNG phải cơ chế gây lỗi.
+
+### Cơ chế THẬT (verify được, không phải đoán): chia sẻ trọng số GIỮA CÁC STAGE, không phải giữa policy/value
+`policy_net` (256,256) là **MỘT mạng duy nhất** nhận thẳng 26-D observation (trong đó `stage_obs` chỉ là 1/26 giá trị liên tục — không phải cổng cứng/router riêng biệt theo stage) và xuất ra action cho **CẢ 4 GIAI ĐOẠN** REACH/GRASP/LIFT/PLACE. Vì REACH→GRASP→LIFT→PLACE là **một episode liên tục** (thiết kế "3-stage curriculum-in-one-episode" đã ghi trong `LIFT_BUG_THEORY.md` mục 0.6), rollout buffer mỗi lần update (`n_steps=64 × 128 env = 8192 mẫu`) trộn lẫn mẫu từ NHIỀU stage khác nhau, và PPO tính **một gradient tổng hợp** (trung bình có trọng số theo advantage) cập nhật thẳng vào **cùng một bộ trọng số `policy_net`** — không có cơ chế nào tách biệt/bảo vệ vùng trọng số chịu trách nhiệm cho REACH/GRASP khỏi bị các mẫu PLACE (nhiệm vụ khó, còn xa mới hội tụ, advantage nhiễu cao vì value function chưa ước lượng tốt cho state PLACE) kéo lệch.
+
+**Vì sao đây là lời giải thích nhất quán với TOÀN BỘ dữ liệu đã đo**:
+- Giải thích đúng pattern "thoái hoá đơn điệu theo `n_updates`" ở CẢ 2 run (Phase 14 gốc và Phase 16-17 có entropy decay) — nhiễu/độ lệch tích luỹ dần theo số lần cập nhật gradient, không phụ thuộc entropy/std (khớp bằng chứng thực nghiệm Phase 17).
+- Giải thích đúng vì sao MÔI TRƯỜNG cho REACH/GRASP không đổi (`descent_scale=1.0` cố định, xác nhận từ Phase 9) nhưng CHÍNH SÁCH vẫn trôi dạt — vì cái thay đổi là TRỌNG SỐ MẠNG, do gradient từ stage khác kéo, không phải do observation/reward của chính REACH/GRASP thay đổi.
+- Giải thích đúng vì sao `policy_1M_success57.pt` (chưa từng train chung với PLACE) vẫn ổn định qua nhiều lần demo/eval trước đó — nó chưa từng chịu gradient từ một stage-khó-chưa-hội-tụ nào cả.
+
+### Hướng fix (đã xác nhận đúng vấn đề, CHƯA implement — chờ chọn hướng)
+Loại bỏ (a) KL-penalty/trust-region: đúng nhưng phức tạp, SB3 PPO không hỗ trợ sẵn, phải tự viết. (b) tách network theo stage: đúng gốc rễ nhất nhưng thay đổi kiến trúc lớn, ảnh hưởng tới cách nạp checkpoint cũ. (c) giảm n_epochs/batch_size/LR: rẻ nhất, dễ thử, nhưng chỉ giảm TỐC ĐỘ trôi dạt chứ không loại bỏ cơ chế. (d) đóng băng layer REACH/GRASP: cần xác định RÕ layer nào "thuộc về" REACH/GRASP trong một mạng dùng chung — không tách bạch tự nhiên vì không có kiến trúc theo module.
+
+**Đề xuất khả thi nhất, chi phí/lợi ích tốt nhất, có cơ sở lý thuyết vững** (chưa làm, chờ user xác nhận): **weight theo stage trong loss** — thay vì trộn đều mọi mẫu vào 1 batch, giảm hệ số đóng góp gradient của mẫu PLACE trong minibatch policy loss (không phải reward, mà là TRỌNG SỐ của sample trong loss function) sao cho PLACE vẫn học được nhưng không được phép kéo REACH/GRASP đi xa — kỹ thuật gọi là "gradient surgery"/loss reweighting cho multi-task RL, cần code thêm ở tầng PPO rollout/loss (SB3 không hỗ trợ sẵn, phải subclass `PPO.train()`).
+
+User chọn: "cheapest way first" — thử (c) giảm `n_epochs` trước, KHÔNG cần code phức tạp, chỉ giảm số lần tái sử dụng mỗi rollout batch.
+
+## Phase 19 — Giảm `n_epochs` 10→3: KẾT QUẢ TÍCH CỰC RÕ RỆT, đà thoái hoá chậm hẳn lại
+
+### Implement
+`isaaclab_train.py`: thêm `--n-epochs` (mirror style `--ent-coef`), mặc định=10 (giữ nguyên hành vi cũ), dùng thẳng trong `PPO(..., n_epochs=args.n_epochs)`.
+
+### Diagnostic 2M bước (server, từ `policy_1M_success57.pt`, `n_epochs=3`, KHÔNG dùng entropy decay — cô lập đúng 1 biến số để so sánh sạch với 2 run trước)
+Chạy đủ 2,007,040/2,000,000 bước (~47 phút, nhanh hơn/tương đương run n_epochs=10 dù ít epoch hơn — vì fps giới hạn bởi bước môi trường, không phải bởi số epoch). Eval deterministic (`eval_lift_metrics.py`, cùng phương pháp/seed=1 mọi run trước):
+
+| Bước | `n_epochs=10`, không ent-decay (Phase 14) | `n_epochs=10`, có ent-decay (Phase 16-17) | **`n_epochs=3`, không ent-decay (run này)** |
+|---|---|---|---|
+| 500k | — | 0.583 | — |
+| 1M | 0.5 | 0.333 | **0.625** |
+| 2M | — | 0.083 | **0.5** |
+| 5M | ≈0.0-0.04 | — | (chưa chạy) |
+
+**Kết quả rõ ràng**: ở mốc 2M bước, `grasp_rate` deterministic giữ ở **0.5** (bằng đúng mức 1M-bước của run gốc) thay vì sập xuống 0.083 như run entropy-decay cùng mốc — đà thoái hoá chậm lại đáng kể. Xác nhận thêm cho cơ chế đã tìm ra ở Phase 18: giảm số lần tái sử dụng rollout-batch-trộn-nhiều-stage (10 epoch → 3 epoch) giảm trực tiếp số lần gradient từ PLACE (nhiễu, chưa hội tụ) được phép "ghi đè" lên trọng số dùng chung với REACH/GRASP mỗi lần thu thập rollout.
+
+**Vẫn chưa phải fix triệt để** (đã cảnh báo trước khi thử — (c) chỉ làm chậm, không loại bỏ cơ chế): xu hướng 1M→2M vẫn giảm (0.625→0.5, mất 0.125 sau 1M bước) — ngoại suy tuyến tính thô, tới 5M có thể còn khoảng ~0.1-0.2, tốt hơn hẳn bản gốc (~0) nhưng chưa chắc đủ tốt để deploy. Cần chạy thật tới 5M để biết chính xác, không ngoại suy.
+
+### File sửa (Phase 19, CHƯA commit)
+`isaaclab_train.py` (`--n-epochs` CLI arg, dùng trong `PPO()`).
+
+### Hướng tiếp theo — chờ user xác nhận
+1. Chạy full 5M với `n_epochs=3` để xem đà thoái hoá có ổn định/dừng lại hay tiếp tục giảm hết (tốn ~1h40-2h server).
+2. Hoặc thử giảm SÂU hơn nữa (`n_epochs=1-2`) ở diagnostic ngắn trước khi cam kết 5M — càng ít epoch càng ít nhiễu chảy qua, nhưng cũng học chậm hơn (đánh đổi tốc độ hội tụ PLACE).
+3. Hoặc kết hợp: `n_epochs` thấp + `batch_size` nhỏ hơn (hiện 4096, cố định, chưa thử đổi) để giảm thêm mức trộn giữa các stage trong mỗi gradient step.
+
+User chọn: "1" (chạy full 5M với `n_epochs=3`).
+
+## Phase 20 — Full 5M với `n_epochs=3`: KHÔNG xác nhận được fix, sập về 0 y hệt mọi lần trước — có 1 biến gây nhiễu (num_envs 128→256)
+
+### Sự cố hạ tầng giữa chừng (đã xử lý)
+1. **WireGuard rớt kết nối tới server** trước khi launch — `wg0` không tồn tại, `ping`/`ssh` tới `192.168.1.122` báo "No route to host". User cung cấp mật khẩu sudo, bật lại bằng `wg-quick up "Ph-m-Huy-Ho-ng"` — thành công, SSH hoạt động lại.
+2. **User đề xuất tăng `--num-envs`** (từ 128 lên 500+) vì thấy GPU còn ~15GB trống. Đo trực tiếp lúc đó: GPU dao động (job của user khác trên server tăng từ 4.6GB→8GB ngay trong lúc kiểm tra) — chọn **256** (nhân đôi, an toàn hơn 500 trong bối cảnh GPU dùng chung biến động) thay vì làm đúng số user đề nghị, kill run 128-env vừa khởi động (sunk cost ~21 update, không đáng kể) và relaunch với 256 env. **Đây chính là biến gây nhiễu cho phép so sánh bên dưới — xem mục "Hạn chế" .**
+3. **DNS toàn cục bị hỏng sau khi bật lại WireGuard** — interface VPN tự nhận domain mặc định (`~.`), khiến MỌI truy vấn DNS (kể cả ra internet, không chỉ ra server) bị định tuyến nhầm qua tunnel (chỉ route `192.168.1.122/32` + `10.11.0.0/24`, không phải full-tunnel) → treo/timeout khi tải asset ground-plane từ S3 lúc `eval_lift_metrics.py` khởi tạo env. **Đây là lỗi ĐÃ TỪNG GẶP TRƯỚC ĐÂY trong project (ghi chú DDS/RMW cũ)** — fix đã biết: `resolvectl domain <interface> ""` (xoá domain `~.` khỏi interface). Áp dụng, xác nhận `curl` tới S3 trả `200 OK`, chạy lại eval thành công.
+
+### Kết quả full 5M (`n_epochs=3`, `num_envs=256`, từ `policy_1M_success57.pt`)
+Chạy đủ 5M bước sạch (checkpoint 1M/2M/3M/4M/5M đều lưu đầy đủ). Eval deterministic (cùng phương pháp mọi lần):
+
+| Bước | Diagnostic 2M trước (`n_epochs=3`, **128 env**) | Full 5M lần này (`n_epochs=3`, **256 env**) |
+|---|---|---|
+| 1M | 0.625 | **0.458** |
+| 2M | 0.5 | **0.042** |
+| 5M | (chưa chạy) | **0.0** |
+
+**Kết quả cuối: `grasp_rate=0.0` — sập hoàn toàn, y hệt MỌI lần fine-tune 5M trước đó** (bản gốc `n_epochs=10` không entropy-decay, bản entropy-decay) — bất kể đã giảm `n_epochs`.
+
+### Hạn chế của phép so sánh — KHÔNG kết luận vội "n_epochs=3 vô dụng"
+Đã đổi `num_envs` 128→256 GIỮA CHỪNG (theo đề xuất user), nên đây KHÔNG phải phép so sánh sạch 1-biến-số như các lần trước. Tính toán lại: với `n_steps=64` và `batch_size=4096` cố định, **tổng số gradient step tại cùng một mốc `total_timesteps` là GIỐNG NHAU bất kể `num_envs`** (128 env: 244 rollout×2 minibatch×3 epoch=1464 step tại 2M; 256 env: 122 rollout×4 minibatch×3 epoch=1464 step tại 2M — khớp) — nên về mặt lý thuyết, cơ chế "số lần cập nhật gradient" đã xác nhận ở Phase 18-19 KHÔNG giải thích được sự khác biệt lớn giữa 2 run (0.5 vs 0.042 tại cùng 2M). Nhiều khả năng đây là **phương sai giữa các lần chạy (run-to-run variance)** vốn cao trong PPO (rollout ngẫu nhiên, exploration ngẫu nhiên, GPU non-determinism khi song song hoá) — 1 lần chạy 2M ở 128 env và 1 lần chạy khác ở 256 env là 2 QUỸ ĐẠO NGẪU NHIÊN khác nhau, không phải 2 phép đo lặp lại của cùng 1 quá trình.
+
+### Trạng thái tổng — SAU 5 LẦN THỬ, CHƯA lần nào giữ được checkpoint cuối dùng được
+| Lần thử | Cấu hình | grasp_rate cuối cùng |
+|---|---|---|
+| Phase 14 | `n_epochs=10`, không sửa gì | ~0.0-0.04 (5M) |
+| Phase 16-17 | + entropy decay | 0.083 (2M) |
+| Phase 19 | `n_epochs=3` (128 env) | 0.5 (2M, chưa chạy tới 5M) |
+| Phase 20 | `n_epochs=3` (256 env) | **0.0 (5M)** |
+
+**Không có cấu hình nào (entropy decay, giảm n_epochs) giữ được policy deterministic dùng được tới hết 5M bước.** Checkpoint SỚM (~1M bước vào bất kỳ lần fine-tune nào) luôn là điểm tốt nhất quan sát được (grasp deterministic 0.45-0.63), rồi thoái hoá dần bất kể can thiệp nào đã thử.
+
+### Đề xuất tiếp theo (chưa làm, cần quyết định user)
+1. **Dùng tạm checkpoint SỚM** (~1M bước, vd `train_place_lowepoch_5M_1M.zip`, grasp=0.458 deterministic) làm bản PLACE khả dụng tạm thời, dừng đuổi theo "chạy hết N bước mà không sập" — chấp nhận giới hạn hiện tại.
+2. **Thử lại 128 env, n_epochs=3, ĐỦ 5M** (phép so sánh sạch, đúng 1 biến số như Phase 19 đã làm dở) để biết chắc liệu n_epochs=3 THẬT SỰ có giữ được lâu hơn hay chỉ là may mắn ở 2M — tốn thêm ~1h35-2h server.
+3. **Đầu tư hướng kiến trúc** (tách network theo stage / KL-penalty) — tốn công thiết kế nhiều hơn nhưng giải quyết đúng gốc rễ đã xác nhận ở Phase 18, không phụ thuộc may rủi giữa các lần chạy.
+
+User chọn: "Đầu tư hướng kiến trúc (tách network/KL-penalty)".
+
+## Phase 21 — Implement KL-penalty giữ policy REACH/GRASP gần policy tham chiếu
+
+### Thiết kế
+Đọc trực tiếp source `PPO.train()` (SB3 2.9.0) để biết chính xác cần override chỗ nào — không đoán. Chọn **KL-penalty** thay vì tách network riêng theo stage: rẻ hơn (không đổi kiến trúc, checkpoint cũ nạp bình thường), nhắm ĐÚNG cơ chế đã xác nhận ở Phase 18 (gradient từ mẫu PLACE trong batch trộn-nhiều-stage kéo lệch trọng số `policy_net` dùng chung).
+
+`isaaclab_train.py`:
+- `KLProtectedPPO(PPO)` — subclass, thêm `kl_coef` + `_ref_policy` (đóng băng, `requires_grad_(False)`, `.eval()`).
+- Override `train()` = mirror y hệt SB3 gốc (đã đọc source, bỏ nhánh `Discrete` action vì env này luôn continuous Box) + thêm: mỗi minibatch, lấy `stage_obs = rollout_data.observations[:, 25]` (index đã xác nhận từ docstring `get_apple_pick_place_obs`), mask `stage_obs < 0.75` (REACH=0.0/GRASP=0.5, loại PLACE=1.0), tính `KL(policy_hiện_tại || policy_tham_chiếu)` bằng `torch.distributions.kl_divergence` trên 2 `Normal` distribution (xác nhận qua source `DiagGaussianDistribution.proba_distribution`: `self.distribution = Normal(mean, std)`, không wrap `Independent` → phải `.sum(dim=-1)` qua 7 action dim thủ công), chỉ lấy mean trên các sample thuộc mask, cộng `kl_coef * kl_loss` vào tổng loss trước `backward()`.
+- Reference policy mặc định = ĐÚNG checkpoint đang fine-tune từ đó (`--checkpoint`, deepcopy + load lại state_dict) — đúng ý định "không lệch xa policy TRƯỚC KHI học PLACE". CLI `--kl-coef` (mặc định 0.0 = tắt, an toàn ngược) + `--kl-ref-checkpoint` (override thủ công, chủ yếu cho `--resume`).
+- Log thêm `train/kl_ref_reach_grasp` để theo dõi mức độ lệch thực tế.
+
+### Bug tự bắt được khi test (không phải bug logic, mà là quy trình)
+Smoke test local lần đầu dùng `--headless` — build Isaac Sim local (5.1.0) không nhận flag này (đúng pattern đã ghi nhận nhiều lần trước với `isaaclab_demo.py`/`eval_lift_metrics.py` — chỉ server nhận `--headless`, local dùng `--visualizer none`). Lần 2 quên `cd` rõ ràng trong CÙNG command nền — cwd của phiên đã reset về `/home/hans/universal_bot` giữa các lượt gọi Bash (harness không giữ `cd` qua các lời gọi), khiến `source ./openarm.env` fail âm thầm (thất bại nhưng bị `>/dev/null 2>&1` nuốt lỗi), `$ISAAC_SIM_PYTHON` rỗng → toàn bộ lệnh sau đó không chạy. Lần 3 thêm `cd /home/hans/universal_bot/Reinforce_Learning &&` ở đầu CÙNG dòng lệnh — chạy được, nhưng lộ ra path checkpoint khác giữa local/server (`logs/policy_1M_success57.pt` chỉ tồn tại trên SERVER; local có ở `logs/train/policy_1M_success57.pt`) — sửa path, chạy sạch.
+
+### Verify (smoke test local, 4 env, 600 bước, `--kl-coef 0.1`)
+Chạy xong sạch, không traceback, `KL-protection enabled` in đúng, `train/kl_ref_reach_grasp` xuất hiện trong log (0.00112 → 0.00272, tăng nhẹ đúng cơ chế — vừa mới bắt đầu từ chính policy tham chiếu nên KL còn rất nhỏ). Xác nhận đúng về mặt cơ học — CHƯA đủ để đánh giá `kl_coef` có chọn đúng độ lớn hay không (chỉ 600 bước, quá ngắn để KL tích luỹ đáng kể).
+
+### File sửa (Phase 21, CHƯA commit)
+`isaaclab_train.py` (`KLProtectedPPO`, `--kl-coef`, `--kl-ref-checkpoint`, đổi `PPO(...)`→`KLProtectedPPO(...)` cả nhánh fresh-train lẫn `--resume`).
+
+### Chưa làm
+- Chưa test đường `--resume` + `--kl-coef` (không phải path đang dùng tích cực, bỏ qua để tiết kiệm thời gian).
+- Chưa biết `kl_coef` nên lớn cỡ nào — `policy_gradient_loss` quan sát được RẤT nhỏ (~0.001), trong khi `value_loss` (nhân `vf_coef=0.5`) chiếm phần lớn độ lớn của `loss` tổng (1-46) — so sánh độ lớn loss thô KHÔNG đủ tin cậy để suy ra hệ số đúng (gradient thật phụ thuộc kiến trúc/backward, không chỉ giá trị loss). Cần đo trực tiếp qua diagnostic thật, không đoán số.
+
+## Phase 22 — Diagnostic 2M với KL-protection (`kl_coef=1.0`): LẦN ĐẦU TIÊN đà thoái hoá bị CHẶN ĐỨNG
+
+Chạy diagnostic 2M bước (server, 128 env — khớp đúng cấu hình sạch nhất đã có ở Phase 19 để so sánh 1 biến số, `n_epochs=3` giữ nguyên, thêm `--kl-coef 1.0`, reference = chính `policy_1M_success57.pt`).
+
+`kl_ref_reach_grasp` giữ RẤT NHỎ suốt cả run (0.0006-0.003, không tăng theo thời gian) — ban đầu nghi ngờ có thể là lỗi tính toán (KL luôn ~0 do bug), nhưng **eval deterministic thật xác nhận đây là tín hiệu THẬT, không phải bug**:
+
+| Bước | `n_epochs=10` gốc | +entropy decay | `n_epochs=3` (128env, không KL) | `n_epochs=3` (256env, full 5M) | **`n_epochs=3` + KL-protect (coef=1.0)** |
+|---|---|---|---|---|---|
+| 1M | 0.5 | 0.333 | 0.625 | 0.458 | **0.667** |
+| 2M | — | 0.083 | 0.5 | 0.042 | **0.708** |
+
+**LẦN ĐẦU TIÊN trong 6 lần thử, `grasp_rate` deterministic KHÔNG giảm từ 1M→2M — còn tăng nhẹ** (0.667→0.708), gần chạm lại baseline gốc chưa fine-tune (0.833 @ scale 1.0, task_phase 2). Đúng như kỳ vọng thiết kế: KL nhỏ vì penalty đã "giữ" policy không lệch xa reference NGAY TỪ ĐẦU (không phải để nó lệch rồi kéo lại — mà ngăn lệch xảy ra), nên số liệu `kl_ref_reach_grasp` nhỏ chính là dấu hiệu cơ chế hoạt động đúng, không phải bug.
+
+**Xác nhận trực tiếp giả thuyết Phase 18**: ràng buộc TRỰC TIẾP hành vi REACH/GRASP (không đợi tách kiến trúc mạng, không phụ thuộc may rủi giữa các lần chạy như `n_epochs` đơn thuần) chặn được cơ chế "gradient từ PLACE kéo lệch trọng số dùng chung" — đây là bằng chứng THỰC NGHIỆM mạnh nhất từ đầu investigation PLACE tới giờ.
+
+### Hướng tiếp theo
+Đủ tín hiệu tích cực để chạy full 5M với cấu hình y hệt (`n_epochs=3 --kl-coef 1.0`, 128 env) — đây sẽ là bài kiểm tra thật: liệu grasp_rate có GIỮ ĐƯỢC (hoặc tiếp tục cải thiện) suốt 5M, hay vẫn sập ở đâu đó sau 2M như mọi lần trước. Checkpoint 1M/2M lần này đã tải về (`logs/train_place_klprotect_2M_1M.zip`, `logs/train_place_klprotect_2M_2M.zip`).
+
+## Phase 23 — Full 5M với KL-protection: KẾT QUẢ TỐT NHẤT (grasp giữ 0.625 tại 5M), nhưng lộ ra hạn chế mới (LIFT yếu đi)
+
+### Sự cố hạ tầng — GPU server bị chiếm dụng nặng, chuyển sang local
+Lúc chuẩn bị launch full 5M: GPU server chỉ còn ~3GB free (job của user khác tăng đột biến, `nvidia-smi` cho thấy utilization 97%). Thử 128 env → **CUDA OOM** (`Unable to allocate memory... mGpuContactPairsDev`). Thử giảm xuống 64 env → **VẪN OOM** (phân mảnh bộ nhớ do process khác, "free" trên giấy không đủ để cấp phát liên tục). Quyết định chuyển hẳn sang **train local (RTX 4050, hoàn toàn rảnh)** thay vì tiếp tục hạ env count trên server đang biến động khó lường.
+
+### Kết quả full 5M (local, 96 env, `n_epochs=3 --kl-coef 1.0`, từ `policy_1M_success57.pt`)
+Chạy NHANH BẤT NGỜ — chỉ 32 phút (2576 it/s, nhanh hơn hẳn ước tính ban đầu; có lẽ 96 env + scene nhẹ phù hợp tốt với 4050). Không lỗi, đủ 5,001,216/5,000,000 bước, mọi checkpoint (1M-5M) lưu sạch.
+
+**Eval deterministic** (cùng phương pháp mọi lần):
+
+| Bước | `n_epochs=3` (không KL) | **`n_epochs=3` + KL (coef=1.0)** |
+|---|---|---|
+| 2M | 0.5 (128env) / 0.042 (256env) | **0.708** |
+| 5M | 0.0 (256env, full 5M) | **0.625** |
+
+**LẦN ĐẦU TIÊN checkpoint CUỐI CÙNG của một lần fine-tune PLACE đầy đủ vẫn giữ được `grasp_rate` deterministic khả dụng (0.625)** — không sập về 0 như 5/5 lần thử trước (mọi cấu hình: gốc, entropy-decay, n_epochs=3 đơn thuần, dù ở 128env hay 256env). Xác nhận KL-protection là fix hiệu quả nhất đã tìm ra trong toàn bộ investigation PLACE.
+
+### Hạn chế mới phát hiện — LIFT yếu đi, chưa episode nào chạm tới PLACE
+Xem `fail_modes` chi tiết: **cả ở mốc 2M lẫn 5M, KHÔNG episode nào (0/24) từng vào tới PLACE** — `fail_modes` chỉ gồm `reach`/`grasp`/`lift_too_low`, không có mode nào liên quan PLACE (`no_release`/`place_timeout`/...). `mean_lift_m` gần như 0 (0.0011-0.0059m, cần ≥0.03m để tính nhấc thành công) — nghĩa là dù GRASP/latch giữ tốt hơn hẳn, khả năng **LIFT** (nhấc chai lên đủ cao) lại yếu đi so với baseline gốc (`policy_1M_success57.pt` có `lift_start_rate=0.43`).
+
+**Nguyên nhân khả dĩ** (chưa xác nhận, cần điều tra thêm nếu muốn sửa): `LIFT` chỉ là sub-phase NỘI BỘ của `STAGE_GRASP` (`env._lift_phase`, không đổi `env._stage`) — nên `stage_obs` trong lúc LIFT vẫn = 0.5, giống hệt GRASP thường, khiến mask bảo vệ (`stage_obs < 0.75`) VÔ TÌNH áp luôn penalty KL lên cả hành vi LIFT — có thể đã hạn chế khả năng tinh chỉnh động tác nhấc mà đáng lẽ nên được tự do học như PLACE.
+
+### File local (Phase 23, CHƯA commit vào git — chỉ checkpoint/log)
+`logs/train_place_klprotect_5M_local/` (đầy đủ checkpoint 1M-5M + best/final_policy.pt), `logs/train_place_klprotect_5M_local.log`.
+
+### Hướng tiếp theo (chưa làm, cần quyết định)
+1. **Tinh chỉnh mask KL** — loại LIFT sub-phase khỏi vùng "protected" (chỉ bảo vệ REACH/GRASP thật, để LIFT tự do học như PLACE) — cần thêm điều kiện dựa trên `_lift_phase` vào observation hoặc truyền riêng qua buffer (hiện KLProtectedPPO chỉ đọc được `rollout_data.observations`, không có `_lift_phase` — cần bổ sung cách truyền tín hiệu này vào rollout buffer, phức tạp hơn chỉnh 1 threshold).
+2. **Thử `kl_coef` nhỏ hơn** (vd 0.3-0.5) — nới lỏng ràng buộc, chấp nhận rủi ro GRASP/REACH trôi dạt nhiều hơn một chút, đổi lấy LIFT tự do học tốt hơn — rẻ hơn hướng 1, có thể thử trước.
+3. ~~**Chấp nhận hiện trạng, train tiếp từ checkpoint 5M này**~~ → **Đã làm (Phase 24), KHÔNG đủ — xem bên dưới.**
+
+## Phase 24 — Round 2 (thêm 5M bước từ checkpoint round 1): xác nhận GRASP/REACH bền vững, nhưng LIFT không tự cải thiện
+
+### Sự cố hạ tầng: server driver mismatch — KHÔNG tự sửa
+Lúc định check lại server để cân nhắc chuyển sang đó: `nvidia-smi` báo `Driver/library version mismatch` (kernel module 580.173.02 đang load, thư viện NVML 580.178 — lệch do apt tự cập nhật package mà chưa reload module/reboot). Server có 6 user đang đăng nhập + nhiều job GPU của người khác đang chạy. **Quyết định KHÔNG tự sửa** (cần `rmmod`/`modprobe` lại kernel module hoặc reboot — cả hai đều giết chết job GPU của NGƯỜI KHÁC đang chạy, không phải hạ tầng của mình để tự ý can thiệp) — đúng tiền lệ đã có với sự cố RAID degraded trước đây trong project này. Tiếp tục 100% trên local.
+
+### Kết quả round 2 (resume từ checkpoint round 1's `rl_model_999936_steps.zip`, thêm đúng 4,000,064 bước còn lại để đạt tổng ~10M bước fine-tune tích luỹ từ `policy_1M_success57.pt`, KL-reference GIỮ NGUYÊN là `policy_1M_success57.pt` gốc — không đổi sang checkpoint mới)
+
+| | Round 1 (5M) | Round 2 (+5M, tổng ~10M) |
+|---|---|---|
+| grasp_rate (det.) | 0.625 | **0.625 — giữ nguyên** |
+| latch_rate (det.) | 0.333 | 0.375 |
+| mean_lift_m | 0.0011-0.0059 | 0.0024 |
+| place_start_rate | 0.0 | 0.0 |
+| fail_modes | reach/grasp/lift_too_low | reach/grasp/lift_too_low + 1 `hold_unstable` mới |
+
+**Kết luận**: GRASP/REACH giữ NGUYÊN qua thêm 5M bước (0.625→0.625) — xác nhận KL-protection bền vững lâu dài, KHÔNG tiếp tục thoái hoá theo thời gian train (khác hẳn mọi run trước không có KL). Nhưng **LIFT KHÔNG tự cải thiện dù train thêm gấp đôi thời gian** — xác nhận giả thuyết Phase 23: mask hiện tại (`stage_obs<0.75`) vô tình áp KL-protection lên cả LIFT (vì LIFT chỉ là sub-phase nội bộ của `STAGE_GRASP`, `stage_obs` vẫn =0.5), khoá LIFT ở đúng mức của policy tham chiếu thay vì cho nó tự do cải thiện như PLACE. **"Train tiếp không đổi gì" (option 3) đã được thử và KHÔNG đủ** — cần thật sự làm option 1 (sửa mask) hoặc option 2 (giảm `kl_coef`) để LIFT có cơ hội cải thiện.
+
+### Hướng tiếp theo — quay lại chọn giữa option 1/2 (chưa làm)
+
+User yêu cầu: "think more and debug" — không đoán tiếp giữa option 1/2, điều tra tận gốc trước.
+
+## Phase 25 — Debug sâu: ĐẢO NGƯỢC kết luận Phase 23/24 — KL-protection thực ra HOÀN HẢO, "LIFT yếu" là lỗi PHƯƠNG PHÁP SO SÁNH + bug kịch bản có sẵn từ trước, không liên quan PLACE/KL
+
+### Manh mối đầu: fail_mode `lift_too_low` kẹt ở CÙNG MỘT GIÁ TRỊ bất thường
+`lift_m` của 8-9/24 episode `lift_too_low` đều hội tụ về **đúng ~1.6-1.8mm** (không phải phân bố ngẫu nhiên) — quá nhất quán để là trùng hợp. Khớp CHÍNH XÁC với comment lịch sử trong `grasp_assist.py::_osc_world_up_lift`: *"Đo được (lift_too_low, DEBUG_STALL): chai theo tay đúng 1.5mm rồi trượt hẳn — đúng thời điểm giật khởi động"* — một bug đã biết, KHÔNG liên quan gì tới PLACE/KL-protection.
+
+### Kiểm tra chéo — phát hiện lỗi phương pháp luận nghiêm trọng
+Chạy lại **`policy_1M_success57.pt` GỐC** (chưa từng qua bất kỳ fine-tune PLACE nào) ở ĐÚNG cùng điều kiện đã dùng để đánh giá mọi checkpoint PLACE (`--task_phase 3 --stage all --assist-scale 1.0 --seed 1`):
+```
+grasp=0.625 latch=0.375 lift_start=0.375 success=0.0
+fail_modes: {'grasp': 6, 'reach': 9, 'lift_too_low': 9}   ← Y HỆT mọi checkpoint đã fine-tune
+```
+**Giống hệt về số liệu VÀ hiện tượng `lift_too_low` ~1.6mm** với checkpoint KL-protected sau 10M bước! Nghi ngờ `task_phase` là nguyên nhân → test thêm `--task_phase 2` (giữ nguyên seed=1) → **CŨNG RA ĐÚNG SỐ NÀY** (0.625/0.375/0.375, cùng 9 episode lift_too_low ~1.6mm). Vậy KHÔNG PHẢI task_phase.
+
+**Thủ phạm thật: SEED.** Toàn bộ investigation PLACE (Phase 14 trở đi) dùng `--seed 1` cho mọi eval chẩn đoán, trong khi con số nền "0.833" luôn được dùng để so sánh lại đến từ regression gate CHUẨN dùng `--seed 0`. `--seed 1` tình cờ tạo ra một chuỗi vị trí chai (bottle-noise ngẫu nhiên nhưng tất định theo seed) khó hơn hẳn cho GRASP/LIFT — **kể cả trên chính checkpoint GỐC chưa từng đụng tới**. Đây là lỗi so sánh khập khiễng (so `--seed 1` của checkpoint mới với `--seed 0` của checkpoint cũ) đã âm thầm tồn tại xuyên suốt Phase 14-24 — không ai trong các phase trước phát hiện ra vì luôn so sánh CÁC CHECKPOINT MỚI VỚI NHAU (cùng seed 1, hợp lệ nội bộ), chỉ riêng việc gán nhãn "0.625 là thoái hoá so với 0.833" mới sai.
+
+### Kết luận ĐÚNG (thay thế Phase 23/24)
+1. **KL-protection không chỉ "tốt nhất trong 6 lần thử" — nó HOÀN HẢO.** So đúng cặp (cùng seed=1): checkpoint gốc = 0.625, checkpoint SAU 10M bước fine-tune PLACE (round 1+2, có KL-protection) = 0.625. **Thoái hoá = 0%**, không phải "giữ được phần lớn". Xác nhận dứt khoát: cơ chế KL-penalty (Phase 21) giải quyết ĐÚNG VÀ ĐỦ gốc rễ đã tìm ra ở Phase 18 (gradient từ PLACE kéo lệch trọng số REACH/GRASP dùng chung).
+2. **"LIFT yếu" không phải lỗi do PLACE/KL gây ra — là điểm yếu CÓ SẴN của `policy_1M_success57.pt` gốc**, chỉ lộ rõ với seed khó (seed=1). Toàn bộ fine-tune PLACE (dù có KL hay không) không hề làm nó tệ hơn — chỉ đơn giản KHÔNG SỬA được nó (đúng ý nghĩa của "protection": bảo tồn hành vi cũ, tốt lẫn xấu).
+3. **Nguyên nhân sâu hơn — TẠI SAO không sửa được dù train bao nhiêu**: trong `LIFT_RISING`, `_osc_world_up_lift` (grasp_assist.py) làm: `out[mask]=0.0` rồi `out[mask,2]=full_mag*ramp_frac` — **ghi đè CỨNG, vứt bỏ HOÀN TOÀN action của policy** (cả 6 chiều, không chỉ trục Z) trong suốt pha nhấc. Đây là override tuyệt đối (mirror đúng đường LIFT verify Giai đoạn 1 cũ, `w>=1-1e-6`), không phải residual. **Không có gradient RL nào chảy qua hành vi LIFT thật cả** — sửa `kl_coef`, sửa mask, train thêm bao lâu cũng vô ích, vì policy không có quyền điều khiển ở đây.
+
+### Bài học phương pháp luận (bổ sung cho `LIFT_BUG_THEORY.md`)
+Khi so sánh "trước/sau" một thay đổi, **luôn kiểm tra baseline được đo ở ĐÚNG cùng điều kiện** (bao gồm cả seed, không chỉ config/checkpoint) — một baseline "đã biết tốt" đo ở điều kiện A không tự động là cột mốc hợp lệ cho việc đo ở điều kiện B, dù trông giống nhau về mặt tham số bên ngoài (cùng script, cùng checkpoint tên gọi). Việc này lẽ ra phải bị bắt ở ngay Phase 14 nếu chạy đối chứng checkpoint gốc CÙNG seed trước khi bắt đầu cả chuỗi 6 lần train — một bài học "đo trước khi tin" bị bỏ sót ngay từ khâu thiết lập baseline, không phải khâu diễn giải kết quả.
+
+### Hướng tiếp theo (chưa làm, cần quyết định user)
+1. **PLACE state machine/reward (S1-S9, Phase 10-13) coi như đã xong và ĐÚNG** — không cần sửa gì thêm liên quan REACH/GRASP/PLACE-reward. KL-protection (Phase 21) là fix ĐÚNG và ĐỦ cho vấn đề gradient-interference đã tìm ra ở Phase 18.
+2. **Nút thắt thật để làm PLACE hoạt động được là LIFT — cần sửa ở tầng kịch bản `_osc_world_up_lift`/độ chính xác GRASP trước khi nhấc**, không phải RL nữa. Hướng khả dĩ: (a) đo lại chính xác nguyên nhân "trượt sau 1.5-1.8mm" bằng `DEBUG_STALL` trên demo thật (đã có instrumentation sẵn, gated, xem `grasp_assist.py:125`) thay vì suy luận từ eval JSON; (b) cân nhắc tăng `grasp_lift_onset_ramp_steps` hoặc xem lại `grasp_lift_world_m`/ma sát; (c) cải thiện độ chính xác GRASP (z_error_finger tại thời điểm latch) để nắm chắc thân chai hơn trước khi nhấc.
+3. **Cân nhắc rà lại toàn bộ investigation Phase 14-24 dưới ánh sáng phát hiện này** — có thể một số con số "thoái hoá" khác (VD ở các lần train KHÔNG có KL) cũng cần đối chiếu lại với baseline seed=1 đúng cách trước khi kết luận chắc chắn mức độ thoái hoá thật sự (dù xu hướng chung — sập về gần 0 — vẫn rõ ràng đủ để không nghi ngờ kết luận "không có KL thì thoái hoá thật", chỉ mức ĐỘ chính xác cần xem lại).
+
+User yêu cầu: "fix".
+
+## Phase 26 — Implement + verify zf-drift abort: ĐÚNG kỹ thuật nhưng CHƯA ĐỦ, cần tìm tiếp
+
+### Debug bằng công cụ có sẵn (không đoán)
+Chạy demo GUI thật (`DEBUG_STALL=1 DEBUG_LIFT=1`, `--visualizer kit`, máy có màn hình vật lý thật — user xem trực tiếp) trên `policy_1M_success57.pt` gốc, seed=1, episode lift_too_low. Log `[LiftSlip]` cho thấy `z_error_finger` (`z_f`) tăng ĐƠN ĐIỆU, KHÔNG NGỪNG suốt RISING: 19.73mm (step 700) → 35.86 → 54.80 → ... → **834mm (step 1180)** — chai đã tách khỏi kẹp hoàn toàn ngay từ đầu, cánh tay đi lên trong không khí. Nhưng mỗi BƯỚC ĐƠN LẺ chỉ tăng ~0.7-2.2mm (`dz_f` trong log) — dưới hẳn ngưỡng phát hiện trượt hiện có (`grasp_lift_slip_z_finger=0.022 × 0.45 = 9.9mm/bước`) — nên `_update_lift_slip`'s bộ đếm delta-1-bước KHÔNG BAO GIỜ bắt được, để RISING chạy vô ích ~500 bước (gần hết ngân sách episode) cho một lần thử đã chắc chắn thất bại từ giây đầu.
+
+### Fix đã làm
+Thêm bộ đếm MỚI, độc lập, dùng NGƯỠNG TUYỆT ĐỐI (không phải delta/bước): `grasp_lift_abort_z_finger=0.05m`, `grasp_lift_abort_z_finger_steps=5` (config.py) — `_update_lift_slip` (grasp_assist.py) tính `zf_over = armed & (z_error_finger > 0.05)`, đếm dồn `_lift_zf_abort_steps`; `_lift_must_abort` thêm điều kiện `zf_abort_steps >= 5`. Reset buffer mới trong `terminations.py::reset_robot`. Cập nhật nhãn debug (`reason="zf_drift"`) cho đầy đủ.
+
+### Verify
+- Demo lại đúng scenario: `RISING→IDLE` giờ xảy ra ở **step 740 (chỉ 59 bước sau khi RISING bắt đầu ở step 681)**, thay vì chạy tới step ~1180+ như trước — xác nhận cơ chế phát hiện hoạt động ĐÚNG THIẾT KẾ, tiết kiệm ~340+ bước lãng phí mỗi lần trượt.
+- **Regression gate BẮT BUỘC** (`--seed 0 --task_phase 2`, đúng baseline chuẩn): PASS tuyệt đối — `success=0.0333, grasp=0.8333, latch=0.4667, lift_start=0.4333` khớp CHÍNH XÁC baseline. Không hồi quy.
+
+### PHÁT HIỆN — fix ĐÚNG kỹ thuật nhưng KHÔNG cải thiện kết quả cuối
+Đo lại `eval_lift_metrics.py` (seed=1, cùng điều kiện phát hiện bug): `grasp=0.625, latch=0.375, lift_start=0.375` — **giống hệt TRƯỚC KHI SỬA**. `lift_cmd_steps` của các episode lift_too_low giảm đúng như kỳ vọng (57-78 bước thay vì 200-570), xác nhận abort SỚM hoạt động — nhưng **không có cải thiện success rate nào**.
+
+**Lý do (kiểm tra trực tiếp log, không suy luận)**: mỗi episode chỉ có ĐÚNG 1 chu kỳ `IDLE→RISING→IDLE` — sau khi abort mới (ở z_f≈50mm), **không có lần retry nào nữa trong phần còn lại của episode** (còn ~160-460 bước không làm gì). Vì `z_error_finger` sau abort đã trôi vượt ngưỡng abort (50mm) và KHÔNG có cơ chế nào chủ động đưa nó quay lại dưới ngưỡng gate ban đầu (`grasp_lift_contact_z_finger=0.014m`, qua PHASE2_GRASP override) — `_lift_can_start` không bao giờ pass lại được. Fix chỉ đổi **thời điểm bỏ cuộc** (nhanh hơn), không tạo cơ hội thử lại thật.
+
+**Nguyên nhân gốc thật vẫn CHƯA giải quyết**: chai bắt đầu tuột chỉ trong ~19 bước đầu của RISING (z_f từ dưới 14mm lúc bắt đầu lên 19.73mm ở bước thứ 19), dù gate ban đầu đã pass — nghĩa là ngay cả một grip "đạt chuẩn" theo ngưỡng hiện tại (`contact_z=0.014m`) vẫn không đủ chắc để chịu lực/gia tốc lúc bắt đầu nhấc. Đây khớp với ghi chú lịch sử trong code (`grasp_body_height_ratio` comment): ngưỡng `grasp_lift_contact_z_finger` từng bị nới từ 0.008 lên giá trị hiện tại vì lý do khác, có thể đã đánh đổi độ chắc chắn của grip lấy tỉ lệ latch cao hơn.
+
+### File sửa (Phase 26, CHƯA commit)
+`isaaclab_openarm_env/config.py` (`grasp_lift_abort_z_finger`, `grasp_lift_abort_z_finger_steps`), `isaaclab_openarm_env/mdp/grasp_assist.py` (`_update_lift_slip` thêm bộ đếm zf-drift, `_lift_must_abort` thêm điều kiện, debug label), `isaaclab_openarm_env/mdp/terminations.py` (reset buffer mới).
+
+### Hướng tiếp theo (chưa làm, cần quyết định user — rủi ro cao hơn, có thể ảnh hưởng hành vi đã train)
+1. **Siết `grasp_lift_contact_z_finger`** (hiện 0.014m qua PHASE2_GRASP) xuống thấp hơn (vd giá trị lịch sử 0.008m) — buộc chỉ latch khi ngón THỰC SỰ ngang thân chai trước khi cho phép nhấc. RỦI RO: policy đã train quen với ngưỡng 0.014m, siết chặt có thể làm giảm hẳn `latch_rate`/`lift_start_rate` vì điều kiện khó đạt hơn — cần đo trước khi tin, không đoán.
+2. **Thêm cơ chế "phục hồi" sau zf_drift-abort**: chủ động hạ/điều chỉnh tay về vị trí gần chai hơn khi vừa abort (thay vì đứng yên ở vị trí đã trôi) để tạo cơ hội `_lift_can_start` pass lại trong cùng episode — phức tạp hơn, cần thiết kế logic re-approach mới.
+3. **Đo trực tiếp lực/ma sát thực tế lúc RISING bắt đầu** (không chỉ suy luận từ z_error_finger) — có thể vấn đề nằm ở `grasp_lift_world_m`/tốc độ ramp chứ không phải vị trí kẹp.

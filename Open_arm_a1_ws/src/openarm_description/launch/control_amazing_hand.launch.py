@@ -11,6 +11,9 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    """Bring up one amazing_hand under real ros2_control (controller_manager +
+    joint_state_broadcaster + j1/j2 group controllers) plus MoveIt's move_group for the
+    joint-only `hand_fingers` planning group, with RViz's MotionPlanning panel optional."""
     declared_arguments = [
         DeclareLaunchArgument("side", default_value="right", description="Which hand: right or left."),
         DeclareLaunchArgument("use_rviz", default_value="true", description="Start RViz."),

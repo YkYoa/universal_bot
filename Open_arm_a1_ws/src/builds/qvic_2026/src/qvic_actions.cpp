@@ -62,6 +62,9 @@ namespace {
 constexpr const char* kMotion = sequence_executor::kModeMotion;
 
 // ── action_01: worked example ────────────────────────────────────────────────
+/// action_01: moves both arms to their "home" named pose, then closes both
+/// hands to the home flex posture (hand failure is logged but doesn't fail
+/// the action - see the run body for why).
 BuiltinAction homeBothArms()
 {
   BuiltinAction action;
@@ -156,6 +159,8 @@ constexpr const char* kHomeSection = "homePoses";
 
 // Everything read from the store before the first move, so a missing waypoint
 // fails with the arm still stationary.
+/// Everything one arm's ellipse-wave action needs, pre-loaded from the store
+/// before the first move (see runArmArcWave()).
 struct ArmArcData
 {
   std::vector<double> home;   // 7
@@ -164,6 +169,8 @@ struct ArmArcData
   std::vector<double> back;   // the same, reversed
 };
 
+/// Flattens a list of per-waypoint joint vectors into one stride-DOF vector,
+/// in forward or reversed point order, for moveToJointSequence().
 std::vector<double> flattenArc(const std::vector<std::vector<double>>& points, bool reversed)
 {
   std::vector<double> flat;
@@ -176,8 +183,10 @@ std::vector<double> flattenArc(const std::vector<std::vector<double>>& points, b
   return flat;
 }
 
-// Shared body for waveLeftArmEllipse()/waveRightArmEllipse() - same logic,
-// only the arm name/section/home-waypoint/log-prefix differ.
+/// Shared body for waveLeftArmEllipse()/waveRightArmEllipse() - same logic,
+/// only the arm name/section/home-waypoint/log-prefix differ. Homes `arm`,
+/// moves to the start of `section`'s recorded arc, then sweeps out and back
+/// (as one blended joint-sequence trajectory each way) until cancelled.
 void runArmArcWave(BuiltinContext& ctx, BuiltinAction::DoneCallback done,
                    const std::string& arm, const char* section,
                    const std::string& home_waypoint, const char* log_prefix)
@@ -260,6 +269,8 @@ void runArmArcWave(BuiltinContext& ctx, BuiltinAction::DoneCallback done,
     });
 }
 
+/// action_02: home, then sweep the left arm through waveEllipse's recorded
+/// arc (out and back) until cancelled. See runArmArcWave().
 BuiltinAction waveLeftArmEllipse()
 {
   BuiltinAction action;
@@ -277,6 +288,8 @@ BuiltinAction waveLeftArmEllipse()
   return action;
 }
 
+/// action_08: right-arm counterpart of waveLeftArmEllipse(), sweeping
+/// waveEllipseR's recorded arc. See runArmArcWave().
 BuiltinAction waveRightArmEllipse()
 {
   BuiltinAction action;
@@ -300,6 +313,7 @@ constexpr double kHeadRotateDeg = 10.0;
 constexpr double kHeadRotateRad = kHeadRotateDeg * M_PI / 180.0;
 constexpr double kHeadRotateDurationSec = 0.84;
 
+/// action_03: sweeps the head between -10 and +10 degrees continuously until cancelled.
 BuiltinAction headRotate()
 {
   BuiltinAction action;
@@ -350,6 +364,8 @@ const std::vector<double> kWaveLeftArmStart = {
 const std::vector<double> kWaveLeftArmEnd = {
   -40.0 * kDeg, -10.0 * kDeg, 20.0 * kDeg, 90.0 * kDeg, 88.0 * kDeg, 0.0, 0.0};
 
+/// action_04: homes the left arm, then sweeps joint3 between a fixed
+/// start/end pose (hardcoded angles, not store-loaded) until cancelled.
 BuiltinAction waveLeftArm()
 {
   BuiltinAction action;
@@ -421,6 +437,7 @@ const std::vector<double> kWaveRightArmStart = {
 const std::vector<double> kWaveRightArmEnd = {
   40.0 * kDeg, 10.0 * kDeg, -20.0 * kDeg, 90.0 * kDeg, -88.0 * kDeg, 0.0, 0.0};
 
+/// action_05: right-arm counterpart of waveLeftArm().
 BuiltinAction waveRightArm()
 {
   BuiltinAction action;
@@ -492,6 +509,8 @@ const std::vector<double> kLoopRightArmStart = {
 const std::vector<double> kLoopRightArmEnd = {
   0.0 * kDeg, 13.0 * kDeg, 21.0 * kDeg, 61.0 * kDeg, 74.0 * kDeg, 12.0 * kDeg, -7.0 * kDeg};
 
+/// action_06: homes the right arm, then loops between a fixed hardcoded
+/// start/end pose until cancelled.
 BuiltinAction loopRightArm()
 {
   BuiltinAction action;
@@ -565,6 +584,8 @@ const std::vector<double> kLoopLeftArmStart = {
 const std::vector<double> kLoopLeftArmEnd = {
   0.0 * kDeg, -13.0 * kDeg, -21.0 * kDeg, 61.0 * kDeg, -74.0 * kDeg, -12.0 * kDeg, 7.0 * kDeg};
 
+/// action_07: mirror image of loopRightArm() for the left arm (see the
+/// mirror-rule comment above).
 BuiltinAction loopLeftArm()
 {
   BuiltinAction action;
@@ -639,6 +660,7 @@ const std::vector<double> kShowPose = {
   0.0, -12.0 * kDeg, 0.0, 48.0 * kDeg, 0.0, 0.0, 0.0,
   0.0, 12.0 * kDeg, 0.0, 48.0 * kDeg, 0.0, 0.0, 0.0};
 
+/// action_09: single move of both arms to a fixed hardcoded "show" pose (no sweep/loop).
 BuiltinAction showPose()
 {
   BuiltinAction action;
@@ -673,6 +695,7 @@ BuiltinAction showPose()
 // matching /api/head's "left"/"right"/"home" shortcuts and duration.
 constexpr double kHeadMoveDurationSec = 0.4;
 
+/// action_10: single-shot move of the head to +10 degrees.
 BuiltinAction headRotateLeft()
 {
   BuiltinAction action;
@@ -689,6 +712,7 @@ BuiltinAction headRotateLeft()
   return action;
 }
 
+/// action_11: single-shot move of the head to -10 degrees.
 BuiltinAction headRotateRight()
 {
   BuiltinAction action;
@@ -705,6 +729,7 @@ BuiltinAction headRotateRight()
   return action;
 }
 
+/// action_12: single-shot move of the head back to 0 degrees.
 BuiltinAction headRotateHome()
 {
   BuiltinAction action;
