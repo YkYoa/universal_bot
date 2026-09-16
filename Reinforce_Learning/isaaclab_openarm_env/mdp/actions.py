@@ -512,7 +512,31 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                 )
             else:
                 step_size = torch.full_like(self._close_progress, 1.0 / float(ramp_steps))
+            # Phase 41 — BUG THẬT phát hiện lúc redesign PLACE thành "ô kẻ
+            # rộng": `_close_progress` (điều khiển target khớp kẹp thật, xem
+            # `targets = open_t*(1-prog) + close_t*prog` bên dưới) CHỈ CÓ
+            # ĐƯỜNG TĂNG (`can_advance` ở trên, toàn bộ logic phía trên chỉ
+            # nói về ramp ĐÓNG) — không có đường giảm nào áp dụng được lúc
+            # PLACE, vì `stale` (dòng dưới) đòi `~self._grasp_latched`, mà
+            # `_grasp_latched` CỐ Ý giữ True suốt CARRY/DESCEND/HOLDING (chai
+            # vẫn đang được giữ). Hệ quả: `actions[in_place & release_ready,
+            # 0] = 1.0` (raw action "mở kẹp") được set đúng, nhưng KHÔNG BAO
+            # GIỜ tới được khớp thật — `_close_progress` cứ đứng yên ở mức đã
+            # đóng (đo được max_gc=0.7625 không đổi DÙ ĐÃ ở PLACE_HOLDING
+            # >300 bước). Đây là lý do "released" chưa từng = True trong MỌI
+            # lần đo PLACE từ Phase 10 tới giờ — độc lập hoàn toàn với vấn đề
+            # DESCEND-chưa-từng-kích-hoạt (Phase 40). Thêm nhánh giảm riêng,
+            # loại các env đang release khỏi `can_advance` (tránh vừa tăng
+            # vừa giảm cùng lúc do `_grasp_latched` vẫn True).
+            releasing = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            if uses_place(getattr(self._env.cfg, "task_phase", 1)) and s is not None:
+                in_place = self._env._stage == STAGE_PLACE
+                releasing = in_place & place_release_ready(self._env, s)
+                can_advance = can_advance & ~releasing
             self._close_progress[can_advance] += step_size[can_advance]
+            self._close_progress.clamp_(0.0, 1.0)
+            release_ramp_steps = int(getattr(self._env.cfg, "place_release_ramp_steps", 15))
+            self._close_progress[releasing] -= 1.0 / max(release_ramp_steps, 1)
             self._close_progress.clamp_(0.0, 1.0)
             stale = ~self._want_close & ~self._grasp_latched
             if s is not None:

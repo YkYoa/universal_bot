@@ -190,6 +190,16 @@ class OpenArmSceneCfg(InteractiveSceneCfg):
     )
 
     # Bowl
+    #
+    # Phase 36: ĐÃ THỬ dời y 0.22→0.32 (thu hẹp lệch Y với chai 0.40 từ 180mm
+    # xuống 80mm) để né trần joint2 lúc PLACE_CARRY — ĐO ĐƯỢC hồi quy NẶNG:
+    # CẢ 4 env fail REACH/GRASP hoàn toàn (trước đó env0 luôn latch+lift ổn
+    # định ở đúng seed này). Nguyên nhân: bowl_pos/dist_bottle_bowl nằm trong
+    # observation 26-D và được tính ở MỌI stage (không chỉ PLACE, xem Phase 10
+    # — "hạ tầng quan sát đã có sẵn từ trước"), nên đổi vị trí bát tạo input
+    # NGOÀI PHÂN PHỐI mà policy REACH/GRASP đã học, dù bát không liên quan gì
+    # tới REACH/GRASP về mặt logic. ĐÃ REVERT về (0.58, 0.22, 0.67). Muốn đổi
+    # vị trí bát phải TRAIN LẠI (không thể chỉ đổi scene cho checkpoint cũ).
     bowl: RigidObjectCfg = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Scene/Bowl",
         spawn=None,
@@ -282,6 +292,18 @@ def _make_osc_actions_cfg(
                 gravity_compensation=True,
                 nullspace_control="position",
             ),
+            # Phase 36: ĐÃ THỬ "center" (giữa dải joint_pos_limits thật) thay
+            # "default" với ý định nhường joint2 (chạm trần +10° lúc PLACE_CARRY,
+            # xem CarryDbg) cho joint4 gánh — ĐO ĐƯỢC (regression gate phase 2,
+            # seed=0): grasp_rate SẬP 0.8333→0.00, TOÀN BỘ episode fail ngay ở
+            # REACH. Null-space bias là tham số TOÀN CỤC dùng chung mọi stage;
+            # policy đã học với tư thế nghỉ "default" (gần 0°) làm giả định
+            # ngầm — đổi sang "center" (tư thế nghỉ rất khác, lệch hẳn khỏi
+            # phân bố policy từng thấy lúc train) phá luôn REACH. ĐÃ REVERT về
+            # "default". Muốn né trần joint2 khi PLACE phải làm CỤC BỘ (vd.
+            # nới giới hạn joint2 nếu đó là ràng buộc giả định sai, hoặc sửa
+            # trực tiếp quỹ đạo CARRY để không cần vươn xa + nâng cao cùng lúc),
+            # KHÔNG đổi null-space bias toàn cục.
             nullspace_joint_pos_target="default",
             position_scale=position_scale,
             orientation_scale=orientation_scale,
@@ -481,7 +503,14 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     # ký, place_success_xy_radius_m từng có 2 default khác nhau (0.05 ở
     # helpers.py, 0.10 ở rewards.py) không ai phát hiện vì chưa field nào
     # từng override cả hai cùng lúc.
-    place_success_xy_radius_m: float = 0.05
+    # Phase 41 (theo yêu cầu user — "đặt vô 1 ô kẻ", không cần train lift):
+    # bỏ mục tiêu "phải vào TÂM bát chính xác" (đo được joint2 khiến XY chỉ
+    # hội tụ về ~90-97mm trong 20s, KHÔNG bao giờ xuống dưới 50mm cũ) — đổi
+    # sang mục tiêu "vùng đất rộng" (giống thả vào 1 ô kẻ lớn trên bàn) sát
+    # với bán kính bát đo thật (~8cm) + margin. Không cần train: chỉ nới
+    # ngưỡng thành công/cổng state-machine, state machine + carry/descend
+    # assist script hoá giữ NGUYÊN.
+    place_success_xy_radius_m: float = 0.12
     place_success_max_height_above_floor_m: float = 0.03
     place_success_max_speed: float = 0.15
     place_success_hold_steps: int = 10
@@ -496,22 +525,69 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     # nhất thay vì rải rác trong grasp_assist.py/helpers.py/actions.py).
     assist_place: bool = False               # mirror grasp_lift_assist_enabled; bật qua phase2_overrides khi --stage place
     place_hold_closed: bool = True           # bootstrap: ép giữ đóng kẹp cứng suốt carry khi chưa train (verify state machine)
-    place_carry_height_m: float = 0.15
+    # Phase 36: 0.15m (đo bằng CarryDbg 7-khớp) đòi joint2 vừa nâng vừa vươn
+    # ra bát cùng lúc, đẩy joint2 tới sát trần +10.0° (giới hạn CƠ KHÍ THẬT —
+    # xem openarm_arm.xacro, offset -90° cho tay trái — không phải config
+    # sai) khiến XY kẹt cứng ~99mm, không bao giờ hội tụ đủ để hạ xuống bát.
+    # Hạ xuống 0.07m (vẫn dư an toàn so với bát sâu ~52mm thật đo ở S9) để
+    # giảm mức vươn cần thiết, thử xem joint2 có đủ margin hội tụ XY không.
+    place_carry_height_m: float = 0.07
+    # Mốc chuẩn hoá cổng ưu-tiên-leo-cao (_osc_carry_to_bowl xy_gate) — TÁCH
+    # RIÊNG khỏi place_carry_height_m để hạ độ cao mục tiêu không vô tình siết
+    # chặt thêm cổng XY (xem comment tại chỗ dùng, grasp_assist.py).
+    place_carry_z_gate_ref_m: float = 0.15
     place_carry_onset_ramp_steps: int = 15
     place_carry_speed_scale: float = 0.35    # chậm hơn hẳn max speed — chống tilt khi mang (xem grasp_assist.py)
+    # Phase 37: ĐÃ THỬ tắt hẳn (0.0) với giả thuyết "ép thẳng đứng" chặn joint2
+    # dùng bậc tự do xoay cổ tay để né trần +10°. ĐO ĐƯỢC KHÔNG GIÚP GÌ (CarryDbg):
+    # joint2 đi ĐÚNG quỹ đạo cũ (margin 19.9°→9.2°, gần như y hệt align_blend=0.5),
+    # XY còn hội tụ kém hơn (107.7mm so với ~90-99mm). Lý do: out[mask]=0.0 khởi
+    # tạo TRƯỚC, align_blend=0 chỉ để 3:6 ở giá trị 0 (lệnh "GIỮ NGUYÊN hướng
+    # hiện tại"), KHÔNG phải "thả tự do cho null-space quyết" — 6 chiều tư thế
+    # vẫn bị ràng buộc đủ, joint2 vẫn gánh y như cũ. Muốn thật sự giải phóng cần
+    # loại orientation ra khỏi target 6-D (selection matrix/compliance thật),
+    # không chỉ đặt delta=0 — vượt phạm vi 1 tham số, cần redesign controller.
+    # ĐÃ REVERT về 0.5.
     place_carry_align_blend: float = 0.5
-    place_xy_arrival_radius_m: float = 0.03
+    # Phase 40: ĐO ĐƯỢC (CarryDbg, Phase 36-39) — XY hội tụ chậm dần và
+    # tiệm cận ~90-97mm (giới hạn joint2), KHÔNG BAO GIỜ xuống dưới 30mm
+    # trong thời gian episode còn lại. Hệ quả: DESCEND CHƯA TỪNG được kích
+    # hoạt trong mọi lần đo trước đây — mọi thất bại là "hết giờ khi còn
+    # đang bay ngang", CHƯA TỪNG thực sự thả chai để xem vật lý thật quyết
+    # định nó có rơi vào bát hay không. Bát đo thật rộng bán kính ~8cm
+    # (bowl_center_local_xy, xem trên) — 90-97mm chỉ lệch tâm ~10-17mm so
+    # với rìa bát, không phải "cách xa". Hạ ngưỡng xuống 0.09 (≈ bán kính
+    # bát đo được, có margin) để DESCEND có cơ hội kích hoạt thật — ĐANG
+    # ĐO xem vật lý (bát có thành nghiêng, có thể "hứng" chai lệch tâm hay
+    # không) có tự giải quyết phần còn lại hay không, trước khi kết luận
+    # cần train lại/redesign kiến trúc.
+    place_xy_arrival_radius_m: float = 0.12
     # Phase 35: CARRY→DESCEND (_update_place_state) trước đây CHỈ xét hội tụ
     # XY, không xét độ cao — nếu XY hội tụ nhanh hơn Z leo lên place_carry_height_m
     # (0.15m, độc lập tốc độ theo cùng ramp_frac/speed_scale), tay có thể bắt
     # đầu hạ xuống bát trong khi chai còn thấp hơn miệng bát → va miệng bát
     # thay vì bay qua trên. Thêm điều kiện độ cao THẬT của CHAI (không phải
     # EE) so với miệng bát — đúng bằng chứng vật lý cần để "đủ cao mới cho hạ".
-    place_carry_clearance_m: float = 0.03
+    #
+    # Phase 41 (redesign theo yêu cầu user — mục tiêu "ô kẻ rộng" thay vì
+    # tâm bát chính xác): ĐO ĐƯỢC (Phase 40, kéo dài episode 45s) z_clear
+    # không bao giờ vượt 0 trong thời gian hợp lý (đỉnh -2.7mm rồi tự đảo
+    # chiều xấu đi vì carry mất ổn định dần) — cổng "phải cao hơn miệng bát
+    # mới cho hạ" (nghĩa cũ: tránh va thành bát khi hạ) không còn cần thiết
+    # với mục tiêu "vùng đất rộng" (không có thành cần né). Đặt về âm để
+    # LUÔN thoả — chỉ còn phụ thuộc `place_xy_arrival_radius_m` để chuyển
+    # CARRY→DESCEND.
+    place_carry_clearance_m: float = -1.0
     place_arrival_settle_steps: int = 5
     place_descend_world_m: float = 0.02
     place_release_height_m: float = 0.02     # siết từ 0.05 (S9: bát chỉ sâu 5.2cm)
     place_release_hold_steps: int = 5
+    # Phase 41 — tốc độ ramp MỞ kẹp lúc release (mirror grasp_close_ramp_steps
+    # nhưng cho chiều ngược lại — xem bug thật đã sửa trong actions.py:
+    # _close_progress trước đây không có đường giảm nào áp dụng được lúc
+    # PLACE). 15 bước ≈ 0.25s ở 60Hz, đủ nhanh để thả trước khi episode hết
+    # giờ, đủ chậm để không giật.
+    place_release_ramp_steps: int = 15
     place_abort_tilt_deg: float = 25.0
     place_abort_dist_ee_m: float = 0.15
     place_camp_decay_steps: float = 150      # placeholder — CHƯA đo thời gian carry thật (S9 mục 2, còn thiếu)

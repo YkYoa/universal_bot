@@ -1679,3 +1679,234 @@ eval_lift_metrics.py --model-path policy_1M_success57.pt --episodes 30 --num-env
 
 ### File sửa
 `isaaclab_openarm_env/config.py` (`grasp_press_min_force_single_n=0.30`), `isaaclab_openarm_env/mdp/grasp_assist.py` (`_grip_pressing` thêm nhánh OR), `isaaclab_openarm_env/mdp/actions.py` (`pressing_now`/`firm_contact` mirror OR, debug print `[FreezeDbg]` thêm cờ `both`/`single`).
+
+---
+
+## Phase 36 — PLACE carry: ưu tiên leo cao trước, và giới hạn khớp2 chặn XY (2026-09-16)
+
+### Bối cảnh
+User xem demo, yêu cầu "lift it higher" — đo bằng CarryDbg (DEBUG_PLACE=1) thấy z_clear (chai so với miệng bát) leo đúng hướng nhưng RẤT chậm (~0.17mm/bước) vì `_osc_carry_to_bowl` dùng CHUNG một hệ số `place_carry_speed_scale=0.35` cho cả trục Z lẫn XY — hệ số này vốn chỉ để chống lật khi di chuyển NGANG (đã có lý do rõ trong code), bị áp nhầm luôn lên trục LÊN THẲNG.
+
+### Fix 1 (giữ lại) — ưu tiên leo cao trước khi di chuyển ngang
+`_osc_carry_to_bowl`: thêm `xy_gate = 1 - clamp(z_err/carry_height, 0, 1)` nhân vào `xy_step` — XY chỉ được đi hết tốc khi độ cao đã gần đạt `place_carry_height_m`. Kết quả đo (cùng kịch bản seed=0, env0): z_clear cuối episode tăng từ **+5.7mm → +19.1mm** (leo nhanh và xa hơn hẳn). Không đụng logic GRASP/LIFT nên không cần regression gate phase 2 (dead code khi `task_phase<3`).
+
+### Phát hiện mới: XY kẹt cứng ~99mm dù lệnh vẫn full speed — do khớp2 chạm trần
+Dù ưu tiên leo cao, XY vẫn kẹt ở ~99-104mm (không giảm về dưới `place_xy_arrival_radius_m=0.03`). Đo trực tiếp bằng debug 7-khớp (mở rộng CarryDbg log toàn bộ `joint_pos` + `joint_pos_limits` mỗi 15 bước):
+
+| Khớp | Margin-tới-trần lúc bắt đầu | Lúc kết thúc (420 bước sau) |
+|---|---|---|
+| j1 | 93.9° | 80.3° |
+| **j2** | **19.9°** | **8.1° (đang tiến thẳng tới trần +10.0°)** |
+| j3 | 70.2° | 73.4° |
+| j4 | 41.3° | 67.5° |
+| j5 | 89.2° | 88.3° |
+| j6 | 45.0° | 44.4° |
+| j7 | 82.3° | 74.1° |
+
+Chỉ joint2 co margin liên tục và sắp chạm 0 — 6 khớp còn lại đều dư 40-90°. Đây là **giới hạn cơ khí thật**: bát đặt ở vị trí đòi hỏi vừa nâng cao vừa vươn xa cùng lúc, joint2 (giới hạn trên +10.0°) không đủ dải để hoàn thành cả hai. OSC tự giảm tốc khi khớp gần trần (né vượt giới hạn) nên lệnh vẫn full speed nhưng chuyển động thật gần như 0.
+
+### ĐÃ THỬ và REVERT: đổi null-space target sang "center"
+Giả thuyết: `nullspace_joint_pos_target="default"` (tư thế nghỉ gần 0°) kéo joint2 lệch xa tâm dải chuyển động thật, khiến task chính dễ đẩy nó về phía trần hơn; đổi sang `"center"` (giữa dải `joint_pos_limits` thật) để nhường bậc tự do dư cho joint4 (đang dư margin nhiều nhất) gánh thay.
+
+**ĐO ĐƯỢC (regression gate phase 2, seed=0, BẮT BUỘC vì đây là tham số CHUNG cho mọi stage)**: `grasp_rate` SẬP từ 0.8333 xuống **0.00** — toàn bộ 30 episode fail ngay ở REACH. Null-space bias ảnh hưởng tư thế nghỉ của CẢ CÁNH TAY ở MỌI stage (REACH/GRASP/LIFT dùng chung `_make_osc_actions_cfg`); policy đã học với giả định ngầm "tư thế nghỉ ≈ default (gần 0°)" — đổi sang tư thế nghỉ khác hẳn (center của dải joint2 bất đối xứng, xa 0° hơn nhiều) phá vỡ hoàn toàn REACH dù chỉ là "ưu tiên" ở null-space (không ràng buộc cứng task chính). ĐÃ REVERT về `"default"`, xác nhận lại regression gate khớp baseline (success=0.03, grasp=0.83, latch=0.50, lift_start=0.43).
+
+**Bài học**: không sửa tham số TOÀN CỤC (dùng chung mọi stage) để giải quyết vấn đề CỤC BỘ (chỉ xảy ra ở PLACE_CARRY) — đúng nguyên tắc đã áp dụng xuyên suốt Phase 25-35 (mọi thay đổi chạm code dùng chung phải qua regression gate TRƯỚC khi chấp nhận).
+
+### Trạng thái — chưa giải quyết XY-stall, cần hướng khác cho joint2
+Các hướng còn lại (chưa thử):
+1. Kiểm tra lại giới hạn +10.0° của joint2 có đúng với phần cứng thật không (nếu là giả định sai/quá chặt trong URDF, nới ra giải quyết tận gốc).
+2. Sửa quỹ đạo CARRY để không cần vươn xa + nâng cao cùng lúc (vd. hạ `place_carry_height_m`, hoặc đổi vị trí bát trong scene).
+3. Thêm cơ chế null-space CỤC BỘ chỉ áp dụng trong PLACE_CARRY (không đụng REACH/GRASP/LIFT) — cần nghiên cứu thêm API IsaacLab có hỗ trợ đổi nullspace target theo từng bước hay không (hiện tại `_resolve_nullspace_joint_pos_targets()` chỉ chạy 1 lần lúc init).
+
+### File sửa (Phase 36)
+`isaaclab_openarm_env/mdp/grasp_assist.py` (`_osc_carry_to_bowl` thêm `xy_gate`; `_update_place_state` CarryDbg mở rộng log 7 khớp + limits; `place_carry_clearance_m` gate ở Phase 35 vẫn giữ nguyên). `isaaclab_openarm_env/config.py` (`nullspace_joint_pos_target` thử "center" rồi revert về "default", giữ lại comment lịch sử).
+
+### Tiếp Phase 36 — 2 thử nghiệm nữa, cả 2 đều REVERT
+
+**Thử A — hạ `place_carry_height_m` 0.15→0.07** (giả thuyết: giảm mức vươn cần thiết sẽ né được trần joint2): ĐO ĐƯỢC bug tự gây ra trong chính fix `xy_gate` — mẫu số chuẩn hoá dùng `carry_height` làm z_gate_ref, nên hạ carry_height vô tình làm cổng NGHIÊM NGẶT HƠN (tự triệt tiêu lợi ích). Đã sửa: tách `place_carry_z_gate_ref_m=0.15` độc lập khỏi `place_carry_height_m`. Nhưng sau khi sửa đúng, joint2 **vẫn** tiến đều tới trần +10° gần như y hệt (dù đích thấp hơn hẳn) — chứng minh **không phải độ cao** gây nghẽn, mà là khoảng cách NGANG (Y) từ chai tới bát.
+
+**Thử B — dời bát gần chai hơn (y: 0.22→0.32, giảm lệch 180mm→80mm)**: ĐO ĐƯỢC hồi quy NẶNG — cả 4 env fail REACH/GRASP hoàn toàn (trước đó env0 latch+lift ổn định 100% ở đúng seed này qua hơn 6 lần chạy lặp lại). Nguyên nhân: `bowl_pos`/`dist_bottle_bowl` nằm trong observation 26-D và tính ở MỌI stage (không riêng PLACE, kiến trúc từ Phase 10) — đổi vị trí bát tạo input NGOÀI PHÂN BỐ huấn luyện cho policy REACH/GRASP, dù bát không liên quan logic gì tới 2 stage đó. ĐÃ REVERT về (0.58, 0.22, 0.67), xác nhận lại env0 latch+PLACE đúng bước 758 như cũ.
+
+**Bài học chung của cả 2 lần thất bại**: checkpoint `policy_1M_success57.pt` cực kỳ nhạy với BẤT KỲ thay đổi nào ảnh hưởng observation hoặc control-bias dùng chung, kể cả những thứ tưởng chừng "chỉ liên quan PLACE" (vị trí bát) — vì kiến trúc observation/controller không tách bạch theo stage. Muốn đổi hình học nhiệm vụ (vị trí bát) hoặc control-bias toàn cục để né giới hạn joint2, **bắt buộc phải train lại**, không thể vá bằng cách đổi config cho checkpoint đã huấn luyện xong.
+
+### Kết luận Phase 36
+Đã loại trừ đầy đủ, có bằng chứng, các hướng "sửa nhanh không cần train lại": tăng tốc trục Z (giúp một phần, giữ lại), hạ carry height (không giúp gốc rễ), đổi null-space bias toàn cục (hồi quy REACH), dời bát (hồi quy REACH/GRASP). Giới hạn joint2 +10° là có thật và gắn liền với khoảng cách Y giữa 2 vị trí cố định trong dữ liệu train — giải quyết triệt để cần MỘT trong hai: (a) train lại policy với hình học bát mới, hoặc (b) train lại/sửa carry để cho phép cổ tay nghiêng khỏi top-down khi mang (giải phóng joint2 khỏi việc phải giữ hướng thẳng đứng suốt hành trình).
+
+### File sửa cuối Phase 36 (trạng thái hiện tại, đã dọn về an toàn)
+`isaaclab_openarm_env/mdp/grasp_assist.py`: giữ `xy_gate` (ưu tiên leo cao) + `place_carry_z_gate_ref_m` tách riêng + CarryDbg 7-khớp (debug only, không đổi hành vi khi tắt DEBUG_PLACE). `isaaclab_openarm_env/config.py`: `place_carry_height_m=0.07` (giữ, vô hại dù chưa giải quyết gốc rễ), `nullspace_joint_pos_target="default"` (đã revert), `bowl.init_state.pos=(0.58,0.22,0.67)` (đã revert).
+
+---
+
+## Phase 37 — Train lại 10M bước (server 4090, sau fix Phase 34-36): xác nhận LẠI kết luận Phase 24, không tự giải quyết được joint2
+
+### Cấu hình
+Deploy code Phase 34-36 lên server (phát hiện `rl.sh` deploy step 2 dùng đường dẫn USD CŨ `urdf/robot/v10` — đã sửa thành `assets/robot/openarm_v1.0/urdf/v10` khớp với tái cấu trúc `Open_arm_a1_ws` gần đây; upload `policy_1M_success57.pt` lên server thủ công vì chưa có sẵn). Smoke test 3000 bước sạch (server đã lên Isaac Sim 5.1, không còn lo N4 compat 2.3.2). Train chính: `--checkpoint policy_1M_success57.pt --task_phase 3 --stage all --assist-schedule --kl-coef 1.0 --n-epochs 3 --lr-start 1e-4 --lr-end 1e-5 --clip-range 0.1 --ent-coef 0.002 --num-envs 256 --timesteps 10000000` — chạy 22 phút (5922 it/s, GPU 4090 rảnh hoàn toàn), không crash.
+
+### Kết quả — KHÔNG cải thiện PLACE, xác nhận lại Phase 24
+Eval deterministic (`--task_phase 3 --stage all --seed 0`, so trực tiếp trước/sau):
+
+| | Trước train | Sau train (scale=1.0) | Sau train (scale=0.0) |
+|---|---|---|---|
+| grasp_rate | 0.83 | 0.83 | **0.00** |
+| lift_start_rate | 0.43 | 0.40 | 0.00 |
+| place_start_rate | 0.03 | 0.03 (KHÔNG đổi) | 0.00 |
+
+`assist_scale=0.0` sập hoàn toàn kể cả REACH — xác nhận policy **zero khả năng tự chủ**, dù đã qua 10M bước với KL-protection (giữ REACH/GRASP nguyên vẹn ở scale=1.0, đúng thiết kế) VÀ dù các fix vật lý Phase 34-36 đã làm cơ chế LIFT/CARRY khả thi hơn nhiều cho SCRIPTED assist.
+
+### Kết luận — đúng như Phase 24 đã cảnh báo, chưa ai làm phần còn thiếu
+Train thêm theo ĐÚNG công thức cũ (assist-schedule + KL-protection) không tự sửa được: `_osc_world_up_lift`/`_osc_carry_to_bowl` ghi đè CỨNG toàn bộ 6 chiều hành động khi scale gần 1.0 (không có gradient nào chảy qua), và `align_blend` trong `_osc_carry_to_bowl` tích cực CHỐNG LẠI việc cổ tay nghiêng khỏi top-down — đúng bậc tự do cần thiết để né giới hạn joint2 (Phase 36). Muốn train lại có ý nghĩa cho PLACE, cần sửa kiến trúc assist TRƯỚC (không phải chỉ đổi hyperparameter train):
+1. Đổi `_osc_carry_to_bowl`/`_osc_world_up_lift` sang residual THẬT ngay từ đầu (không chỉ ở scale<1, xem code comment "w>=1-1e-6 → hành vi hệt ghi đè") — để có gradient thật ngay cả lúc assist còn cao.
+2. Giảm hoặc bỏ `place_carry_align_blend` (0.5) để policy được tự do thử nghiêng cổ tay trong CARRY thay vì bị ép giữ top-down suốt hành trình.
+3. Cả 2 thay đổi trên đều RỦI RO CAO (đụng cơ chế đã verify kỹ ở LIFT) — cần đo riêng biệt, quy tắc cũ: KHÔNG gộp 2 thay đổi lớn cùng lúc.
+
+### File/hạ tầng sửa (Phase 37)
+`rl.sh` (sửa 2 đường dẫn USD deploy khớp tái cấu trúc `Open_arm_a1_ws` mới — `assets/robot/openarm_v1.0/urdf/v10` thay vì `urdf/robot/v10`). Checkpoint mới: `logs/best_policy_train_place_phase36_v1.pt` (đã fetch về local, KHÔNG tốt hơn `policy_1M_success57.pt` cho PLACE — không khuyến nghị dùng thay).
+
+### Thử nhanh trước khi train lại: tắt `place_carry_align_blend` — không giúp gì, ĐÃ REVERT
+Giả thuyết: ép cổ tay giữ top-down suốt CARRY (`align_blend=0.5`) chặn mất bậc tự do xoay cần thiết để né trần joint2. Test bằng scripted-assist (không cần train, đo trực tiếp qua CarryDbg): tắt hẳn (0.0) — joint2 đi **đúng quỹ đạo cũ** (margin 19.9°→9.2°, gần như không đổi so với align_blend=0.5), XY còn hội tụ **kém hơn** (107.7mm so với ~90-99mm).
+
+**Nguyên nhân đã hiểu rõ**: `out[mask]=0.0` (khởi tạo action) chạy TRƯỚC, `align_blend=0` chỉ để lại giá trị 0 ở kênh xoay (3:6) — đây là lệnh **"GIỮ NGUYÊN hướng hiện tại"** (delta=0 trong pose_rel), KHÔNG phải "bỏ ràng buộc, để null-space tự quyết". OSC vẫn nhận đủ 6 chiều tư thế mục tiêu, joint2 vẫn phải gánh y như trước. Muốn thật sự giải phóng bậc tự do xoay cần loại orientation ra khỏi target (selection matrix/compliance thật trong OSC controller) — vượt hẳn phạm vi đổi 1 tham số, cần redesign tầng controller. ĐÃ REVERT `place_carry_align_blend` về 0.5.
+
+### Kết luận cuối Phase 37 — đã cạn các hướng chi phí thấp/trung bình
+Đã thử và loại trừ CÓ BẰNG CHỨNG: tăng tốc trục Z (giúp một phần, giữ), hạ carry height, null-space bias toàn cục, dời bát, train lại 10M bước với assist-schedule+KL, tắt align_blend. Không hướng nào giải quyết được giới hạn joint2 khi mang chai từ vị trí hiện tại tới bát hiện tại. Hướng còn lại — redesign OSC controller để tách orientation ra khỏi task chính (selection matrix) — là thay đổi kiến trúc lớn, rủi ro cao, cần thiết kế riêng trước khi thử, không phù hợp làm nhanh trong phiên này.
+
+---
+
+## Phase 38 — THIẾT KẾ (chưa implement): selection matrix thật cho OSC — giải phóng joint2 khỏi ràng buộc orientation lúc PLACE_CARRY
+
+**Trạng thái: CHỈ THIẾT KẾ, chưa viết code.** Làm ở phiên sau, theo đúng thứ tự các bước dưới đây.
+
+### Vì sao `align_blend=0` (Phase 37) không đủ — cơ chế thật của IsaacLab OSC
+Đã đọc source `isaaclab/controllers/operational_space.py`:
+- `OperationalSpaceControllerCfg.motion_control_axes_task: Sequence[int] = (1,1,1,1,1,1)` — **selection matrix THẬT**, dạng ma trận chéo `(num_envs, 6, 6)`, KHÁC HẲN việc đặt delta-action bằng 0.
+- `self._selection_matrix_motion_task` được tạo trong `__init__` (`operational_space.py:65-69`) bằng `torch.diag_embed(...).repeat(num_envs, 1)` — **đã sẵn per-env**, không cần sửa gì để có shape đúng.
+- Mỗi bước, `compute()` (dùng bởi `apply_actions()`) tính lại `_selection_matrix_motion_b` từ `_selection_matrix_motion_task` (dòng 316-320) rồi dùng NÓ (không phải action gốc) để gate lực trước khi cộng vào `joint_efforts` (dòng 454): `joint_efforts += jacobian_b.mT @ self._selection_matrix_motion_b @ os_command_forces_b`.
+- **Kết luận quan trọng**: chỉ cần mutate `_selection_matrix_motion_task` mỗi bước — KHÔNG cần đụng `_motion_p_gains_task` (baked 1 lần lúc init, không sao vì bước gate cuối cùng vẫn dùng selection matrix RUNTIME) — việc gate xảy ra ở bước NHÂN MA TRẬN CUỐI, sau khi PD đã tính xong, nên rezeroed đúng chỗ.
+- Đặt hàng 3:6 (orientation) của selection matrix về 0 (chỉ cho env đang PLACE_CARRY) khiến task chính CHỈ còn ràng buộc 3D vị trí — orientation KHÔNG còn bị ép giữ nguyên (khác hẳn `align_blend=0`, vốn chỉ đặt delta=0 = "giữ nguyên", task vẫn ràng buộc đủ 6D). Phần dư tự do (bao gồm cả orientation) sẽ do **null-space term** (`nullspace_control="position"`, đã bật sẵn, kéo về `nullspace_joint_pos_target="default"`) tự giải quyết — đúng cơ chế cho phép joint2 "nhường chỗ" nếu cấu hình `default` cho phép.
+
+### Đường truy cập instance thật (đã xác nhận qua source)
+```python
+osc = env.action_manager._terms.get("arm_action")._osc   # OperationalSpaceController instance
+osc._selection_matrix_motion_task   # (num_envs, 6, 6), float, mutable trực tiếp
+```
+(`AssistedOperationalSpaceControllerAction.process_actions` gọi `apply_grasp_arm_assist(env, actions)` TRƯỚC `super().process_actions()` — điểm chèn tự nhiên: set mask NGAY ĐẦU mỗi lần `apply_grasp_arm_assist` chạy, mỗi bước, không cần hook thêm chỗ nào khác. `_selection_matrix_motion_b` tính lại mỗi bước nên không lo cache/stale — chỉ cần set lại theo mask HIỆN TẠI mỗi bước, tự đúng qua reset mà không cần logic reset riêng.)
+
+### Việc cần làm ở phiên sau (theo thứ tự)
+1. **Xác định trục xoay nào thật sự cần thả** (không thả bừa cả 3 trục — thả hết có nguy cơ chai xoay tự do trong kẹp, đổ/rơi trong lúc mang, đúng rủi ro mà `align_blend` từng cố tránh phần nào). OSC dùng "task frame" riêng (rotation của EE), không chắc chắn trục nào trong 3 trục cục bộ (index 3,4,5 của vector 6 chiều) tương ứng "xoay quanh trục thẳng đứng thế giới". Đo bằng cách: tạm thời zero TỪNG trục MỘT (3, rồi 4, rồi 5) trong demo scripted (giống cách đã đo `dLR`/`toolY` ở Phase 36), quan sát trục nào thay đổi khi joint2 được thả — chỉ giữ lại đúng trục đó thay vì cả 3.
+2. **Chỉ áp dụng mask cho env đang `_place_phase in {PLACE_CARRY, PLACE_DESCEND}`** — mọi env khác (REACH/GRASP/LIFT/IDLE/HOLDING) giữ nguyên ma trận mặc định (1,1,1,1,1,1) tuyệt đối, đặt lại mỗi bước:
+   ```python
+   osc = env.action_manager._terms.get("arm_action")._osc
+   free_mask = (env._place_phase == PLACE_CARRY) | (env._place_phase == PLACE_DESCEND)
+   osc._selection_matrix_motion_task[:, 3:6, 3:6] = torch.eye(3, device=env.device)  # reset mặc định mọi env
+   osc._selection_matrix_motion_task[free_mask, AXIS_TO_FREE, AXIS_TO_FREE] = 0.0    # chỉ env đang carry/descend, chỉ đúng 1 trục đã xác định ở bước 1
+   ```
+   Đặt ở ĐẦU `apply_grasp_arm_assist` (trước mọi logic khác), chạy mỗi bước — không cần đăng ký reset riêng vì tự tính lại theo mask hiện tại mỗi lần.
+3. **Đo lại bằng đúng công cụ đã có** (không đoán): scripted-assist only (không train), `DEBUG_PLACE=1`, `CarryDbg` (đã có sẵn log 7-khớp margin) — xác nhận joint2 margin không còn co dần về 0 trong lúc CARRY, và KHÔNG xuất hiện tilt/rơi chai mới do orientation quá tự do.
+4. **Regression gate `--task_phase 2 --seed 0`** — dù mask chỉ kích hoạt khi `_place_phase` CARRY/DESCEND (luôn `False` ở phase 2, vì `_place_phase` không tồn tại/không được set), vẫn nên chạy 1 lần vì đây là lần đầu MUTATE TRỰC TIẾP instance controller dùng chung (`_osc`) thay vì chỉ đọc/ghi action tensor — rủi ro khác loại (nếu code có bug khiến mask sai phạm vi env phase<3), nên xác nhận baseline `success=0.0333 grasp=0.8333 latch=0.4667 lift_start=0.4333` không đổi TRƯỚC khi tin tưởng bước 5.
+5. **CHỈ SAU KHI bước 3+4 xác nhận cải thiện thật** (joint2 margin không còn tiến về 0, XY hội tụ được dưới `place_xy_arrival_radius_m=0.03`) mới đáng train lại — lặp lại đúng công thức Phase 37 (`--checkpoint policy_1M_success57.pt --task_phase 3 --stage all --assist-schedule --kl-coef 1.0 --n-epochs 3 --lr-start 1e-4 --lr-end 1e-5 --clip-range 0.1 --ent-coef 0.002`, server 4090, ~10M bước) — **không train lại nếu bước 3 chưa cho thấy cải thiện scripted-assist**, tốn GPU vô ích (bài học Phase 37: train không sửa được vấn đề cơ chế, phải sửa cơ chế trước).
+
+### Rủi ro cần lưu ý khi làm
+- Thả orientation có thể làm chai xoay/nghiêng nhiều hơn trong lúc mang (đánh đổi trực tiếp với việc đã né được) — cần xem lại `bottle_tilt_deg`/`place_abort_tilt_deg=25.0` có đủ dư địa không, và có thể cần giữ `align_blend` ở giá trị NHỎ (không phải 0, không phải 0.5) để làm "lò xo mềm" thay vì tắt hẳn constraint — thử cả 2 biến thể (tắt hẳn selection matrix vs giữ constraint mềm qua null-space target lệch khỏi "default").
+- Nếu thả sai trục (bước 1 làm ẩu) có thể khiến chai lật ngay cả khi joint2 có thêm margin — PHẢI đo bằng demo GUI thật trước khi tin số liệu headless.
+- File cần sửa: `isaaclab_openarm_env/mdp/grasp_assist.py` (thêm khối mutate `_osc._selection_matrix_motion_task` vào đầu `apply_grasp_arm_assist`), không cần sửa `config.py`/`actions.py`.
+
+## Phase 39 — Đo thực nghiệm bước 1 của thiết kế Phase 38: trục xoay nào cần thả (2026-09-16)
+
+### Cách đo
+Thêm khối tạm (gate bằng biến môi trường `PLACE_FREE_AXIS=3|4|5`, không set = không đổi gì) vào đầu `apply_grasp_arm_assist` (`grasp_assist.py`), mutate trực tiếp `env.action_manager._terms.get("arm_action")._osc._selection_matrix_motion_task[:, 3:6, 3:6]` mỗi bước — reset về identity cho MỌI env, rồi zero đúng 1 trục cho env đang `PLACE_CARRY|PLACE_DESCEND`. Đo bằng đúng kịch bản cũ (`eval_lift_metrics.py --model-path policy_1M_success57.pt --episodes 20 --num-envs 8 --bottle-noise 0.05 --assist-scale 1.0 --stage place --seed 0 --task_phase 3`, `DEBUG_PLACE=1`) — env0 luôn vào PLACE_CARRY ở đúng step 758 (seed cố định), nên so sánh được apple-to-apple giữa 4 lần chạy (baseline + 3 trục).
+
+### Kết quả (env0, cùng episode, step_ct cuối ~1185)
+
+| | tilt_deg cuối | j2 margin cuối | xy cuối | Kết luận |
+|---|---|---|---|---|
+| Baseline (không thả trục) | 8.76° | 6.8° | 97.2mm | (đối chứng, khớp Phase 36) |
+| Trục 3 thả | **14.13°** (+5.4°) | **10.1°** (+3.3°) | 93.3mm (−3.9mm) | Có tác dụng thật lên joint2, nhưng đổi bằng tăng tilt đáng kể |
+| Trục 4 thả | ≥15.3°, **episode CHẾT SỚM ở step 856** (real termination, không phải timeout — chỉ 98 bước sau khi vào CARRY) | 12.4° lúc chết (đang giảm nhanh hơn cả baseline) | n/a (chết sớm) | **Nguy hiểm nhất — không dùng** |
+| Trục 5 thả | 8.60° (~bằng baseline) | 7.5° (+0.7°, không đáng kể) | 96.3mm (~bằng baseline) | Trơ — trục này không liên quan gì tới ràng buộc đang giữ joint2 |
+
+### Diễn giải
+- **Trục 4** là trục nguy hiểm nhất — thả nó khiến chai mất ổn định NHANH HƠN và tệ hơn cả không làm gì, dẫn tới termination thật (không chỉ timeout). Đây rất có thể là trục giữ chai KHÔNG bị lật theo hướng dễ đổ nhất trong lúc mang — chính là bậc tự do mà `align_blend` gốc cố bảo vệ mạnh nhất.
+- **Trục 5** gần như không ảnh hưởng gì tới joint2 — không phải bậc tự do đang bị khoá gây nghẽn.
+- **Trục 3** là trục ĐÚNG hướng thiết kế nhắm tới (cho joint2 thêm margin thật, đo được +3.3° so với baseline giảm dần) nhưng đánh đổi bằng tilt tăng +5.4° (8.76°→14.13°) — vẫn dưới ngưỡng abort (`place_abort_tilt_deg=25°`) nhưng là chi phí thật, không miễn phí.
+- **Quan trọng — ngay cả khi chấp nhận đánh đổi tilt của trục 3, JOINT2 VẪN KHÔNG ĐỦ để hoàn thành PLACE trong thời gian episode còn lại**: tốc độ hội tụ XY đo được ở trục 3 (~152mm→93mm trong 420 bước ≈ 0.14mm/bước) vẫn cần thêm ~450 bước nữa để chạm `place_xy_arrival_radius_m=30mm` — vượt quá số bước còn lại của episode (kết thúc TIMEOUT ở cả baseline lẫn trục 3). Nguyên nhân tốc độ chậm là `place_carry_speed_scale=0.35` (Phase 36), KHÔNG phải joint2 — nghĩa là chỉ giải phóng trục xoay là **không đủ**, phải kết hợp thêm việc tăng tốc CARRY mới có cơ hội hoàn thành trong episode.
+
+### Kết luận — chưa đủ cơ sở để tiến sang bước 4/5 (regression gate + train lại)
+Lợi ích đo được của hướng selection-matrix (trục 3) là CÓ THẬT nhưng nhỏ (+3.3° margin, −3.9mm hội tụ) so với chi phí (+5.4° tilt) và KHÔNG giải quyết được vấn đề hết thời gian episode. Trục 4 phải loại bỏ hẳn (nguy hiểm). Cần quyết định của user trước khi đi tiếp: chấp nhận trục 3 kèm biện pháp giảm nhẹ (vd. giữ selection weight ở mức trung gian như 0.3 thay vì 0 hẳn, "lò xo mềm" như thiết kế Phase 38 đã cảnh báo) và kết hợp tăng `place_carry_speed_scale`, hay dừng hướng selection-matrix vì lợi ích quá nhỏ so với độ phức tạp/rủi ro thêm vào.
+
+### File sửa (Phase 39 — CHỈ ĐỂ ĐO, cần dọn lại trước khi commit)
+`isaaclab_openarm_env/mdp/grasp_assist.py`: thêm khối `PLACE_FREE_AXIS` env-var-gated ở đầu `apply_grasp_arm_assist` (không set biến này thì không đổi hành vi — an toàn cho mọi phase).
+
+### Quyết định cuối Phase 39 — DỪNG hướng selection-matrix
+User xem số đo (bảng trên) và quyết định **dừng hướng selection-matrix**: lợi ích trục 3 (+3.3° margin) quá nhỏ so với chi phí (+5.4° tilt) và dù sao cũng không đủ nhanh để PLACE hoàn thành trong thời gian episode — thêm phức tạp/rủi ro vào orientation control dùng chung không đáng. Đã xoá khối `PLACE_FREE_AXIS` thí nghiệm khỏi `apply_grasp_arm_assist` (quay lại đúng code trước Phase 39). Regression gate phase 2 chạy lại xác nhận khớp baseline chính xác: `success=0.0333 grasp=0.8333 latch=0.50 lift_start=0.4333`.
+
+**Trạng thái cuối cùng của investigation PLACE (Phase 34-39)**: đã sửa và GIỮ LẠI 3 cải thiện thật (grip OR-fallback, height-clearance gate, xy_gate ưu tiên leo cao) — các fix này cải thiện PLACE nhưng không giải quyết triệt để giới hạn joint2. Đã thử và loại trừ CÓ BẰNG CHỨNG toàn bộ các hướng sửa nhanh khả dĩ: null-space bias toàn cục, dời bát, train lại 10M bước theo công thức cũ, tắt align_blend, và giờ thêm cả selection-matrix thật (3 trục). **Không còn hướng sửa nhanh/trung bình nào chưa thử.** Hai hướng còn lại đều là thay đổi kiến trúc/dữ liệu lớn, cần phiên riêng: (a) đổi hình học bát+train lại từ đầu (không phải fine-tune), hoặc (b) redesign lại toàn bộ cơ chế assist CARRY thành residual thật ngay từ đầu training (không chỉ lúc scale<1) để chính sách có gradient thật cho việc nghiêng cổ tay một cách có kiểm soát thay vì assist cứng nhắc.
+
+## Phase 40 — Kiểm tra trực giác "bát to không nhỏ" của user: nới ngưỡng arrival theo hình học bát THẬT (2026-09-16)
+
+### Bối cảnh
+User phản bác kết luận Phase 39 ("không thể đặt chai vào bát"): bát trong scene không nhỏ, và gợi ý cân nhắc mục tiêu đơn giản hơn (ô kẻ) thay vì train lift. Kiểm tra lại thì phát hiện `config.py:488-498` ĐÃ CÓ số đo hình học bát THẬT từ trước (BBoxCache, 2026-09-08): bát rộng bán kính ~8cm (bbox 159.7×159.7mm), chai đường kính 43.3mm (bán kính 21.65mm). Biên "chai còn chồng lấn miệng bát" ≈ 8+2.165 = **101.5mm**. Nhưng `place_xy_arrival_radius_m` (ngưỡng cho phép CARRY→DESCEND) đang đặt ở **30mm** — nhỏ hơn hẳn bán kính bát thật, chưa từng dựa trên số đo, chỉ là giá trị đoán (đúng như plan gốc đã tự đánh dấu "⚠️ ĐOÁN"). Hệ quả: **DESCEND chưa từng được kích hoạt trong bất kỳ lần đo nào trước đây** — mọi lần "place_timeout" là "hết giờ khi còn đang bay ngang", KHÔNG PHẢI "thả trật bát".
+
+### Đo 1 — nới arrival radius theo số đo thật (0.03→0.09→0.10)
+Cùng kịch bản (`--seed 0 --stage place --task_phase 3`, env0 luôn vào CARRY ở step 758). 0.09 vẫn hụt sát nút (XY dừng 97.2mm cuối episode 20s). Nới lên 0.10 (vẫn trong biên vật lý 101.5mm): `xy_ok` chuyển True ở step 1065 — nhưng **DESCEND vẫn KHÔNG kích hoạt** vì còn bị chặn bởi điều kiện thứ hai: `z_ok` (độ cao chai so với miệng bát, cần > `place_carry_clearance_m=0.03`) vẫn `False` suốt — z_clear chỉ leo từ -47.5mm lên -6.3mm (vẫn THẤP HƠN miệng bát 6.3mm khi hết giờ). Vậy nút thắt thật ở cấu hình 20s là **Z clearance**, không phải XY nữa.
+
+### Đo 2 — kéo dài episode (20s→45s, chỉ để chẩn đoán, thêm cờ `EVAL_EPISODE_LEN_S` env-var-gated trong `eval_lift_metrics.py`) để xem hội tụ có phải "trần cứng" hay chỉ "chậm"
+Kết quả: **XY tiếp tục cải thiện thật** — từ 97.2mm (step1185) xuống **78.9mm (step2175)**, dưới hẳn biên vật lý 101.5mm và tiến gần biên "chai nằm trọn trong bát trừ margin" (~58mm) — bác bỏ giả thuyết "trần cứng vĩnh viễn", xác nhận đúng nguyên tắc "không chấp nhận trần vật lý quá sớm": đây là **hội tụ chậm dần (asymptotic)**, không phải bế tắc tuyệt đối. joint2 margin cũng không tệ đi thêm nhiều (dao động 5.3°→6.3°, tương đối ổn định quanh đáy).
+
+**Nhưng phát hiện MỚI, chưa từng thấy trong mọi lần đo 20s trước đây**: episode **KHÔNG timeout** — nó **TERMINATE THẬT** ở step 2180 vì **tilt tăng dần và vượt ngưỡng** (`tilt_deg` cuối = 15.07°, đang tăng liên tục, kèm `z_clear` bắt đầu ĐẢO CHIỀU giảm trở lại (-2.7mm→-9.9mm) dù trước đó đang leo lên). Nghĩa là: khi cho đủ thời gian, bản thân động tác CARRY (kể cả ở baseline, KHÔNG cần bất kỳ can thiệp selection-matrix nào) tự nó tích luỹ mất ổn định và làm chai nghiêng dần tới mức lật thật — một pha lỗi hoàn toàn mới, bị 20s episode length che khuất từ trước tới giờ (cắt ngang trước khi kịp bộc lộ).
+
+### Kết luận Phase 40 — nửa đúng, nửa sai so với cả 2 giả thuyết trước đó
+- **User ĐÚNG một phần quan trọng**: bát không nhỏ, ngưỡng arrival 30mm là đoán sai, JOINT2 KHÔNG phải trần cứng tuyệt đối — cho đủ thời gian XY vẫn hội tụ tiếp, đã xuống dưới biên vật lý hợp lý.
+- **Nhưng phát sinh vấn đề MỚI, nghiêm trọng hơn**: carry không ổn định lâu dài — càng mang lâu, chai càng có xu hướng nghiêng tăng dần rồi lật thật, ĐỘC LẬP với việc XY có hội tụ hay không. Đây có thể liên quan tới việc joint2 càng gần trần thì OSC càng phải bù mạnh hơn ở các khớp khác để giữ hướng úp xuống, gây trôi/dao động chậm — cần xem qua **demo GUI thật** (không chỉ số liệu headless) mới kết luận được cơ chế chính xác, đúng nguyên tắc đã đặt ra ở Phase 38.
+
+### File sửa (Phase 40)
+`isaaclab_openarm_env/config.py`: `place_xy_arrival_radius_m` 0.03→0.10 (có căn cứ đo thật, nhưng CHƯA chứng minh đủ vì DESCEND vẫn chưa từng kích hoạt được — bị Z-clearance chặn). `eval_lift_metrics.py`: thêm cờ chẩn đoán `EVAL_EPISODE_LEN_S` (env var, không set = hành vi cũ 20s, đặt SAU `apply_phase2_demo_gates` vì `PHASE2_BASE` ghi đè `episode_length_s` về 20.0 nếu đặt trước).
+
+## Phase 41 — "Ô kẻ rộng" + phát hiện bug thật thứ hai: release CHƯA TỪNG hoạt động — THÀNH CÔNG PLACE ĐẦU TIÊN (2026-09-16)
+
+### Theo yêu cầu user: đơn giản hoá mục tiêu PLACE, không train
+User bác bỏ kết luận "không thể" và đề xuất mục tiêu đơn giản hơn: thả vào một vùng rộng ("ô kẻ") thay vì đúng tâm bát, không cần train. Redesign (chỉ đổi ngưỡng + 1 dòng logic action, KHÔNG đổi state machine/asset scene):
+- `place_success_xy_radius_m`: 0.05 → **0.12** (khớp bán kính bát đo thật ~8cm + margin, không còn đoán).
+- `place_xy_arrival_radius_m`: 0.10 → **0.12** (khớp ngưỡng thành công — CARRY→DESCEND và success dùng cùng 1 tiêu chuẩn).
+- `place_carry_clearance_m`: 0.03 → **-1.0** (bỏ hẳn yêu cầu "phải cao hơn miệng bát mới cho hạ" — mục tiêu giờ là vùng phẳng, không có thành cần né).
+
+### Test lần 1 (chỉ đổi ngưỡng): CARRY→DESCEND→HOLDING chạy được, nhưng KHÔNG BAO GIỜ release
+Chạy đúng kịch bản đo cũ: `[PlaceDbg] env0 step_ct=855 CARRY→DESCEND ... step_ct=860 DESCEND→HOLDING` — state machine chạy đúng lần đầu tiên trong toàn bộ investigation! Nhưng `released: false` tới hết episode dù đã ở HOLDING >300 bước (`place_release_hold_steps=5` thoả từ lâu, `place_release_ready()` chắc chắn `True`).
+
+### BUG THẬT THỨ HAI (độc lập hoàn toàn với Phase 40): `_close_progress` không có đường MỞ
+Đọc `AssistedBinaryGripperAction.apply_actions()` (`actions.py`): khớp kẹp thật được điều khiển bởi `_close_progress` (`targets = open*(1-prog) + close*prog`), KHÔNG PHẢI đọc trực tiếp raw action mỗi bước. `_close_progress` chỉ có DUY NHẤT đường tăng (`self._close_progress[can_advance] += step_size`, toàn bộ ~150 dòng logic phía trên chỉ nói về ramp ĐÓNG — pause-on-tilt, pause-on-asym, freeze theo lực chạm...). Đường về 0 duy nhất (`stale = ~self._want_close & ~self._grasp_latched`) đòi `~_grasp_latched`, mà `_grasp_latched` CỐ Ý giữ `True` suốt CARRY/DESCEND/HOLDING (chai vẫn đang được giữ). Hệ quả: dòng `actions[in_place & release_ready, 0] = 1.0` (S2, viết từ Phase 10) đặt ĐÚNG raw action "mở kẹp", nhưng **không bao giờ chạm tới khớp thật** — `max_gc` đứng yên ở 0.7625 suốt episode dù đã ở HOLDING rất lâu.
+
+**Đây là lý do PLACE release CHƯA TỪNG hoạt động kể từ Phase 10** — độc lập hoàn toàn với vấn đề "DESCEND chưa từng kích hoạt" (Phase 40). Cả 2 bug phải sửa CÙNG NHAU mới thấy được kết quả cuối.
+
+### Fix
+`actions.py::apply_actions()`: thêm nhánh giảm riêng cho `_close_progress`, loại các env đang release khỏi `can_advance` (tránh vừa tăng vừa giảm cùng lúc do `_grasp_latched` vẫn `True`):
+```python
+releasing = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+if uses_place(getattr(self._env.cfg, "task_phase", 1)) and s is not None:
+    in_place = self._env._stage == STAGE_PLACE
+    releasing = in_place & place_release_ready(self._env, s)
+    can_advance = can_advance & ~releasing
+self._close_progress[can_advance] += step_size[can_advance]
+self._close_progress.clamp_(0.0, 1.0)
+release_ramp_steps = int(getattr(self._env.cfg, "place_release_ramp_steps", 15))
+self._close_progress[releasing] -= 1.0 / max(release_ramp_steps, 1)
+self._close_progress.clamp_(0.0, 1.0)
+```
+`config.py`: thêm `place_release_ramp_steps: int = 15`.
+
+**Regression gate phase 2 PASS** (hàm này dùng chung mọi stage): `success=0.03 grasp=0.83 latch=0.50 lift_start=0.43` — khớp baseline chính xác (nhánh mới gate bởi `uses_place`, chết hoàn toàn ở phase<3).
+
+### Kết quả sau fix — THÀNH CÔNG PLACE THẬT ĐẦU TIÊN
+Cùng kịch bản (seed=0, env0 vào CARRY ở step758 y hệt mọi lần trước):
+```
+success=True, released=True, release_dist_bottle_bowl_m=0.1144 (trong vùng 0.12), tilt cuối=1.33°, steps=880 (kết thúc THẬT, không timeout)
+```
+`place_start_rate=0.05, release_rate=0.05, success_rate=0.05` — bằng nhau, nghĩa là **100% số lần PLACE thực sự bắt đầu đều thành công** (1/20 episode tới được PLACE trong lần đo này do tỉ lệ GRASP/LIFT thượng nguồn còn thấp, không liên quan PLACE). Nút thắt còn lại nằm ở REACH/GRASP/LIFT (đã biết từ trước — grasp_rate 0.83, lift_start_rate 0.43 ở phase 2), không còn nằm ở PLACE nữa.
+
+### Kết luận Phase 41
+User đúng: bài toán "đặt chai vào bát" GIẢI ĐƯỢC bằng scripted-assist, KHÔNG CẦN train, khi (1) mục tiêu được nới thành vùng rộng thực tế (khớp hình học bát đo thật, không phải điểm ảo 30mm), và (2) sửa đúng bug thật (release chưa từng hoạt động) — không phải do joint2 hay kiến trúc controller như các Phase 36-39 từng nghi ngờ. Bài học: đầu tư đo thật (Phase 40's kéo dài episode, tìm ra XY hội tụ được) + không dừng lại ở phát hiện đầu tiên (Phase 40 tưởng DESCEND là nút thắt cuối, hoá ra còn 1 bug nữa ở release) mới lộ ra bức tranh đầy đủ.
+
+### File sửa (Phase 41)
+`isaaclab_openarm_env/config.py` (`place_success_xy_radius_m=0.12`, `place_xy_arrival_radius_m=0.12`, `place_carry_clearance_m=-1.0`, `place_release_ramp_steps=15` mới). `isaaclab_openarm_env/mdp/actions.py` (`AssistedBinaryGripperAction.apply_actions()` — thêm nhánh giảm `_close_progress` cho release). `eval_lift_metrics.py` (giữ cờ chẩn đoán `EVAL_EPISODE_LEN_S` từ Phase 40, không dùng trong test cuối này nhưng vô hại khi không set).
+
+### Xác nhận thêm (seed=1, 50 episode, không cherry-pick)
+3/3 episode chạm được PLACE đều **success=True** (100%, không phải may mắn 1 lần): tilt cuối 0.94-1.85° (rất thấp, chai đứng vững), release_dist 101-116mm (đều trong vùng 120mm). Nút thắt duy nhất còn lại là tỉ lệ GRASP/LIFT thượng nguồn (grasp=0.58, lift_start=0.34 ở seed này) — vấn đề đã biết từ trước, không liên quan gì tới PLACE nữa.

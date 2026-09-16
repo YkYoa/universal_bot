@@ -344,13 +344,25 @@ def _update_lift_state(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
                 )
                 dl = float(s["dist_left_body"][i]) * 1000 if "dist_left_body" in s else -1.0
                 dr = float(s["dist_right_body"][i]) * 1000 if "dist_right_body" in s else -1.0
+                # Phase 36 (đo, chưa sửa): giả thuyết offset kẹp cố định trong
+                # khung CHAI (không bao giờ xoay — reset_bottle chỉ random XY,
+                # không random yaw, xem terminations.py) thực chất là một vector
+                # THẾ GIỚI CỐ ĐỊNH, chỉ đúng hướng với 1 góc tiếp cận. tool_y_w
+                # (trục mở/khép ngón, _finger_tips_hand_frame dùng ±Y cục bộ
+                # tay) đổi theo góc tiếp cận mỗi vị trí chai — log kèm vị trí
+                # chai (bx,by) để so tương quan dLR vs góc tiếp cận thật.
+                ty = s.get("tool_y_w")
+                ty_str = f"({float(ty[i,0]):+.3f},{float(ty[i,1]):+.3f})" if ty is not None else "n/a"
+                bp = s.get("bottle_pos")
+                bp_str = f"({float(bp[i,0]):+.3f},{float(bp[i,1]):+.3f})" if bp is not None else "n/a"
                 print(
                     f"  [LiftDbg] env{i} step_ct={int(env.step_counter)} "
                     f"{names[int(phase[i])]}→{names[int(new_phase[i])]} "
                     f"| lift_m={float(s['bottle_lift'][i])*1000:.2f}mm "
                     f"tilt={float(s['bottle_tilt_deg'][i]):.1f} slip_steps={ss} "
                     f"gc={gc:.3f} latched={bool(latched_all[i])} reason={reason} "
-                    f"dL={dl:.2f}mm dR={dr:.2f}mm dLR={dl-dr:+.2f}mm",
+                    f"dL={dl:.2f}mm dR={dr:.2f}mm dLR={dl-dr:+.2f}mm "
+                    f"toolY={ty_str} bottleXY={bp_str}",
                     flush=True,
                 )
 
@@ -503,12 +515,35 @@ def _update_place_state(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
                 flush=True,
             )
         if int(env.step_counter) % 15 == 0:
+            arm_pos = None
+            arm_lim = None
+            if hasattr(env, "_arm_joint_ids"):
+                arm_pos = env._robot.data.joint_pos[:, env._arm_joint_ids]
+                try:
+                    arm_lim = _t(env._robot.data.joint_pos_limits)[:, env._arm_joint_ids]
+                except Exception:
+                    arm_lim = None
             for i in is_carry.nonzero(as_tuple=False).flatten().tolist():
+                if arm_pos is not None:
+                    parts = []
+                    for k in range(arm_pos.shape[1]):
+                        deg = float(arm_pos[i, k]) * 57.29578
+                        if arm_lim is not None:
+                            lo = float(arm_lim[i, k, 0]) * 57.29578
+                            hi = float(arm_lim[i, k, 1]) * 57.29578
+                            margin = min(deg - lo, hi - deg)
+                            parts.append(f"j{k+1}={deg:+.1f}({margin:.1f}mgn)")
+                        else:
+                            parts.append(f"j{k+1}={deg:+.1f}")
+                    joints_str = " ".join(parts)
+                else:
+                    joints_str = "n/a"
                 print(
                     f"  [CarryDbg] env{i} step_ct={int(env.step_counter)} "
                     f"xy={float(s['dist_bottle_bowl_xy'][i])*1000:.1f}mm xy_ok={bool(xy_ok[i])} "
                     f"z_clear_mm={float(s['bottle_pos'][i, 2] - s['bowl_rim_z'][i])*1000:.1f} "
-                    f"z_ok={bool(z_clear[i])} arrival_steps={int(env._place_arrival_steps[i])}",
+                    f"z_ok={bool(z_clear[i])} arrival_steps={int(env._place_arrival_steps[i])} "
+                    f"{joints_str}",
                     flush=True,
                 )
 
@@ -550,10 +585,24 @@ def _osc_carry_to_bowl(
     # (miệng bát thật, không phải root) làm mục tiêu — xem comment đo đạc ở
     # helpers.py::compute_state.
     xy_err = s["bowl_center_pos"][:, :2] - s["ee_pos"][:, :2]
-    xy_step = (xy_err / max(pos_scale, 1e-4)).clamp(-1.0, 1.0) * scale * speed_scale
 
     z_target = s["bowl_rim_z"] + carry_height
     z_err = z_target - s["ee_pos"][:, 2]
+    # Phase 36 (đo bằng DEBUG_PLACE): XY hội tụ về một SÀN khác 0 (~95mm) rồi
+    # ĐỨNG YÊN, thậm chí NHÍCH NGƯỢC LẠI khi z_clear tiếp tục leo — đúng dấu
+    # hiệu đánh đổi tầm với ngang lấy độ cao (leo càng cao, tay càng phải thu
+    # lại theo phương ngang). Ra lệnh XY+Z cùng biên độ tối đa đồng thời khiến
+    # controller phải chọn thoả hiệp ở SAI thời điểm (khi còn xa cả 2 mục
+    # tiêu). Ưu tiên leo cao TRƯỚC: cổng xy_gate tăng dần 0→1 khi z_err giảm
+    # dần về 0 — XY chỉ được đi hết tốc khi độ cao đã gần đạt carry_height.
+    # Mốc chuẩn hoá TÁCH RIÊNG khỏi carry_height — nếu dùng carry_height làm
+    # mẫu số, hạ carry_height (Phase 36, thử giảm để né trần joint2) vô tình
+    # làm cổng NGHIÊM NGẶT HƠN (z_err/carry_height chạm 1.0 sớm hơn, xy_gate=0
+    # kéo dài hơn) — tự triệt tiêu lợi ích của việc hạ độ cao mục tiêu. Đo
+    # được: carry_height 0.15→0.07 làm XY hội tụ CHẬM HƠN dù đích thấp hơn.
+    z_gate_ref = float(getattr(env.cfg, "place_carry_z_gate_ref_m", 0.15))
+    xy_gate = (1.0 - (z_err.clamp(min=0.0) / max(z_gate_ref, 1e-4))).clamp(0.0, 1.0)
+    xy_step = (xy_err / max(pos_scale, 1e-4)).clamp(-1.0, 1.0) * scale * speed_scale * xy_gate.unsqueeze(-1)
     z_step = (z_err / max(pos_scale, 1e-4)).clamp(-1.0, 1.0) * scale * speed_scale
 
     out = arm_actions.clone()

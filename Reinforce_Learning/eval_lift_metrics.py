@@ -258,6 +258,10 @@ def main() -> None:
         env_cfg.episode_length_s = 20.0
 
     apply_phase2_demo_gates(env_cfg, model_path, stage=args.stage)
+    if os.environ.get("EVAL_EPISODE_LEN_S"):
+        # Chỉ để ĐO (Phase 40) — apply_phase2_demo_gates ghi đè episode_length_s
+        # về 20.0 qua PHASE2_BASE, nên override thật phải đặt SAU lời gọi này.
+        env_cfg.episode_length_s = float(os.environ["EVAL_EPISODE_LEN_S"])
 
     env_cfg.bottle_pos_noise = args.bottle_noise
     _show_align = os.environ.get("EVAL_SHOW_ALIGN_LOG") == "1"

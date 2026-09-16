@@ -42,7 +42,7 @@ openarm_resolve_server() {
     OPENARM_REMOTE_ROOT="${OPENARM_REMOTE_ROOT:-${OPENARM_DATA_ROOT}/${REMOTE_USER}/${OPENARM_WS_NAME}}"
     REMOTE_LOGS="${OPENARM_REMOTE_ROOT}/logs_openarm"
     REMOTE_RL="${OPENARM_REMOTE_ROOT}/Reinforce_Learning"
-    REMOTE_USD="${OPENARM_REMOTE_ROOT}/Open_arm_a1_ws/src/openarm_description/urdf/robot/v10"
+    REMOTE_USD="${OPENARM_REMOTE_ROOT}/Open_arm_a1_ws/src/openarm_description/assets/robot/openarm_v1.0/urdf/v10"
     SERVER_IP="$(ssh -G "$SERVER" 2>/dev/null | awk '$1=="hostname" {print $2; exit}')"
     SERVER_IP="${SERVER_IP:-$(echo "$SERVER" | cut -d@ -f2)}"
     SERVER_IP="${SERVER_IP:-$SERVER}"
@@ -143,7 +143,7 @@ echo RESOLVED_TB_PORT:\$TB_PORT
     echo "[2/2] Sync robot USD..."
     rsync -avz \
         --include='*/' --include='*.usd' --include='*.usda' --exclude='*' \
-        "${RL_ROOT}/../Open_arm_a1_ws/src/openarm_description/urdf/robot/v10/" \
+        "${RL_ROOT}/../Open_arm_a1_ws/src/openarm_description/assets/robot/openarm_v1.0/urdf/v10/" \
         "${SERVER}:${REMOTE_USD}/"
 
     if [ "${OPENARM_SYNC_ISAACLAB:-0}" = "1" ]; then
