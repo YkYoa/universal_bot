@@ -501,6 +501,13 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     place_carry_speed_scale: float = 0.35    # chậm hơn hẳn max speed — chống tilt khi mang (xem grasp_assist.py)
     place_carry_align_blend: float = 0.5
     place_xy_arrival_radius_m: float = 0.03
+    # Phase 35: CARRY→DESCEND (_update_place_state) trước đây CHỈ xét hội tụ
+    # XY, không xét độ cao — nếu XY hội tụ nhanh hơn Z leo lên place_carry_height_m
+    # (0.15m, độc lập tốc độ theo cùng ramp_frac/speed_scale), tay có thể bắt
+    # đầu hạ xuống bát trong khi chai còn thấp hơn miệng bát → va miệng bát
+    # thay vì bay qua trên. Thêm điều kiện độ cao THẬT của CHAI (không phải
+    # EE) so với miệng bát — đúng bằng chứng vật lý cần để "đủ cao mới cho hạ".
+    place_carry_clearance_m: float = 0.03
     place_arrival_settle_steps: int = 5
     place_descend_world_m: float = 0.02
     place_release_height_m: float = 0.02     # siết từ 0.05 (S9: bát chỉ sâu 5.2cm)

@@ -448,10 +448,16 @@ def _update_place_state(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
     # vừa latch; PLACE chỉ cần grip đã ổn định, đã đảm bảo từ GRASP).
     to_carry = is_idle & can_start
 
-    # CARRY → DESCEND: đã hội tụ XY đủ N bước liên tiếp
+    # CARRY → DESCEND: đã hội tụ XY VÀ chai đã cao hơn miệng bát đủ khoảng
+    # trống an toàn (Phase 35) — thiếu điều kiện độ cao, XY hội tụ nhanh hơn
+    # Z leo lên place_carry_height_m khiến tay hạ xuống khi chai còn thấp hơn
+    # miệng bát → va miệng thay vì bay qua trên (xem comment config.py).
     xy_ok = s["dist_bottle_bowl_xy"] < xy_radius
-    env._place_arrival_steps[is_carry & xy_ok] += 1
-    env._place_arrival_steps[is_carry & ~xy_ok] = 0
+    clearance = float(getattr(env.cfg, "place_carry_clearance_m", 0.03))
+    z_clear = (s["bottle_pos"][:, 2] - s["bowl_rim_z"]) > clearance
+    arrived = xy_ok & z_clear
+    env._place_arrival_steps[is_carry & arrived] += 1
+    env._place_arrival_steps[is_carry & ~arrived] = 0
     carry_abort = is_carry & must_abort
     carry_done = is_carry & (env._place_arrival_steps >= arrival_settle) & ~must_abort
 
@@ -491,10 +497,20 @@ def _update_place_state(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
                 f"  [PlaceDbg] env{i} step_ct={int(env.step_counter)} "
                 f"{names[int(phase[i])]}→{names[int(new_phase[i])]} "
                 f"xy={float(s['dist_bottle_bowl_xy'][i])*1000:.1f}mm "
+                f"z_clear={float(s['bottle_pos'][i, 2] - s['bowl_rim_z'][i])*1000:.1f}mm "
                 f"h_bowl={float(s['height_above_bowl_floor'][i])*1000:.1f}mm "
                 f"tilt={float(s['bottle_tilt_deg'][i]):.1f}",
                 flush=True,
             )
+        if int(env.step_counter) % 15 == 0:
+            for i in is_carry.nonzero(as_tuple=False).flatten().tolist():
+                print(
+                    f"  [CarryDbg] env{i} step_ct={int(env.step_counter)} "
+                    f"xy={float(s['dist_bottle_bowl_xy'][i])*1000:.1f}mm xy_ok={bool(xy_ok[i])} "
+                    f"z_clear_mm={float(s['bottle_pos'][i, 2] - s['bowl_rim_z'][i])*1000:.1f} "
+                    f"z_ok={bool(z_clear[i])} arrival_steps={int(env._place_arrival_steps[i])}",
+                    flush=True,
+                )
 
     return (env._place_phase == PLACE_CARRY) | (env._place_phase == PLACE_DESCEND)
 
