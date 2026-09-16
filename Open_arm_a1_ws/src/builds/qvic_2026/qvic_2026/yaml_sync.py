@@ -30,6 +30,24 @@ ARM_PREFIX_RE = re.compile(r"^(la|ra|lh|rh|head)")
 # Keys that are sequence bookkeeping, not waypoint sections.
 RESERVED_SECTIONS = ("speed", "sequences")
 
+# Per the module docstring's key-rule: how many numbers a waypoint of each
+# _kind_for() result may carry. Enforced at import time (see import_yaml())
+# instead of only surfacing later as a PlanToJointTarget failure or a
+# setJointGroupPositions crash on the robot.
+#
+# "angle" allows both 7 and 8: left_arm/right_arm's actual live DOF count
+# depends on which ee_type built the robot's SRDF - 7 under openarm_hand/
+# none, 8 under amazing_hand (the 8th being openarm_<side>_finger_joint1,
+# "motor 8" - see moveit_cpp_planner_manager.cpp's identical comment). A
+# waypoint's correct length therefore depends on which sequence/ee_type
+# actually consumes it, not a single fixed number - homePoses/waveEllipse/
+# waveEllipseR are amazing_hand data (8; this deployment's actual ee_type)
+# while wavePoses/waveHome/wavePosesR predate amazing_hand support and are
+# still 7. This only catches an outright wrong-for-either count (e.g. 6 or
+# 9) - it can't catch "8 values but this section is only ever used by a
+# 7-DOF sequence" without knowing which sequences read which section.
+EXPECTED_VALUE_COUNT = {"hand_yaw": (4,), "hand_flex": (4,), "angle": (7, 8), "pose": (7,)}
+
 ARM_TO_PREFIX = {"left_arm": "la", "right_arm": "ra"}
 
 
@@ -94,9 +112,17 @@ def import_yaml(yaml_path, path=None, replace=True):
             if not values:
                 bad.append(f"{section}/{key}: empty value")
                 continue
+            kind = _kind_for(key)
+            expected = EXPECTED_VALUE_COUNT.get(kind)
+            if expected is not None and len(values) not in expected:
+                bad.append(
+                    f"{section}/{key}: kind '{kind}' needs "
+                    f"{'/'.join(str(n) for n in expected)} value(s), got {len(values)}"
+                )
+                continue
             store.upsert_waypoint(
                 name=key, section=section, arm_prefix=_prefix_for(key),
-                kind=_kind_for(key), values=values, path=path,
+                kind=kind, values=values, path=path,
             )
             waypoint_count += 1
 
@@ -127,6 +153,7 @@ def import_yaml(yaml_path, path=None, replace=True):
         fields = dict(
             description=f"imported from {yaml_path}",
             arm=node.get("arm", "left_arm"),
+            ee_type=node.get("ee_type", ""),
             planner_profile=node.get("planner_profile", ""),
             repeat=int(node.get("repeat", 1)),
         )
@@ -320,6 +347,8 @@ def _sequence_to_yaml(seq):
     per-step speed changes); those are dropped, and the entry is skipped
     entirely if nothing replayable survives."""
     entry = {"arm": seq["arm"]}
+    if seq["ee_type"]:
+        entry["ee_type"] = seq["ee_type"]
     if seq["planner_profile"]:
         entry["planner_profile"] = seq["planner_profile"]
 

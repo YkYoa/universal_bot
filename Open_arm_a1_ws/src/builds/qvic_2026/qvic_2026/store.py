@@ -22,12 +22,16 @@ from contextlib import contextmanager
 
 from . import step_types
 
-# The source tree, not the install-space copy. Deriving this from __file__
-# would land the database inside site-packages, where the next `colcon build`
-# can wipe it. Hardcoded for the same reason launch/qvic_2026.launch.py
-# hardcodes SRC_SEQUENCE_YAML: this in-development repo only ever runs from
-# this one checkout. Override with QVIC_DB_PATH.
-DEFAULT_DB_PATH = "/home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/data/sequences.db"
+# The source tree's data/ dir, derived from this file's own location the same
+# way qvic_2026.launch.py derives SRC_SEQUENCE_YAML: os.path.realpath follows
+# the symlink that `colcon build --symlink-install` leaves behind, landing
+# back in the checkout rather than the install-space copy under
+# site-packages (a plain copy-install falls back to creating the db there
+# instead, which still works, just isn't the checkout). A hardcoded absolute
+# path here only ever matches the machine it was written on - override with
+# QVIC_DB_PATH for anything else.
+DEFAULT_DB_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "data", "sequences.db")
 
 WAYPOINT_KINDS = ("angle", "pose", "hand_yaw", "hand_flex")
 CONTROL_MODES = ("any", "position|mit", "torque")
@@ -56,6 +60,7 @@ CREATE TABLE IF NOT EXISTS sequences (
     name                  TEXT NOT NULL UNIQUE,
     description           TEXT NOT NULL DEFAULT '',
     arm                   TEXT NOT NULL DEFAULT 'left_arm',
+    ee_type               TEXT NOT NULL DEFAULT '',
     planner_profile       TEXT NOT NULL DEFAULT '',
     required_control_mode TEXT NOT NULL DEFAULT 'any',
     repeat                INTEGER NOT NULL DEFAULT 1,
@@ -92,6 +97,20 @@ CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at DESC);
 """
 
 
+def _migrate(conn):
+    """Adds columns introduced after a database's schema was first created.
+
+    `CREATE TABLE IF NOT EXISTS` (in SCHEMA above) is a no-op on a table that
+    already exists, even if its column list changed since - real deployments
+    (e.g. IQ9075's data/sequences.db, seeded 2026-08-16) keep their original
+    columns forever without this. Each migration is its own idempotent
+    ALTER TABLE, safe to run on every connect().
+    """
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(sequences)")}
+    if "ee_type" not in existing:
+        conn.execute("ALTER TABLE sequences ADD COLUMN ee_type TEXT NOT NULL DEFAULT ''")
+
+
 class StoreError(Exception):
     """Anything the caller did wrong: missing row, duplicate name, bad step."""
 
@@ -116,6 +135,7 @@ def connect(path=None):
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
+        _migrate(conn)
         yield conn
         conn.commit()
     except Exception:
@@ -254,7 +274,7 @@ def _waypoint_dict(row):
 
 # ── sequences ─────────────────────────────────────────────────────────────
 
-def create_sequence(name, description="", arm="left_arm", planner_profile="",
+def create_sequence(name, description="", arm="left_arm", ee_type="", planner_profile="",
                     repeat=1, velocity=0.0, acceleration=0.0, builtin=False,
                     steps=None, path=None):
     """Create a sequence, optionally with its whole step list in one shot.
@@ -269,12 +289,12 @@ def create_sequence(name, description="", arm="left_arm", planner_profile="",
             raise StoreError(f"sequence '{name}' already exists")
         cur = conn.execute(
             """
-            INSERT INTO sequences (name, description, arm, planner_profile,
+            INSERT INTO sequences (name, description, arm, ee_type, planner_profile,
                                    required_control_mode, repeat, velocity,
                                    acceleration, builtin, created_at, updated_at, version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             """,
-            (name, description, arm, planner_profile,
+            (name, description, arm, ee_type, planner_profile,
              _rollup_mode(prepared), int(repeat), float(velocity),
              float(acceleration), 1 if builtin else 0, now, now),
         )
@@ -308,6 +328,7 @@ def list_sequences(path=None):
             "name": r["name"],
             "description": r["description"],
             "arm": r["arm"],
+            "ee_type": r["ee_type"],
             "planner_profile": r["planner_profile"],
             "required_control_mode": r["required_control_mode"],
             "repeat": r["repeat"],
@@ -322,7 +343,7 @@ def list_sequences(path=None):
     ]
 
 
-UPDATABLE_FIELDS = ("description", "arm", "planner_profile", "repeat",
+UPDATABLE_FIELDS = ("description", "arm", "ee_type", "planner_profile", "repeat",
                     "velocity", "acceleration")
 
 
@@ -627,6 +648,7 @@ def _sequence_dict(row, step_rows):
         "name": row["name"],
         "description": row["description"],
         "arm": row["arm"],
+        "ee_type": row["ee_type"],
         "planner_profile": row["planner_profile"],
         "required_control_mode": row["required_control_mode"],
         "repeat": row["repeat"],

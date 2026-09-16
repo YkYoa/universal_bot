@@ -72,8 +72,18 @@ app.config['SECRET_KEY'] = 'openarm-robot-api-2026'
 # data, gzip wouldn't help there anyway).
 Compress(app)
 
-# Enable CORS for UI team access from any origin
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+# Enable CORS for UI team access from any origin. manage_session=False: this
+# API has no login/Flask-session state to preserve across socket events, and
+# Flask-SocketIO's own session-copying path (flask_socketio's _handle_event
+# assigning to RequestContext.session) throws
+# `AttributeError: property 'session' of 'RequestContext' object has no setter`
+# against Flask 3's read-only session property - on Flask-SocketIO 5.3.6 that
+# fires on every connect/disconnect/emit. Skipping session management avoids
+# that code path entirely rather than pinning a library version.
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading',
+                     manage_session=False)
+
+OPENARM_API_VERSION = "2026.09.15"
 
 # Global reference to the ROS 2 controller node
 controller: MoveItEEController = None
@@ -81,6 +91,13 @@ controller: MoveItEEController = None
 # Bridge to sequence_executor's state machine. Everything sequence- and
 # scene-related goes through it; None until main() builds it.
 fsm: FsmBridge = None
+
+
+def _require_controller():
+    """Returns True if controller is initialized, or False with an error message."""
+    if controller is None:
+        return False, 'MoveIt controller is not initialized or still starting up'
+    return True, ''
 
 
 # ─────────────────────────────────────────────
@@ -102,11 +119,24 @@ def add_cors_headers(response):
 
 @app.route('/', methods=['GET'])
 def index():
-    """Root endpoint - redirect to documentation."""
+    """Root endpoint - serves the Gateway Hub for browsers or JSON for API clients."""
+    accept = request.headers.get('Accept', '')
+    wants_json = ('application/json' in accept) or (request.args.get('format') == 'json')
+    if not wants_json:
+        hub_path = os.path.join(_web_visualizer_dir(), 'hub.html')
+        if os.path.isfile(hub_path):
+            return send_from_directory(_web_visualizer_dir(), 'hub.html')
+
+    health_info = _compute_health()
     return jsonify({
         'message': 'Welcome to the OpenArm Robot API',
+        'version': OPENARM_API_VERSION,
+        'status': health_info.get('status', 'ok'),
+        'active_build': health_info.get('active_build', 'qvic_2026'),
         'documentation': '/api/docs',
         'dashboard': '/dashboard/',
+        'fsm_viewer': '/dashboard/fsm.html',
+        'health': '/health',
     })
 
 
@@ -148,6 +178,9 @@ def get_urdf():
     robot_state_publisher. Used by the 3D web dashboard to build the model;
     mesh files it references are served from /packages/<pkg>/<path>.
     """
+    if not controller:
+        return jsonify({'success': False,
+                         'message': 'URDF not received yet - controller is still starting.'}), 503
     urdf = controller.get_urdf()
     if not urdf:
         return jsonify({'success': False,
@@ -171,17 +204,120 @@ def serve_package_file(pkg_name, filepath):
 
 
 # ─────────────────────────────────────────────
-# Health Check
+# Health Check & Telemetry
 # ─────────────────────────────────────────────
 
+# camera_bridge_node runs as its own process, outside this launch - all this
+# can check is whether it has advertised its image topics on the ROS graph,
+# not whether frames are actually flowing. Throttled to
+# _OPTIONAL_HW_PROBE_INTERVAL_S so the dashboard's 3s /health poll doesn't
+# turn into a ROS graph query on every single hit - the same "check once,
+# then re-check on an interval, never spam" shape as HeadHW's own connection
+# retry.
+_OPTIONAL_HW_PROBE_INTERVAL_S = 5.0
+_camera_bridge_probe = {'ready': False, 'checked_at': 0.0}
+
+
+def _camera_bridge_ready():
+    """Cached, rate-limited check for camera_bridge_node's image topics."""
+    now = time.time()
+    if now - _camera_bridge_probe['checked_at'] < _OPTIONAL_HW_PROBE_INTERVAL_S:
+        return _camera_bridge_probe['ready']
+    ready = False
+    if controller:
+        try:
+            names = {name for name, _ in controller.get_topic_names_and_types()}
+            ready = '/camera_front/image_raw' in names or '/camera_left/image_raw' in names
+        except Exception:
+            ready = False
+    _camera_bridge_probe['ready'] = ready
+    _camera_bridge_probe['checked_at'] = now
+    return ready
+
+
+def _compute_health():
+    """Computes comprehensive health status dictionary matching dsr-gateway pattern."""
+    ros_ok = False
+    try:
+        ros_ok = bool(rclpy.ok())
+    except Exception:
+        pass
+
+    joint_states_available = False
+    urdf_available = False
+    moveit_ready = False
+    if controller:
+        try:
+            joint_states_available = (controller.get_current_joint_state() is not None)
+            urdf_available = (controller.get_urdf() is not None)
+            moveit_ready = controller.is_movegroup_ready()
+        except Exception:
+            pass
+
+    fsm_connected = False
+    run_action_ready = False
+    if fsm:
+        try:
+            fsm_connected = fsm.is_connected()
+            run_action_ready = bool(fsm._run_client and fsm._run_client.server_is_ready())
+        except Exception:
+            pass
+
+    store_ready = None
+    try:
+        from qvic_2026 import store
+        store_ready = True
+    except ImportError:
+        store_ready = None
+    except Exception:
+        store_ready = False
+
+    active_build = os.environ.get('OPENARM_BUILD', 'qvic_2026')
+    fake_hw = os.environ.get('OPENARM_USE_FAKE_HARDWARE', 'false').lower() in ('true', '1')
+    hardware_mode = 'fake' if fake_hw else 'real'
+
+    degraded_reasons = []
+    if not ros_ok:
+        degraded_reasons.append("ROS 2 context not running")
+    if not joint_states_available:
+        degraded_reasons.append("No joint_states received from broadcaster")
+    if not moveit_ready:
+        degraded_reasons.append("MoveGroup action server not connected")
+    if not fsm_connected:
+        degraded_reasons.append("Sequence executor FSM not connected")
+
+    if not ros_ok:
+        status = "unhealthy"
+    elif degraded_reasons:
+        status = "degraded"
+    else:
+        status = "ok"
+
+    return {
+        'status': status,
+        'version': OPENARM_API_VERSION,
+        'active_build': active_build,
+        'hardware_mode': hardware_mode,
+        'ros_ok': ros_ok,
+        'joint_states_available': joint_states_available,
+        'urdf_available': urdf_available,
+        'moveit_ready': moveit_ready,
+        'fsm_ready': fsm_connected,
+        'run_action_ready': run_action_ready,
+        'store_ready': store_ready,
+        'camera_bridge_ready': _camera_bridge_ready(),
+        'degraded_reasons': degraded_reasons,
+        'timestamp': time.time(),
+    }
+
+
+@app.route('/health', methods=['GET'])
 @app.route('/api/health', methods=['GET'])
 def health():
-    """Health check endpoint."""
-    return jsonify({
-        'status': 'ok',
-        'robot': 'openarm_bimanual',
-        'timestamp': time.time(),
-    })
+    """Health check endpoint: reports ok or degraded status."""
+    data = _compute_health()
+    status_code = 503 if data['status'] == 'unhealthy' else 200
+    return jsonify(data), status_code
 
 
 # ─────────────────────────────────────────────
@@ -201,6 +337,14 @@ def get_status():
         "joints": {"openarm_left_joint1": 0.0, ...}
     }
     """
+    if not controller:
+        return jsonify({
+            'success': False,
+            'message': 'Controller is still starting up or offline',
+            'is_moving': {'left_arm': False, 'right_arm': False},
+            'joint_states_available': False,
+            'joints': {},
+        }), 503
     try:
         result = controller.get_status()
         return jsonify(result)
@@ -228,6 +372,9 @@ def get_pose(group_name):
         "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
     }
     """
+    if not controller:
+        return jsonify({'success': False, 'message': 'Controller is still starting up or offline'}), 503
+
     if group_name not in ('left_arm', 'right_arm'):
         return jsonify({
             'success': False,
@@ -982,7 +1129,7 @@ def list_actions():
         'hint': 'run one with POST /api/sequence/run {"name": "builtin:<id>"}',
         'actions': [
             {'id': f'action_{i:02d}', 'name': f'builtin:action_{i:02d}'}
-            for i in range(1, 11)
+            for i in range(1, 13)
         ],
     })
 
@@ -1174,12 +1321,12 @@ def api_docs():
             },
         },
         'planning_groups': {
-            'left_arm': {'joints': 7, 'order': controller.LEFT_ARM_JOINTS},
-            'right_arm': {'joints': 7, 'order': controller.RIGHT_ARM_JOINTS},
-            'both_arms': {'joints': 14, 'order': controller.BOTH_ARM_JOINTS},
-            'left_hand_fingers': {'joints': 8, 'order': controller.LEFT_HAND_JOINTS},
-            'right_hand_fingers': {'joints': 8, 'order': controller.RIGHT_HAND_JOINTS},
-            'head': {'joints': 2, 'order': controller.HEAD_JOINTS,
+            'left_arm': {'joints': 7, 'order': MoveItEEController.LEFT_ARM_JOINTS},
+            'right_arm': {'joints': 7, 'order': MoveItEEController.RIGHT_ARM_JOINTS},
+            'both_arms': {'joints': 14, 'order': MoveItEEController.BOTH_ARM_JOINTS},
+            'left_hand_fingers': {'joints': 8, 'order': MoveItEEController.LEFT_HAND_JOINTS},
+            'right_hand_fingers': {'joints': 8, 'order': MoveItEEController.RIGHT_HAND_JOINTS},
+            'head': {'joints': 2, 'order': MoveItEEController.HEAD_JOINTS,
                      'note': 'neck (pan), then head (tilt). No named poses yet - use '
                              '/api/move/joints or /api/move/joint.'},
         },
@@ -1255,68 +1402,103 @@ def _register_project_blueprint():
 
 def main():
     """Entry point: brings up the ROS 2 node/executor in a background thread,
-    waits briefly for joint states, then runs the Flask+SocketIO server in
+    verifies communication, then runs the Flask+SocketIO server in
     the foreground until interrupted."""
-    # Initialize ROS 2
     # Initialize ROS 2 without signal handlers to avoid conflict with Flask
-    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
-    
+    ros_initialized = False
+    try:
+        rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
+        ros_initialized = True
+    except Exception as e:
+        app.logger.warning(f'[OpenArm API] rclpy.init failed: {e}')
+
     global controller, fsm
-    controller = MoveItEEController()
+    executor = None
+    ros_thread = None
 
-    # Every FSM transition is pushed straight out to connected clients. The
-    # executor only publishes when something actually changes, so an idle robot
-    # generates no socket traffic - unlike the 10 Hz joint_states stream.
-    fsm = FsmBridge(on_state=lambda state: socketio.emit('fsm_state', state))
+    if ros_initialized:
+        try:
+            controller = MoveItEEController()
+        except Exception as e:
+            app.logger.warning(f'[OpenArm API] Failed to initialize MoveItEEController: {e}')
+            controller = None
 
-    # Run ROS 2 executor in a background thread
-    executor = MultiThreadedExecutor(num_threads=4)
-    executor.add_node(controller)
-    executor.add_node(fsm)
+        try:
+            fsm = FsmBridge(on_state=lambda state: socketio.emit('fsm_state', state))
+        except Exception as e:
+            app.logger.warning(f'[OpenArm API] Failed to initialize FsmBridge: {e}')
+            fsm = None
 
-    _register_project_blueprint()
-    
-    ros_thread = threading.Thread(target=executor.spin, daemon=True)
-    ros_thread.start()
-    
-    # Wait for joint states
-    controller.get_logger().info('Waiting for joint states...')
-    for _ in range(100):  # Wait up to 10 seconds
-        if controller.get_current_joint_state() is not None:
-            break
-        time.sleep(0.1)
-    
-    if controller.get_current_joint_state() is None:
-        controller.get_logger().warn('No joint states received yet - API will start anyway')
-    else:
-        controller.get_logger().info('Joint states received!')
-    
+        try:
+            executor = MultiThreadedExecutor(num_threads=4)
+            if controller:
+                executor.add_node(controller)
+            if fsm:
+                executor.add_node(fsm)
+
+            ros_thread = threading.Thread(target=executor.spin, daemon=True)
+            ros_thread.start()
+        except Exception as e:
+            app.logger.warning(f'[OpenArm API] Failed to start ROS 2 executor: {e}')
+
+    try:
+        _register_project_blueprint()
+    except Exception as e:
+        app.logger.warning(f'[OpenArm API] Failed to register project blueprint: {e}')
+
+    # Check for joint states (fast 3s timeout so the HTTP server is ready for CI)
+    if controller:
+        controller.get_logger().info('Checking joint states (up to 3s)...')
+        for _ in range(30):
+            if controller.get_current_joint_state() is not None:
+                break
+            time.sleep(0.1)
+
+        if controller.get_current_joint_state() is None:
+            controller.get_logger().warn('No joint states received yet - API server starting in degraded mode')
+        else:
+            controller.get_logger().info('Joint states verified!')
+
     # Get port from environment or default to 5050
     port = int(os.environ.get('ROBOT_API_PORT', 5050))
     host = os.environ.get('ROBOT_API_HOST', '0.0.0.0')
-    
-    controller.get_logger().info(f'Starting REST API server on {host}:{port}')
-    controller.get_logger().info(f'API docs: http://{host}:{port}/api/docs')
-    
+
+    print(f'[OpenArm API] Starting Gateway REST API server on {host}:{port}')
+    print(f'[OpenArm API] Hub UI:   http://{host}:{port}/')
+    print(f'[OpenArm API] Health:   http://{host}:{port}/health')
+    print(f'[OpenArm API] API docs: http://{host}:{port}/api/docs')
+
     try:
         # Run Flask with SocketIO (for WebSocket support)
         socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         pass
     finally:
+        print('[OpenArm API] Shutting down...')
+        if executor:
+            try:
+                executor.shutdown()
+            except Exception:
+                pass
         if controller:
-            controller.get_logger().info('Shutting down...')
-            # Stop the executor and join the ROS thread
-            executor.shutdown()
-            controller.destroy_node()
+            try:
+                controller.destroy_node()
+            except Exception:
+                pass
         if fsm:
-            fsm.destroy_node()
-        
+            try:
+                fsm.destroy_node()
+            except Exception:
+                pass
+
         # Shutdown ROS 2 context
         if rclpy.ok():
-            rclpy.shutdown()
-        
-        if ros_thread.is_alive():
+            try:
+                rclpy.shutdown()
+            except Exception:
+                pass
+
+        if ros_thread and ros_thread.is_alive():
             ros_thread.join(timeout=1.0)
 
 

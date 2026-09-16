@@ -12,6 +12,21 @@
 #       If Joint > pose data: 3 position and 4 quarternion follow
 #       Can auto detect radian or degree
 
+#   Angle vectors are 7 values (openarm_left/right_joint1..7) OR 8 (the same
+#   7 plus a trailing openarm_<side>_finger_joint1 / "motor 8" value),
+#   depending on which ee_type the *consuming* sequence/action actually
+#   needs - left_arm/right_arm is 7-DOF under ee_type:=openarm_hand/none but
+#   8-DOF under ee_type:=amazing_hand (see moveit_cpp_planner_manager.cpp's
+#   identical comment). This deployment runs amazing_hand, so homePoses/
+#   waveEllipse/waveEllipseR (used by builtin:action_01/02/04-08 and the
+#   qvic_2026_both/qvic_2026_left/qvic_2026_right sequences) are 8; sections
+#   with no amazing_hand consumer yet (wavePoses/waveHome/wavePosesR) are
+#   still 7 and untested for amazing_hand. yaml_sync.py's import-time check
+#   (EXPECTED_VALUE_COUNT) accepts either 7 or 8 for "angle" - it can only
+#   catch an outright wrong count (e.g. 6), not "8 values in a section a
+#   7-DOF sequence reads". If you're adding a new waypoint by hand, count
+#   your commas against whatever will actually consume it, not just 7.
+
 # speed: <section>: <velocity>[, <acceleration>] - MoveIt velocity_scaling /
 # acceleration_scaling factors [0-1] applied to every waypoint in that
 # section (both PlanToJointTarget and PlanToPose). Missing or 0 = skill's
@@ -131,6 +146,58 @@ waveEllipseR:
   raWaveEllipseR20Angle: 0.7, 0.205771700645, -0.530368003337, 1.50099466715, 0.243785715992, -0.148902756278, 0.90283167404, 0.0
   raWaveEllipseR21Angle: 0.7, 0.22394803097, -0.534179604311, 1.53021808227, 0.252697456437, -0.126364485129, 0.889009935379, 0.0
 
+waveEllipseOpenarm:
+  # 7-value mirror of waveEllipse, for ee_type:=openarm_hand (qvic_2026_left)
+  # - same 7 arm joints, just without amazing_hand's 8th (motor8/finger_joint1)
+  # value, which openarm_hand's left_arm group doesn't have. Added 2026-09-15
+  # after qvic_2026_left was found feeding 8-value waypoints into a 7-DOF
+  # group (waveEllipse is amazing_hand data, shared with qvic_2026_both).
+  laWaveEllipse1OpenarmAngle: -0.7, -0.174427591158, -0.485686993708, 1.50252345722, 0.232971267546, -0.235432858323, -0.882974632552
+  laWaveEllipse2OpenarmAngle: -0.7, -0.170020290543, -0.484815319639, 1.53568645683, 0.216534055404, -0.273097976015, -0.862404819889
+  laWaveEllipse3OpenarmAngle: -0.7, -0.171545784658, -0.479812195113, 1.56982288368, 0.203782578584, -0.305545059247, -0.844027065634
+  laWaveEllipse4OpenarmAngle: -0.7, -0.174532669681, -0.465285584469, 1.60423325687, 0.190604603068, -0.328117070655, -0.827391488265
+  laWaveEllipse5OpenarmAngle: -0.7, -0.174532643062, -0.437025023446, 1.63792882528, 0.173907237288, -0.336666621772, -0.812356697693
+  laWaveEllipse6OpenarmAngle: -0.7, -0.174532629542, -0.400097850056, 1.66970442899, 0.159287147385, -0.33580551137, -0.800392658077
+  laWaveEllipse7OpenarmAngle: -0.7, -0.174532625257, -0.356011181668, 1.69823528028, 0.148330877913, -0.327060138094, -0.791931050325
+  laWaveEllipse8OpenarmAngle: -0.7, -0.174532629366, -0.306371818251, 1.72219186703, 0.141981011941, -0.312108492838, -0.787041230202
+  laWaveEllipse9OpenarmAngle: -0.7, -0.174532638444, -0.252871307313, 1.74036596658, 0.140443667632, -0.292678236014, -0.785465987599
+  laWaveEllipse10OpenarmAngle: -0.7, -0.174532648978, -0.197278658837, 1.75179612932, 0.143230063854, -0.270479049173, -0.786723875348
+  laWaveEllipse11OpenarmAngle: -0.7, -0.174532658558, -0.141415093363, 1.75587648509, 0.149307636225, -0.247168778919, -0.790237211726
+  laWaveEllipse12OpenarmAngle: -0.7, -0.174532666028, -0.087099660176, 1.75243082848, 0.157325199637, -0.224344498965, -0.795448802659
+  laWaveEllipse13OpenarmAngle: -0.7, -0.174532671136, -0.0360740767332, 1.74173750351, 0.165868919305, -0.203546478675, -0.801902681781
+  laWaveEllipse14OpenarmAngle: -0.7, -0.174532673205, 0.0100711536826, 1.72449977024, 0.173702628983, -0.186263638199, -0.809278461425
+  laWaveEllipse15OpenarmAngle: -0.7, -0.174532673205, 0.0499469463364, 1.70176773102, 0.179951951149, -0.173931501047, -0.817381925165
+  laWaveEllipse16OpenarmAngle: -0.7, -0.174532673205, 0.0823818918352, 1.67482663337, 0.184206980553, -0.167916756209, -0.826104558812
+  laWaveEllipse17OpenarmAngle: -0.7, -0.174532673205, 0.106410470789, 1.64506939015, 0.186537374733, -0.169486045978, -0.835370596451
+  laWaveEllipse18OpenarmAngle: -0.7, -0.174532673205, 0.121249617688, 1.61386911095, 0.187430643024, -0.179760964981, -0.845090562619
+  laWaveEllipse19OpenarmAngle: -0.7, -0.170786985239, 0.13000115903, 1.58246180515, 0.183798265159, -0.195882876908, -0.85441462696
+  laWaveEllipse20OpenarmAngle: -0.7, -0.162344407692, 0.133539142388, 1.55184923794, 0.175167565648, -0.217557745755, -0.863036554032
+  laWaveEllipse21OpenarmAngle: -0.7, -0.149002871211, 0.132241876825, 1.52272332234, 0.161798322582, -0.244974673319, -0.870839321759
+
+waveEllipseROpenarm:
+  # 7-value mirror of waveEllipseR - see waveEllipseOpenarm's comment above.
+  raWaveEllipseR1OpenarmAngle: 0.7, 0.384321927485, -0.122030865755, 1.4947547307, 0.40275511717, -0.31175725913, 0.931388988028
+  raWaveEllipseR2OpenarmAngle: 0.7, 0.390392330859, -0.12909857606, 1.46804357864, 0.412479823447, -0.276501278217, 0.944578451056
+  raWaveEllipseR3OpenarmAngle: 0.7, 0.391533336585, -0.140988429005, 1.44441468899, 0.41682317421, -0.247312982964, 0.956552146933
+  raWaveEllipseR4OpenarmAngle: 0.7, 0.388057090847, -0.157008369624, 1.42449872663, 0.416384658015, -0.224122927395, 0.967076106583
+  raWaveEllipseR5OpenarmAngle: 0.7, 0.380362236113, -0.176519654386, 1.40855196036, 0.411770147767, -0.20666359652, 0.975965384922
+  raWaveEllipseR6OpenarmAngle: 0.7, 0.368923160663, -0.198948285245, 1.39650472565, 0.403575417701, -0.1944844099, 0.983090434771
+  raWaveEllipseR7OpenarmAngle: 0.7, 0.354280372847, -0.223773346956, 1.38803935548, 0.392384150704, -0.186976609539, 0.988377143623
+  raWaveEllipseR8OpenarmAngle: 0.7, 0.337034269866, -0.250503431553, 1.38268857225, 0.378775080651, -0.183406023858, 0.991800118428
+  raWaveEllipseR9OpenarmAngle: 0.7, 0.317842398503, -0.278651692942, 1.37994171469, 0.36333195511, -0.182950124696, 0.993370578463
+  raWaveEllipseR10OpenarmAngle: 0.7, 0.297418646407, -0.307717327063, 1.37934493444, 0.346650607092, -0.184735404816, 0.993121516212
+  raWaveEllipseR11OpenarmAngle: 0.7, 0.27653190407, -0.337177385516, 1.38058262775, 0.329339684287, -0.18787169857, 0.991093370788
+  raWaveEllipseR12OpenarmAngle: 0.7, 0.256001578806, -0.366488850134, 1.38353023554, 0.312014724115, -0.191481185403, 0.987323479259
+  raWaveEllipseR13OpenarmAngle: 0.7, 0.236687743823, -0.395097748727, 1.3882723505, 0.295288183621, -0.194721021448, 0.981842207161
+  raWaveEllipseR14OpenarmAngle: 0.7, 0.219474482851, -0.422450441366, 1.39508423291, 0.279759759988, -0.196799577424, 0.974677930903
+  raWaveEllipseR15OpenarmAngle: 0.7, 0.205246019945, -0.448002340808, 1.40437905118, 0.266011324959, -0.19698702262, 0.965871822147
+  raWaveEllipseR16OpenarmAngle: 0.7, 0.194856428653, -0.471221095749, 1.41662722158, 0.25460906324, -0.194621470979, 0.955501571055
+  raWaveEllipseR17OpenarmAngle: 0.7, 0.189094992661, -0.491584082991, 1.4322577984, 0.246112497356, -0.18911209827, 0.943710944549
+  raWaveEllipseR18OpenarmAngle: 0.7, 0.188650425221, -0.508573058442, 1.4515543927, 0.241086877582, -0.179940539584, 0.930739943242
+  raWaveEllipseR19OpenarmAngle: 0.7, 0.194077789408, -0.521671108182, 1.47455887325, 0.240112820515, -0.166661483857, 0.91694908474
+  raWaveEllipseR20OpenarmAngle: 0.7, 0.205771700645, -0.530368003337, 1.50099466715, 0.243785715992, -0.148902756278, 0.90283167404
+  raWaveEllipseR21OpenarmAngle: 0.7, 0.22394803097, -0.534179604311, 1.53021808227, 0.252697456437, -0.126364485129, 0.889009935379
+
 wavePosesR:
   raWavePosesR1Angle: -0.127194264549, 0.0126996956911, 0.0384095913233, 0.743846725046, 0.0408590452944, 0.175080536692, 0.209929851948
   raWavePosesR2Angle: 0.0903641308772, 0.422103323145, 0.21575369287, 0.711123763283, 0.276708710096, 0.61723181043, 0.777550913418
@@ -163,18 +230,31 @@ handOpen:
   rhOpenFlex: 0, 0, 0, 0
 
 sequences:
+  # ee_type: which hand this sequence's data was authored/recorded for -
+  # read explicitly by qvic_2026.launch.py (arm:=/sequence:= no longer have
+  # to guess it, see ARM_TO_SEQUENCE's neighboring comment) and checked
+  # against whatever the robot actually booted with before a RunSequence
+  # goal is accepted (see robot_supervisor.cpp's handleGoal()). Leaving it
+  # off falls back to the old guess, loudly, so a forgotten entry is never
+  # silent.
   qvic_2026_left:
     arm: left_arm
+    ee_type: openarm_hand
     planner_profile: fast_ptp
-    body_section: waveEllipse
+    # waveEllipse is amazing_hand data (8 values, shared with qvic_2026_both) -
+    # waveEllipseOpenarm is its 7-value mirror for this ee_type. Don't point
+    # this back at waveEllipse: left_arm is only 7-DOF under openarm_hand.
+    body_section: waveEllipseOpenarm
 
   qvic_2026_right:
     arm: right_arm
+    ee_type: openarm_hand
     planner_profile: fast_ptp
-    body_section: waveEllipseR
+    body_section: waveEllipseROpenarm
 
   qvic_2026_both:
     arm: both_arms
+    ee_type: amazing_hand
     planner_profile: realtime_rrt
     home_section: homePoses
     body_section: waveEllipse
@@ -183,6 +263,7 @@ sequences:
 
   qvic_2026_wavepose_bimanual:
     arm: both_arms
+    ee_type: amazing_hand
     planner_profile: realtime_rrt
     home_section: waveHome
     body_section: wavePoses
@@ -191,6 +272,7 @@ sequences:
 
   hand_open_close:
     arm: both_arms
+    ee_type: amazing_hand
     home_section: homePoses
     body_sections: handOpen, homePoses
     repeat: -1

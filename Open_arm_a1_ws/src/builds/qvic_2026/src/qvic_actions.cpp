@@ -78,6 +78,7 @@ BuiltinAction homeBothArms()
     auto hand = ctx.hand;
     auto cancelled = ctx.cancelled;
     auto logger = ctx.node->get_logger();
+    auto ee_type = ctx.ee_type;
 
     // Named pose, not the DB's raw 7-per-arm waypoint vector: "both_arms"
     // has a <group_state name="home"> in openarm_bimanual.srdf, resolved
@@ -95,7 +96,7 @@ BuiltinAction homeBothArms()
     // named-pose target does.
     skill->moveToNamedPose(
       "both_arms", "home", "safe_rrt", 0.0, 0.0,
-      [hand, cancelled, logger, done](bool ok, const std::string& error) {
+      [hand, cancelled, logger, done, ee_type](bool ok, const std::string& error) {
         if (!ok) {
           done(false, "home move failed: " + error);
           return;
@@ -105,15 +106,28 @@ BuiltinAction homeBothArms()
           return;
         }
 
+        // hand->setHandFlex() is amazing_hand's 5-finger interface (4 flex
+        // values per hand) - it has no equivalent for ee_type:=openarm_hand
+        // (2-finger gripper, driven through ctx.skill's gripper skill
+        // instead, not ctx.hand) or ee_type:=none (no hand controller
+        // spawned at all - confirmed 2026-08-17: "left_hand_j2_controller/
+        // follow_joint_trajectory not available"). ctx.ee_type (see
+        // builtin_actions.hpp) now makes this decidable up front instead of
+        // blindly attempting setHandFlex and swallowing whatever comes back.
+        //
+        // "openarm_hand"/"none" (and anything else/empty): no setHandFlex
+        // equivalent exists for the 2-finger gripper and no hand controller
+        // is spawned at all under "none" - skip cleanly instead of dispatching
+        // a call that can only fail (or hang, if nothing ever calls `done`).
+        if (ee_type != "amazing_hand") {
+          RCLCPP_INFO(logger, "action_01: arms home (ee_type='%s' has no hand-close step)",
+                      ee_type.c_str());
+          done(true, "");
+          return;
+        }
+
         RCLCPP_INFO(logger, "action_01: arms home, closing hands to the home posture");
 
-        // Both hands fire together; the counter makes sure `done` runs once.
-        // Hand failure (e.g. ee_type:=none - no hand_j1/j2_controller
-        // spawned at all, confirmed 2026-08-17: "left_hand_j2_controller/
-        // follow_joint_trajectory not available") is logged but does NOT
-        // fail the whole action - the arm-homing above is the part that
-        // matters, and there's no ee_type visible here to skip this step
-        // outright when no hand is attached.
         const std::vector<double> flex = {-0.0079, 0.0026, 1.2186, 1.2133};
         auto pending = std::make_shared<int>(2);
         auto failure = std::make_shared<std::string>();
@@ -152,7 +166,30 @@ namespace {
 // blends through interior waypoints instead of stopping at each one.
 constexpr const char* kWaveProfile = "fast_ptp";
 
-// The two arc sections, in the order the arms sweep them.
+// The two arc sections, in the order the arms sweep them. This deployment's
+// actual, live-verified ee_type is amazing_hand (confirmed both in
+// /etc/robot-healthmate/openarm.env and in the running process's own
+// command line: `... ee_type:=amazing_hand`), under which left_arm/
+// right_arm are genuinely 8-DOF (the 8th being openarm_<side>_finger_joint1
+// / "motor 8" - excluded from IK but still a joint-space variable - see
+// moveit_cpp_planner_manager.cpp's comment). waveEllipse/waveEllipseR/
+// homePoses are that 8-value data, and are what this robot needs.
+//
+// waveEllipseOpenarm/waveEllipseROpenarm/waveHome (7-value) are for
+// ee_type:=openarm_hand specifically - that's what qvic_2026_left/
+// qvic_2026_right (the YAML sequences, ee_type: openarm_hand) correctly use.
+// Builtin actions have no per-ee_type variant of their own the way YAML
+// sequences now do (see SequenceFsm::validate()'s ee_type check) - they run
+// under whatever ee_type this process actually booted with, so they need
+// the data matching *that*, not a different build's config.
+//
+// If you're changing this because action_02 (or a sibling) faulted on a
+// DOF mismatch again: confirm this robot's actual booted ee_type first
+// (`cat /etc/robot-healthmate/openarm.env | grep EE_TYPE`, or the
+// ros2_control ee_type param) rather than assuming it - it has been
+// amazing_hand throughout this file's history so far, and switching these
+// back to the 7-value sections re-breaks it exactly the way commit
+// 7820779596 did.
 constexpr const char* kLeftArcSection = "waveEllipse";
 constexpr const char* kRightArcSection = "waveEllipseR";
 constexpr const char* kHomeSection = "homePoses";

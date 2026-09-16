@@ -1,4 +1,5 @@
 import os
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
@@ -30,6 +31,14 @@ ARM_TO_SEQUENCE = {
 # separate regen or colcon build step.
 SRC_SEQUENCE_YAML = os.path.join(
     os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "config", "sequence.yaml")
+
+# Same derivation, for the sequence store qvic_fsm_node actually runs
+# against. store.py and sqlite_sequence_source.cpp each fall back to this
+# same path on their own (via realpath(__file__)/__FILE__ respectively) when
+# db_path/QVIC_DB_PATH aren't set, but passing it explicitly here means the
+# launch never silently depends on that fallback agreeing across both.
+SRC_DB_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "data", "sequences.db")
 
 
 def launch_setup(context, *args, **kwargs):
@@ -77,11 +86,26 @@ def launch_setup(context, *args, **kwargs):
             )
         sequence_name = ARM_TO_SEQUENCE[arm]
 
-    # arm:=both and sequence:=hand_open_close both hold/cycle an amazing_hand
-    # pose via SetHandYaw/SetHandFlex - default to that ee_type only for
-    # those cases; pass ee_type:=... explicitly to override either way.
+    # ee_type:=... on the command line always wins. Otherwise, read the
+    # target sequence's own `ee_type:` field from sequence.yaml (see that
+    # file's `sequences:` header comment) - explicit and per-sequence,
+    # instead of guessing from arm/sequence_name. A sequence missing the
+    # field falls back to the old guess, loudly, so a forgotten migration
+    # is never silent.
     if not ee_type:
-        ee_type = "amazing_hand" if (arm == "both" or sequence_name == "hand_open_close") else "openarm_hand"
+        declared = None
+        try:
+            with open(SRC_SEQUENCE_YAML) as f:
+                declared = ((yaml.safe_load(f) or {}).get("sequences") or {}) \
+                    .get(sequence_name, {}).get("ee_type")
+        except Exception as e:  # noqa: BLE001 - fall through to the guess below
+            print(f"qvic_2026: WARNING - could not read ee_type from {SRC_SEQUENCE_YAML}: {e}")
+        if declared:
+            ee_type = declared
+        else:
+            ee_type = "amazing_hand" if (arm == "both" or sequence_name == "hand_open_close") else "openarm_hand"
+            print(f"qvic_2026: WARNING - sequence '{sequence_name}' has no ee_type: field in "
+                  f"sequence.yaml, guessing ee_type='{ee_type}' - add the field to make this explicit.")
 
     sequence_executor_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -95,6 +119,7 @@ def launch_setup(context, *args, **kwargs):
             "executor_package": "qvic_2026" if use_db else "sequence_executor",
             "executor_executable": "qvic_fsm_node" if use_db else "sequence_executor_node",
             "sequence_yaml_path": SRC_SEQUENCE_YAML,
+            "db_path": SRC_DB_PATH,
             # Empty leaves the FSM idle, waiting for the app or the web page to
             # pick something - which is the point of having an API at all.
             "sequence_name": sequence_name if autostart else "",
@@ -154,8 +179,9 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "ee_type", default_value="",
-            description="openarm_hand or amazing_hand. Leave empty to auto-select "
-                        "(amazing_hand for arm:=both or sequence:=hand_open_close, openarm_hand otherwise).",
+            description="openarm_hand or amazing_hand. Leave empty to use the target "
+                        "sequence's own ee_type: field in sequence.yaml (falls back to a "
+                        "logged guess if that sequence doesn't declare one).",
         ),
         DeclareLaunchArgument("isaacsim", default_value="false"),
         DeclareLaunchArgument(

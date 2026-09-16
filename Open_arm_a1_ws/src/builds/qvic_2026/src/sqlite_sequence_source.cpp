@@ -1,6 +1,7 @@
 #include "qvic_2026/sqlite_sequence_source.hpp"
 
 #include <cstdlib>
+#include <filesystem>
 #include <stdexcept>
 
 #include <sqlite3.h>
@@ -15,12 +16,18 @@ using sequence_executor::Step;
 
 namespace {
 
-// Mirrors store.py's DEFAULT_DB_PATH. Hardcoded for the same reason
-// launch/qvic_2026.launch.py hardcodes SRC_SEQUENCE_YAML: this repo only ever
-// runs from this one checkout, and deriving it from the install space would
-// point at a directory colcon can wipe.
-constexpr const char* kSourceTreeDb =
-  "/home/hans/universal_bot/Open_arm_a1_ws/src/builds/qvic_2026/data/sequences.db";
+/// Mirrors store.py's DEFAULT_DB_PATH: __FILE__ is this translation unit's
+/// own path as passed to the compiler on whichever machine builds it, so
+/// this fallback tracks that build's own checkout instead of a path baked in
+/// on the machine it happened to be written on. Only reached when neither
+/// the db_path launch parameter nor QVIC_DB_PATH override it - a live,
+/// mutable sqlite file has no business inside share/, same reasoning as
+/// SRC_SEQUENCE_YAML in launch/qvic_2026.launch.py.
+std::string sourceTreeDbPath()
+{
+  return (std::filesystem::path(__FILE__).parent_path().parent_path()
+          / "data" / "sequences.db").string();
+}
 
 /// Reads column `index` of the current row as a string, or "" if NULL.
 std::string columnText(sqlite3_stmt* stmt, int index)
@@ -117,7 +124,7 @@ std::string SqliteSequenceSource::defaultPath()
       return env;
     }
   }
-  return kSourceTreeDb;
+  return sourceTreeDbPath();
 }
 
 SqliteSequenceSource::SqliteSequenceSource(const std::string& db_path)
@@ -153,7 +160,7 @@ SequenceSpec SqliteSequenceSource::loadSequence(const std::string& name)
   {
     Statement query(conn.get(),
                     "SELECT id, description, arm, planner_profile, required_control_mode, "
-                    "repeat, velocity, acceleration, builtin FROM sequences WHERE name = ?");
+                    "repeat, velocity, acceleration, builtin, ee_type FROM sequences WHERE name = ?");
     query.bind(1, name);
     if (!query.step()) {
       throw std::runtime_error("no sequence named '" + name + "' in " + db_path_);
@@ -168,6 +175,7 @@ SequenceSpec SqliteSequenceSource::loadSequence(const std::string& name)
     spec.velocity = sqlite3_column_double(query.get(), 6);
     spec.acceleration = sqlite3_column_double(query.get(), 7);
     spec.builtin = sqlite3_column_int(query.get(), 8) != 0;
+    spec.ee_type = columnText(query.get(), 9);
   }
 
   Statement steps(conn.get(),
