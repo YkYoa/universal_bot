@@ -397,7 +397,13 @@ def main():
                 lift_steps_arr = env.unwrapped._steps_bottle_lifted.cpu().numpy()
             if hasattr(env.unwrapped, "_stage"):
                 stage_arr = env.unwrapped._stage.cpu().numpy()
-            
+            try:
+                success_term_arr = (
+                    env.unwrapped.termination_manager.get_term("success").detach().cpu().numpy()
+                )
+            except (KeyError, ValueError, AttributeError):
+                success_term_arr = None
+
             for i in range(args.num_envs):
                 value_histories[i].append(values[i])
             
@@ -610,7 +616,18 @@ def main():
                     hold_end = int(contact_steps_arr[i])
                     lift_end = int(lift_steps_arr[i])
                     stage_end = int(stage_arr[i])
-                    if task_phase >= 2:
+                    if task_phase >= 3:
+                        # Phase 35: PLACE thật cần vào bát + thả + settle, KHÔNG
+                        # phải "còn đang nhấc" — lift_end>=lift_hold_steps (đúng
+                        # cho phase 2) vẫn TRUE suốt PLACE (chai vẫn ở trên
+                        # 0.03m) nên hiển thị "🎉 SUCCESS" giả ngay cả khi tay
+                        # chưa từng đưa chai vào bát (xem CarryDbg: xy kẹt ~95mm,
+                        # không hội tụ). Đọc thẳng termination "success" thật
+                        # (mirror eval_lift_metrics.py) thay vì tự suy heuristic.
+                        is_success = (
+                            bool(success_term_arr[i]) if success_term_arr is not None else False
+                        )
+                    elif task_phase == 2:
                         is_success = lift_end >= lift_hold_steps
                     else:
                         is_success = (hold_end >= hold_steps) or ((dist_end < contact_threshold) and not is_truncated)
