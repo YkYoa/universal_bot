@@ -253,6 +253,16 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                                     f" → mở lại, căn XY, thử close"
                                 )
 
+                # Phase 27 lớp 2 (reclose sau phục hồi) ĐÃ THỬ và REVERT (Phase 29,
+                # terminal_command.md): hoạt động đúng kỹ thuật (tạo retry thật
+                # trong cùng episode) nhưng đo được kết quả hỗn hợp — grasp/latch
+                # giảm ở kịch bản khó, thêm fail_mode `tilt` mới (lật chai lúc
+                # đóng lại) — chi phí không bù được lợi ích rất nhỏ. Giữ lại lớp 1
+                # (env._lift_recovery_active, grasp_assist.py) vì bản thân nó vô
+                # hại (không đổi metric, không thêm rủi ro) dù chưa đủ để LIFT
+                # thành công — nguyên nhân gốc là vật lý (lực nhấc/ma sát), không
+                # phải thiếu cơ hội thử lại.
+
                 latch_z = float(getattr(
                     env.cfg, "grasp_latch_max_z_finger",
                     getattr(env.cfg, "grasp_close_max_z_err", 0.04) * 0.85,
@@ -443,15 +453,31 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                 span_margin = float(getattr(self._env.cfg, "grasp_press_span_margin_m", 0.004))
                 span_ok = s["finger_span_xy"] < (bottle_d + span_margin)
 
-                joint_now = _joint_pos_mean_safe(self._asset, self._joint_ids, self.device)
-                if joint_now is None:
-                    firm_contact = torch.zeros_like(can_advance)
-                else:
-                    open_m = float(getattr(self._env.cfg, "gripper_open_m", 0.044))
-                    target_now = open_m * (1.0 - self._close_progress)
-                    stall_now = joint_now - target_now
-                    min_stall = float(getattr(self._env.cfg, "grasp_press_freeze_stall_m", 0.003))
-                    pressing_now = near_bottle & span_ok & (stall_now > min_stall)
+                # Phase 32: dừng ramp khi CẢ HAI ngón có LỰC TIẾP XÚC THẬT
+                # (ContactSensor), thay vì stall trung bình 2 ngón (proxy vị
+                # trí). Đo trực tiếp (terminal_command.md Phase 32): khi tiếp
+                # cận lệch tâm nhẹ, 2 khớp đóng đối xứng hoàn hảo về GÓC nên
+                # stall trung bình đạt ngưỡng và dừng ramp SỚM ngay khi CHỈ
+                # MỘT ngón thực sự chạm (F=0.079N) — ngón kia hoàn toàn không
+                # tiếp xúc (F=0.000N) và không bao giờ được đóng thêm để bù.
+                #
+                # Phase 34: yêu cầu CẢ HAI làm sập lift_start_rate 0.43→0.03
+                # (regression gate seed=0) vì lệch tâm khiến ngón xa gần như
+                # KHÔNG BAO GIỜ đạt lực thật dù đóng hết cỡ (đã thử nới cap
+                # lên 1.0 ở Phase 31 — không cải thiện, là hình học). Thêm
+                # nhánh OR: 1 ngón vượt ngưỡng CAO HƠN (chắc chắn, không phải
+                # nhiễu) + near_bottle + span_ok cũng coi là đang ép — khôi
+                # phục hành vi trước Phase 32 (mirror grasp_assist._grip_pressing).
+                if "left_finger_contact_force" in s and "right_finger_contact_force" in s:
+                    min_force = float(getattr(self._env.cfg, "grasp_press_min_force_n", 0.15))
+                    min_force_single = float(
+                        getattr(self._env.cfg, "grasp_press_min_force_single_n", 0.30)
+                    )
+                    left_f = s["left_finger_contact_force"]
+                    right_f = s["right_finger_contact_force"]
+                    both_pressing_f = (left_f > min_force) & (right_f > min_force)
+                    single_pressing_f = torch.maximum(left_f, right_f) > min_force_single
+                    pressing_now = near_bottle & span_ok & (both_pressing_f | single_pressing_f)
                     self._press_hold_steps[pressing_now] += 1
                     self._press_hold_steps[~pressing_now] = 0
                     hold_req = int(getattr(self._env.cfg, "grasp_press_freeze_hold_steps", 3))
@@ -462,12 +488,16 @@ class AssistedBinaryGripperAction(BinaryJointPositionAction):
                         if bool(self._want_close[i]) or bool(self._grasp_latched[i]):
                             print(
                                 f"  [FreezeDbg] env{i} gc={float(self._close_progress[i]):.4f} "
-                                f"stall={float(stall_now[i])*1000:.3f}mm span={float(s['finger_span_xy'][i])*1000:.2f}mm "
+                                f"F_left={float(left_f[i]):.3f}N F_right={float(right_f[i]):.3f}N "
+                                f"span={float(s['finger_span_xy'][i])*1000:.2f}mm "
                                 f"near={bool(near_bottle[i])} span_ok={bool(span_ok[i])} "
+                                f"both={bool(both_pressing_f[i])} single={bool(single_pressing_f[i])} "
                                 f"pressing={bool(pressing_now[i])} hold={int(self._press_hold_steps[i])} "
                                 f"firm={bool(firm_contact[i])}",
                                 flush=True,
                             )
+                else:
+                    firm_contact = torch.zeros_like(can_advance)
                 can_advance = can_advance & ~firm_contact
 
                 # Chậm lại khi đã gần chai — griplag.py đo được ramp chậm hơn

@@ -1432,3 +1432,250 @@ Thêm bộ đếm MỚI, độc lập, dùng NGƯỠNG TUYỆT ĐỐI (không ph
 1. **Siết `grasp_lift_contact_z_finger`** (hiện 0.014m qua PHASE2_GRASP) xuống thấp hơn (vd giá trị lịch sử 0.008m) — buộc chỉ latch khi ngón THỰC SỰ ngang thân chai trước khi cho phép nhấc. RỦI RO: policy đã train quen với ngưỡng 0.014m, siết chặt có thể làm giảm hẳn `latch_rate`/`lift_start_rate` vì điều kiện khó đạt hơn — cần đo trước khi tin, không đoán.
 2. **Thêm cơ chế "phục hồi" sau zf_drift-abort**: chủ động hạ/điều chỉnh tay về vị trí gần chai hơn khi vừa abort (thay vì đứng yên ở vị trí đã trôi) để tạo cơ hội `_lift_can_start` pass lại trong cùng episode — phức tạp hơn, cần thiết kế logic re-approach mới.
 3. **Đo trực tiếp lực/ma sát thực tế lúc RISING bắt đầu** (không chỉ suy luận từ z_error_finger) — có thể vấn đề nằm ở `grasp_lift_world_m`/tốc độ ramp chứ không phải vị trí kẹp.
+
+User chọn: "2" (thêm cơ chế phục hồi).
+
+## Phase 27 — Implement cơ chế phục hồi (recovery) — hoạt động ĐÚNG PHẦN của nó, lộ ra lớp vấn đề tiếp theo (kẹp không tự ép lại)
+
+### Sự cố hạ tầng xen giữa (đã xử lý)
+1. Môi trường Isaac Sim local đột ngột hỏng — `ld.so` báo `LD_PRELOAD` trỏ tới `libcarb.so` không tồn tại, do symlink `kit -> ~/.cache/packman/chk/kit-kernel/...` trỏ tới thư mục **đã biến mất hoàn toàn** (không do đầy đĩa — còn 103GB trống). Rất có thể một job dọn cache tự động qua đêm đã xoá nhầm (demo GUI vẫn chạy tốt cùng ngày trước đó, xem Phase 26). Script tự sửa có sẵn (`pull_kit_sdk.sh`) bị hỏng luôn (thiếu hẳn `dev/tools/eula_check.sh`, không phải do chưa chấp nhận EULA — file kiểm tra EULA không tồn tại). **Fix đúng**: `~/isaacsim/build.sh --fetch-only --config release` (cờ build chính thức, chỉ tải lại dependency qua packman, KHÔNG build lại C++) — chạy ~137 giây, khôi phục thành công `kit-kernel` cache.
+2. Server 4090: driver mismatch tự hết, nhưng GPU vẫn bị chiếm dụng nặng bởi người khác (22GB+/24.5GB, 94%+ utilization) suốt Phase 26-27 — chưa từng available để train.
+
+### Implement
+`_update_lift_state`: thêm cờ `_lift_recovery_active`, bật khi `rise_abort` xảy ra CỤ THỂ vì `zf_drift` (không bật cho tilt/unlatched — 2 lỗi đó hạ tay xuống không giúp gì), tắt khi re-arm thành công hoặc mất latch/rời stage. `apply_grasp_arm_assist`: khi đang phục hồi, gọi `_osc_z_finger_descend` (hạ closed-loop theo z_error_finger, có sẵn, dùng cho GRASP-descent) thay vì đứng yên (`idle_hold` cũ), dùng `descent_scale` (cố định=1.0, đúng nguyên tắc Phase 9).
+
+### Verify — PHẦN CƠ CHẾ HOẠT ĐỘNG ĐÚNG, nhưng chưa đủ để lift thành công
+Thêm debug print tạm (`[Recover]`) quan sát trực tiếp: `z_error_finger` **giảm đều đặn, đúng thiết kế** — từ 54.8mm (lúc abort) xuống 1.1mm chỉ qua ~450 bước phục hồi. Đây là bằng chứng cơ chế phục hồi hoạt động chính xác về mặt ĐIỀU KHIỂN TAY.
+
+**NHƯNG `_lift_can_start` vẫn không bao giờ pass lại.** Thêm `DEBUG_STALL` để xem lý do: khi tay đã về gần chai (`near=True`, đúng như mong đợi), **`stall` vẫn = 0.00mm** — không có lực ép thật. Nguyên nhân: khớp kẹp được điều khiển theo VỊ TRÍ (target cố định=10.45mm, ứng với `gc=0.762`, không đổi suốt cả quá trình phục hồi vì không có lệnh đóng MỚI nào được phát ra). Một khi khớp đã ổn định tại target đó (ban đầu ép không khí sau khi chai tuột), việc đưa TAY về gần chai không tự động khiến KHỚP ép thêm — cần một lệnh đóng kẹp MỚI, tăng độ đóng (giảm target) để thực sự tái tạo lực ép, không chỉ đưa tay về đúng độ cao.
+
+### Kết luận — cần lớp thứ 2, rủi ro cao hơn hẳn
+Cơ chế phục hồi (Phase 27) giải quyết ĐÚNG phần của nó (đưa tay về vị trí) nhưng CHƯA ĐỦ — cần thêm: khi `recovering` VÀ `near_bottle=True`, kích hoạt lại lệnh đóng kẹp (tăng `_close_progress`/giảm target) để tái tạo lực ép thật trước khi cho phép `_lift_can_start` pass. Đây là thay đổi chạm vào **state machine đóng/mở kẹp trong `actions.py`** — phần đã có lịch sử sửa đi sửa lại nhiều lần (`reopen`, `close_ramp`, `exhaust_creep`, đều được ghi chú kỹ vì từng gây hồi quy) — rủi ro cao hơn hẳn những gì đã làm ở Phase 26-27. **Dừng lại ở đây để user quyết định trước khi động vào phần này.**
+
+### File sửa (Phase 27, CHƯA commit — bao gồm cả debug print tạm `[Recover]`, cần dọn trước khi merge nếu không cần giữ lại)
+`isaaclab_openarm_env/mdp/grasp_assist.py` (`_update_lift_state` thêm `_lift_recovery_active`, `apply_grasp_arm_assist` thêm block `recovering` + debug print `[Recover]`), `isaaclab_openarm_env/mdp/terminations.py` (reset `_lift_recovery_active`).
+
+### Hướng tiếp theo (chưa làm, cần quyết định user)
+1. **Thêm lớp 2: re-trigger đóng kẹp khi đang phục hồi VÀ đã near_bottle** — hướng đúng để hoàn thiện cơ chế phục hồi, nhưng chạm state machine đóng/mở kẹp lịch sử phức tạp trong `actions.py`. Cần đọc kỹ toàn bộ flow `_close_progress`/ramp/reopen trước khi sửa.
+2. **Dừng ở mức hiện tại, quay lại hướng 1 cũ** (siết `grasp_lift_contact_z_finger` xuống 0.008m) — không chạm state machine đóng kẹp, nhưng rủi ro khác (ảnh hưởng `latch_rate` đã train quen).
+3. **Chấp nhận giới hạn hiện tại của LIFT, tạm dừng nhánh này** — quay lại các phần khác của project, để LIFT/PLACE ở trạng thái "đã hiểu rõ nguyên nhân, chưa sửa xong" thay vì tiếp tục đào sâu thêm.
+
+User chọn: "2" (siết `grasp_lift_contact_z_finger` xuống 0.008m).
+
+## Phase 28 — Thử siết `grasp_lift_contact_z_finger` 0.014→0.008: ĐO ĐƯỢC đánh đổi TỆ HƠN, đã REVERT
+
+### Đo (regression gate `--seed 0 --task_phase 2`, đúng kỷ luật "đo trước khi tin")
+| Metric | Baseline (0.014m) | Sau khi siết (0.008m) |
+|---|---|---|
+| grasp_rate | 0.8333 | 0.8333 (giữ nguyên) |
+| latch_rate | 0.4667 | 0.4667 (giữ nguyên) |
+| **lift_start_rate** | **0.4333** | **0.0333** ← sập |
+| success_rate | 0.0333 | 0.0333 |
+
+**Kết luận**: siết ngưỡng KHÔNG cải thiện gì mà còn TỆ HƠN — `grasp`/`latch` không đổi (chứng tỏ policy vẫn tiếp cận/latch bình thường), nhưng gần như MỌI lần latch giờ có `z_error_finger` nằm trong khoảng 0.008-0.014m — đủ ngưỡng CŨ, không đủ ngưỡng MỚI. Đúng như rủi ro đã cảnh báo trước khi thử: policy đã học quen với ngưỡng 0.014m, siết chặt không làm grip "chắc hơn" (policy không tự động latch ở vị trí khác) mà chỉ làm gần như KHÔNG CÒN CƠ HỘI nào được phép thử nhấc (13/30 → 1/30). Đánh đổi tệ hơn hẳn vấn đề gốc.
+
+**Đã REVERT** về 0.014 ở cả `config.py` và `phase2_overrides.py` — giữ lại comment mô tả đã thử/đo/tại sao không dùng, tránh người sau (hoặc chính mình sau này) thử lại đúng hướng đã biết không hiệu quả.
+
+### File sửa (Phase 28, CHƯA commit — net effect = không đổi so với trước Phase 28, chỉ thêm comment lịch sử)
+`isaaclab_openarm_env/config.py`, `isaaclab_openarm_env/phase2_overrides.py` (cả 2: thử 0.008 rồi revert về 0.014, giữ comment giải thích).
+
+### Trạng thái tổng kết nhánh LIFT sau Phase 25-28
+Đã thử 3 hướng cho vấn đề "chai tuột ~19 bước đầu RISING dù grip đạt ngưỡng gate": (1) phát hiện+abort sớm hơn (Phase 26, đúng kỹ thuật, không đủ vì không có retry), (2) cơ chế phục hồi active descent (Phase 27, đúng phần của nó, lộ ra thiếu re-trigger đóng kẹp), (3) siết ngưỡng gate chặt hơn (Phase 28, ĐO ĐƯỢC tệ hơn, đã revert). **Chưa hướng nào giải quyết được triệt để.** Hướng còn lại khả dĩ nhất là lớp 2 của Phase 27 (re-trigger đóng kẹp khi recovering+near_bottle) — chưa làm, rủi ro cao nhất vì chạm state machine đóng/mở kẹp phức tạp.
+
+User yêu cầu: "improve layer 2 pls" — làm lớp 2 (re-trigger đóng kẹp).
+
+## Phase 29 — Implement lớp 2 (reclose): hoạt động đúng kỹ thuật (retry thật xảy ra), nhưng kết quả ĐO ĐƯỢC hỗn hợp/đáng lo — CHƯA đủ để giữ lại không cần xem xét thêm
+
+### Implement
+`actions.py::AssistedBinaryGripperAction.process_actions`: khi `env._lift_recovery_active` (Phase 27) VÀ tay đã về đủ gần (`z_error_finger < grasp_lift_contact_z_finger`, đúng ngưỡng gate ban đầu) VÀ còn hạn mức reopen (`_reopen_count < grasp_reopen_max_count`, cooldown đã hết) — **tái sử dụng ĐÚNG cơ chế `bad_close`/reopen đã có sẵn** (reset `_grasp_latched=False`, `_close_progress=0`, `_want_close=False`, `_descend_hold=0`, `_sym_hold=0`, set cooldown) thay vì phát minh cơ chế mới — để `force_close`/`_grasp_latched` (đã tính lại mỗi bước từ state THẬT) tự nhiên phát hiện lại chai và đóng kẹp lại từ đầu, lần này chạm chai thật.
+
+### Verify bằng demo — CƠ CHẾ HOẠT ĐỘNG ĐÚNG THIẾT KẾ
+`[Reclose]` fire đúng lúc (`z_f=13.86mm` < ngưỡng 14mm), dẫn tới **retry THẬT SỰ đầu tiên trong toàn bộ investigation**: `IDLE→RISING` lần 2 chỉ 58 bước sau reclose. Đây là bằng chứng cơ chế kỹ thuật hoạt động chính xác như thiết kế.
+
+**NHƯNG lần retry thứ 2 trượt theo ĐÚNG CÁCH y hệt lần đầu** (`reason=zf_drift` lần nữa, 71 bước sau) — củng cố thêm bằng chứng: vấn đề không phải "thiếu cơ hội thử lại" mà là **nguyên nhân vật lý gốc** (lực nhấc/ma sát không đủ ngay cả với grip "đạt chuẩn") — retry với cùng điều kiện vật lý cho cùng kết quả thất bại, đúng như đã dự đoán trước khi đo.
+
+### Đo bằng regression gate + eval đầy đủ — kết quả HỖN HỢP, có rủi ro MỚI
+| | Trước Phase 29 | Sau khi thêm reclose |
+|---|---|---|
+| seed=0/phase=2: success | 0.033 | 0.067 (tăng, nhưng mẫu quá nhỏ 1→2/30, chưa đủ ý nghĩa thống kê) |
+| seed=0/phase=2: grasp/latch | 0.833/0.467 | 0.800/0.433 (giảm nhẹ) |
+| seed=1/phase=3: grasp/latch | 0.625/0.375 | **0.542/0.333** (giảm rõ hơn) |
+| seed=1/phase=3: success | 0.0 | 0.0 (không đổi) |
+
+**Rủi ro mới phát hiện**: fail_mode `tilt` xuất hiện với tần suất đáng kể ở seed=1 (**6/24 episode**, gần như không có trước Phase 29) — cơ chế mở-kẹp-rồi-đóng-lại (reopen) đang khiến MỘT SỐ chai bị lật đổ trong lúc đóng lại lần 2, một tác dụng phụ ngoài dự tính.
+
+### Đánh giá — KHÔNG phải chiến thắng rõ ràng, cần user quyết định
+Cơ chế đúng kỹ thuật, xác nhận rõ nguyên nhân gốc là VẬT LÝ (không phải thiếu retry), nhưng lợi ích đo được (success ở phase 2) quá nhỏ để bù đắp chi phí (grasp/latch giảm ở kịch bản khó, thêm rủi ro lật chai mới). Đây KHÔNG giống các fix trước trong project (nơi lợi ích rõ ràng và không có tác dụng phụ) — cần cân nhắc thêm trước khi giữ lại.
+
+### File sửa (Phase 29, CHƯA commit)
+`isaaclab_openarm_env/mdp/actions.py` (import `os`, block reclose trong `process_actions`, debug print `[Reclose]`).
+
+### Hướng tiếp theo (chưa làm, cần quyết định user)
+1. **Giữ lại nhưng giới hạn chặt hơn** (vd chỉ 1 lần reclose thay vì theo `reopen_max` chung, hoặc thêm điều kiện tilt thấp trước khi cho reclose) để giảm rủi ro lật chai.
+2. **Revert lớp 2**, giữ lại lớp 1 (Phase 27, active descent recovery) vì bản thân nó vô hại (không đổi kết quả, không thêm rủi ro) — chấp nhận LIFT vẫn còn hạn chế do nguyên nhân vật lý gốc.
+3. **Revert cả lớp 1 và lớp 2**, quay về trạng thái trước Phase 26 hoàn toàn — chỉ giữ lại phần zf_drift-abort (Phase 26, đã xác nhận không hồi quy, chỉ tiết kiệm ngân sách episode).
+4. **Dừng nhánh LIFT ở đây**, chấp nhận giới hạn vật lý đã xác nhận rõ ràng qua Phase 25-29 — đã hiểu SÂU nguyên nhân (không phải RL, không phải chưa retry, mà là lực/ma sát vật lý ngay cả khi grip đạt chuẩn), quay lại phần khác của project.
+
+User chọn: "Revert luôn lớp 1, chỉ giữ Phase 26" — chọn hướng an toàn nhất sau khi phát hiện lớp 1 cũng không khớp tuyệt đối baseline.
+
+## Phase 30 — Revert lớp 1 (Phase 27): xác nhận nó CŨNG không khớp tuyệt đối baseline — chỉ giữ Phase 26
+
+### Phát hiện quan trọng khi revert lớp 2 để đo riêng
+Sau khi revert lớp 2 (Phase 29), regression gate vẫn cho `0.067/0.8/0.433/0.367` — **giống hệt lúc còn cả lớp 2**, KHÔNG khớp baseline gốc. Nghĩa là **chính lớp 1 (Phase 27, active-descent recovery)** — không phải lớp 2 — mới là nguồn gây lệch. Giả định trước đó ("lớp 1 vô hại vì chỉ đổi hành động lúc LIFT_IDLE") SAI: dù chỉ đổi "đứng yên" thành "hạ tay nhẹ", nó vẫn đủ để lệch quỹ đạo episode (thời điểm/vị trí các sự kiện tiếp theo) khỏi baseline đã biết.
+
+### Đã revert hoàn toàn lớp 1
+`grasp_assist.py`: xoá block tính `_lift_recovery_active` trong `_update_lift_state`, xoá block `recovering`/`_osc_z_finger_descend` trong `apply_grasp_arm_assist`, khôi phục `idle_hold` nguyên bản. `terminations.py`: xoá reset `_lift_recovery_active`.
+
+**Regression gate xác nhận**: khớp CHÍNH XÁC baseline (`0.0333/0.8333/0.4667/0.4333`) — chỉ còn Phase 26 (zf_drift-abort sớm hơn) hoạt động, đã biết an toàn tuyệt đối từ trước.
+
+### Trạng thái cuối cùng nhánh LIFT sau Phase 25-30
+Sau 6 lần thử (zf_drift-abort, active-descent recovery, siết ngưỡng gate, reclose, và các tổ hợp) — **CHỈ Phase 26 (phát hiện trượt dần + abort sớm hơn) được giữ lại**, vì là thay đổi DUY NHẤT khớp tuyệt đối baseline mà vẫn có giá trị thật (tiết kiệm ~340+ bước lãng phí mỗi lần trượt, dù không tự cải thiện success_rate). Mọi cơ chế "chủ động phục hồi/thử lại" (lớp 1, lớp 2) đều đo được có tác dụng phụ không đáng đánh đổi. **Nguyên nhân gốc (chai tuột ~19 bước đầu RISING do lực/ma sát không đủ ngay cả khi grip đạt chuẩn) đã được hiểu rõ nhưng CHƯA sửa được** — mọi hướng sửa qua RL/state-machine đều chạm giới hạn vật lý thật, không phải vấn đề logic/gate.
+
+### File sửa cuối cùng còn giữ lại (Phase 26 only, CHƯA commit)
+`isaaclab_openarm_env/config.py` (`grasp_lift_abort_z_finger`, `grasp_lift_abort_z_finger_steps`), `isaaclab_openarm_env/mdp/grasp_assist.py` (chỉ còn bộ đếm zf-drift trong `_update_lift_slip` + điều kiện trong `_lift_must_abort` + nhãn debug — KHÔNG còn `_lift_recovery_active`/`recovering`), `isaaclab_openarm_env/mdp/terminations.py` (chỉ còn reset `_lift_zf_abort_steps`), `isaaclab_openarm_env/mdp/actions.py` (đã revert sạch, không còn thay đổi nào so với trước Phase 29).
+
+User: "but I want to place" — không dừng ở LIFT, tiếp tục tìm hướng khác để PLACE hoạt động được.
+
+## Phase 31 — 2 thử nghiệm nữa nhắm vào NGUYÊN NHÂN VẬT LÝ trực tiếp (tốc độ nhấc, lực kẹp) — CẢ 2 ĐỀU KHÔNG giải quyết được, đã revert cả 2
+
+### Thử 1 — chậm tốc độ nhấc (`grasp_lift_world_m` 0.055→0.030)
+**Giả thuyết**: tốc độ nhấc hiện tại (đã tăng 17x từ lịch sử để đủ nhanh trong ngân sách episode) có thể quá nhanh khiến ma sát không kịp "bắt" ở seed khó.
+
+**Đo được (demo + DEBUG_LIFT/DEBUG_STALL)**: thời điểm trượt trì hoãn từ 59→99 bước (đúng tỷ lệ chậm lại ~2x), NHƯNG `lift_m` vẫn đạt đỉnh ~1.6mm rồi **TỤT DẦN về 0** trong khi `z_error_finger` tiếp tục tăng đều — không bao giờ đạt trạng thái ổn định (không trượt nữa) dù chậm hơn nhiều. **Kết luận**: một khi đã bắt đầu trượt (dù chậm), ma sát ĐỘNG (kinetic, luôn thấp hơn ma sát tĩnh) không đủ giữ — chậm chỉ trì hoãn TUYẾN TÍNH thời điểm tách hẳn, không giải quyết gốc rễ. Vấn đề không phải tốc độ, mà là LỰC KẸP. **Đã REVERT về 0.055.**
+
+### Thử 2 — nới trần đóng kẹp (`grasp_close_freeze_at_progress` 0.75→1.0)
+**Giả thuyết**: đo lại một giả định LỊCH SỬ ("tăng cap lên 1.0 không đổi success_rate", ghi trong code comment cũ) — nhiều giả định lịch sử khác trong session này đã sai khi đo lại với code/seed hiện tại (vd `grasp_lift_contact_z_finger`), nên đáng đo lại lần nữa thay vì tin theo.
+
+**Đo được**: dù kẹp đóng HOÀN TOÀN (`gc=1.000`, joint≈0, tối đa lệnh có thể ra), thời điểm trượt KHÔNG cải thiện (~60 bước, bằng đúng baseline 59 bước). `stall` (proxy lực ép) chỉ tăng nhẹ 0.13→0.60mm — **vẫn RẤT xa** ngưỡng "pressing" 5mm dù đã đóng hết cỡ theo lệnh. **Kết luận**: giả định lịch sử ĐƯỢC XÁC NHẬN ĐÚNG (không phải stale như những giả định khác) — tăng mức đóng kẹp không giúp gì. Phát hiện thêm quan trọng: lực ép thực tế cực yếu NGAY CẢ KHI lệnh đóng đã tối đa — gợi ý vấn đề nằm ở **HÌNH HỌC TIẾP XÚC** (có thể lệch tâm giữa 2 ngón, hoặc khoảng hở vật lý giữa ngón-chai không khớp với đơn vị "joint position" đang dùng làm proxy lực) chứ không phải mức độ đóng. **Đã REVERT về 0.75.**
+
+### Trạng thái — cả 2 hướng "dễ thử" nhất đã bị loại trừ bằng đo lường trực tiếp
+Sau Phase 25-31 (8 thử nghiệm khác nhau: state-machine/gate/recovery ×5, tốc độ nhấc, lực kẹp), đã loại trừ được: logic gate/state-machine (Phase 26/28), cơ chế phục hồi/retry (Phase 27/29/30), tốc độ nhấc (Phase 31 thử 1), mức lực đóng kẹp (Phase 31 thử 2). **Còn lại giả thuyết chưa kiểm chứng**: hình học tiếp xúc thực tế (lệch tâm 2 ngón trên thân chai, hoặc offset vật lý phần cứng của kẹp không khớp với model điều khiển) — cần công cụ chẩn đoán SÂU HƠN (quan sát trực tiếp điểm tiếp xúc PhysX, hoặc so sánh vị trí 2 ngón thực tế so với tâm chai tại đúng thời điểm RISING bắt đầu) thay vì tiếp tục thử tham số đơn lẻ.
+
+### File sửa (Phase 31, CHƯA commit — net effect = không đổi hành vi so với sau Phase 30, chỉ thêm 2 đoạn comment lịch sử mới)
+`isaaclab_openarm_env/phase2_overrides.py` (2 giá trị: thử rồi revert, giữ comment giải thích chi tiết).
+
+### Thử 3 — giả thuyết "lệch tâm 2 ngón" — BỊ BÁC BỎ bằng dữ liệu đầy đủ hơn
+Thêm debug in `dL`/`dR`/`dLR` (dist_left_body/dist_right_body) vào `[LiftDbg]` (đúng lúc transition, không phải mỗi 20 bước như `[LiftSlip]`). Dữ liệu MỘT ĐIỂM giữa chừng (step 700, `[LiftSlip]`) từng cho thấy lệch 7.25mm, gây nghi ngờ lệch tâm — nhưng dữ liệu ĐẦY ĐỦ hơn tại đúng lúc BẮT ĐẦU (step 681: dL=28.84 dR=32.16, lệch 3.32mm) và lúc ABORT (step 740: dL=58.32 dR=61.14, lệch 2.82mm) cho thấy: **độ lệch KHÔNG tăng theo thời gian** (thực ra giảm nhẹ), mà **CẢ 2 khoảng cách tăng ĐỀU NHAU** (28.84→58.32mm, 32.16→61.14mm, gần gấp đôi cả 2 bên) — chai tụt THẲNG ĐỨNG đối xứng, không nghiêng lệch một bên. Giả thuyết lệch tâm SAI — điểm dữ liệu 7.25mm trước đó chỉ là dao động tạm thời, không phải xu hướng thật.
+
+### Ước tính định lượng lực ép — mâu thuẫn với dữ liệu thực nghiệm, cần công cụ đo tốt hơn
+`gripper: ImplicitActuatorCfg(stiffness=2000.0, damping=100.0)` (config.py). Ước tính `F_ép ≈ stiffness × stall`: ở cấu hình mặc định (stall≈0.13mm) → F≈0.26N/ngón ×2×μ(1.4)=0.73N — THẤP HƠN trọng lượng chai (0.94N), giải thích hợp lý cho việc trượt gần như ngay lập tức. Nhưng ở cấu hình đã tăng cap (Thử 2, stall≈0.6mm) → F≈1.2N/ngón×2×μ=3.36N — theo tính toán này PHẢI đủ dư (3.5x trọng lượng), NHƯNG THỰC NGHIỆM vẫn trượt sau ~60 bước y hệt. **Mâu thuẫn này cho thấy mô hình ước tính lực từ vị trí khớp (stall × stiffness) KHÔNG phản ánh đúng lực tiếp xúc PhysX thật** — cần công cụ đo lực/tiếp xúc trực tiếp (không có sẵn qua debug hiện tại) để tiến xa hơn, không thể suy luận thêm từ proxy vị trí.
+
+### Kết luận cuối cùng sau 8 thử nghiệm (Phase 25-31)
+Đã loại trừ bằng đo lường trực tiếp: logic gate/state-machine, cơ chế phục hồi/retry (3 biến thể), tốc độ nhấc, mức lực đóng kẹp tối đa, giả thuyết lệch tâm hình học. **Đạt giới hạn của công cụ chẩn đoán hiện có** (debug print dựa trên vị trí khớp/khoảng cách, không phải lực/tiếp xúc PhysX trực tiếp) — tiếp tục đoán tham số từ đây có tỷ lệ lợi ích/rủi ro kém. Cần MỘT TRONG HAI: (a) công cụ đo lực tiếp xúc PhysX trực tiếp (đầu tư thêm đáng kể), hoặc (b) chấp nhận mức tin cậy LIFT hiện tại và xây PLACE xoay quanh mức đó (vd dùng lại kết quả scripted-assist ~57-59% từ Phase 14 làm nền, thay vì cố đạt LIFT tự chủ hoàn hảo trước khi làm PLACE).
+
+User: "but I want to place" → chọn "Đầu tư thêm công cụ đo lực tiếp xúc PhysX trực tiếp".
+
+## Phase 32 — ĐỘT PHÁ: ContactSensor tìm ra nguyên nhân gốc THẬT — kẹp chỉ có MỘT điểm tiếp xúc, không phải hai
+
+### Manh mối trước khi implement: hành vi bất biến với stiffness (đầu mối quan trọng bị bỏ lỡ trước đó)
+Chạy lại demo Phase 31's scenario qua `eval_lift_metrics.py` (dùng ĐÚNG `gripper stiffness=2000` như training thật — phát hiện `isaaclab_demo.py:245` tự ý override xuống 700, nghĩa là TOÀN BỘ debug Phase 25-31 qua demo chạy SAI stiffness so với train/eval!). Kết quả: **thời điểm trượt (step 681→740, đúng 59 bước) và quỹ đạo dL/dR GIỐNG HỆT tuyệt đối** dù stiffness chênh 2.86 lần (700 vs 2000) — đây là bằng chứng mạnh rằng actuator stiffness KHÔNG PHẢI biến số quyết định, dẫn thẳng tới nghi vấn: có thể MỘT NGÓN CHƯA TỪNG CHẠM CHAI THẬT SỰ.
+
+### Implement ContactSensor
+`config.py`: bật `activate_contact_sensors=True` trên `robot_spawn` (trước đó `False` — PhysX không hề ghi nhận contact report cho robot). Thêm 2 `ContactSensorCfg` (`left_finger_contact`, `right_finger_contact`) trỏ `openarm_left_left_finger`/`openarm_left_right_finger` (tên body lấy từ `env._robot.body_names`, KHÔNG phải tên joint), `filter_prim_paths_expr=["{ENV_REGEX_NS}/Scene/Bottle"]` để `force_matrix_w` chỉ phản ánh đúng cặp ngón-chai. `grasp_assist.py`: đọc `force_matrix_w` qua `_t()` (helper ProxyArray→Tensor có sẵn), in vào `[LiftSlip]` debug.
+
+### KẾT QUẢ — bằng chứng KHÔNG THỂ CHỐI CÃI
+```
+F_left=0.079N  F_right=0.000N   (step 700, RISING)
+F_left=0.078N  F_right=0.000N   (step 720, RISING)
+```
+**Ngón PHẢI có lực tiếp xúc = 0.000N CHÍNH XÁC** (không phải "nhỏ" — bằng 0 tuyệt đối, PhysX không ghi nhận bất kỳ tiếp xúc nào giữa ngón phải và chai). Ngón TRÁI có lực, nhưng cực yếu (~0.08N, chưa bằng 1/10 trọng lượng chai 0.94N). **Kẹp chỉ có MỘT điểm tiếp xúc vật lý thật, không phải hai** — hoàn toàn khác với proxy vị trí (`dist_right_body=31mm`, trông như "gần nhưng chưa chạm", KHÔNG hề gợi ý mức độ nghiêm trọng "0 lực tuyệt đối" này).
+
+### Giải thích lại TOÀN BỘ 8 thử nghiệm trước dưới ánh sáng phát hiện này
+- **Tăng stiffness không đổi gì** (Phase 25→31 gián tiếp): đúng, vì ngón phải KHÔNG BAO GIỜ CHẠM dù stiffness bao nhiêu — không có gì để "ép mạnh hơn" ở phía đó.
+- **Tăng cap đóng kẹp lên 1.0 chỉ tăng nhẹ stall** (Phase 31 thử 2): đúng, vì đó là trung bình 2 ngón — một ngón đóng thêm (tăng joint gần target) nhưng KHÔNG TẠO LỰC vì không chạm gì, chỉ ngón còn lại phản ánh vào "stall" đo được.
+- **Chậm tốc độ nhấc không giúp** (Phase 31 thử 1): đúng, một điểm tiếp xúc DUY NHẤT với lực <0.1N không bao giờ đủ giữ chai bất kể tốc độ nhấc nhanh hay chậm.
+- **"Lệch tâm" đo bằng proxy vị trí (dL/dR) không đủ nhạy**: độ lệch nhìn "vừa phải" (3-7mm) trên GIẤY (khoảng cách hình học tới điểm tham chiếu), nhưng THỰC TẾ VẬT LÝ lại là 0 tiếp xúc tuyệt đối một bên — proxy vị trí không phản ánh đúng mức độ nghiêm trọng.
+
+### Trạng thái — nguyên nhân gốc đã XÁC ĐỊNH, chưa sửa
+Câu hỏi tiếp theo: TẠI SAO ngón phải không chạm — nghi vấn khả dĩ: offset hiệu chỉnh hình học ngón tay (`finger_tip_local_left`/`finger_tip_local_right`, `bottle_grasp_xy_offset_x/y`) bị lệch giữa 2 bên, hoặc logic căn giữa XY (`center_mask`) không thực sự đối xứng chai giữa 2 ngón. CHƯA điều tra tiếp — dừng lại để báo cáo phát hiện lớn này trước khi đi sâu vào nguyên nhân của "tại sao lệch".
+
+### File sửa (Phase 32, CHƯA commit)
+`isaaclab_openarm_env/config.py` (import `ContactSensorCfg`, `activate_contact_sensors=True`, 2 sensor mới), `isaaclab_openarm_env/mdp/grasp_assist.py` (import `_t`, đọc + in lực tiếp xúc thật vào debug `[LiftSlip]`).
+
+### Điều tra tiếp — loại trừ "khớp bị kẹt", xác định ĐÚNG nguyên nhân gốc: LỆCH TÂM TIẾP CẬN
+Nghi vấn: `joint` trong debug là TRUNG BÌNH joint1+joint2 (`_grip_pressing`, dùng ở nhiều nơi trong `helpers.py`) — có thể che giấu 1 khớp kẹt mở. Thêm print riêng `j1`/`j2` (không average):
+```
+j1=12.17mm  j2=12.20mm   (gần như giống hệt nhau — CẢ 2 khớp đóng đúng theo cùng target)
+```
+**Loại trừ giả thuyết "khớp2/mimic bị lỗi"** — cả 2 khớp đóng đối xứng hoàn hảo về mặt VỊ TRÍ GÓC. Vậy tại sao lực khác nhau hoàn toàn (0.079N vs 0.000N)?
+
+**Kết luận đúng**: vấn đề nằm ở **HÌNH HỌC TIẾP CẬN**, không phải điều khiển khớp. Tay đã tiếp cận chai với một chút lệch tâm theo phương ngang NGAY TỪ ĐẦU (khớp với `dLR≈7.5mm` đo được từ Phase 32 phần trước — không phải "trôi dạt trong lúc RISING" như tưởng ban đầu, mà là lệch tâm CÓ SẴN từ lúc latch). Dù 2 khớp đóng đối xứng (cùng góc), ngón GẦN (trái, `dist_left_body≈23.6mm`) chạm chai trước và tạo lực nhỏ; ngón XA hơn ~7.5mm (phải) **không bao giờ chạm được** vì bị chặn bởi trần đóng kẹp (`grasp_close_freeze_at_progress=0.75`, tương ứng target≈10-12mm — không đủ "đóng thêm" để bù 7.5mm lệch tâm).
+
+**Chuỗi nhân quả đầy đủ**: tiếp cận lệch tâm nhẹ (chưa rõ nguyên nhân — có thể do policy chưa học được vị trí hoàn hảo, hoặc do observation/reward không phạt đủ nặng lệch tâm nhỏ) → dù đóng kẹp đối xứng, chỉ 1 ngón thực sự chạm → lực giữ chỉ từ MỘT điểm tiếp xúc duy nhất, cực yếu → không đủ chống trọng lực/gia tốc khi nhấc → chai tách khỏi kẹp trong ~19-60 bước tuỳ tốc độ.
+
+### Hướng sửa khả dĩ (chưa làm, cần quyết định)
+1. **Thêm cơ chế bù đắp chủ động** — khi phát hiện qua ContactSensor một ngón chưa có lực tiếp xúc dù ngón kia đã có, tiếp tục đóng SÂU HƠN trần hiện tại (vượt `grasp_close_freeze_at_progress`) CHỈ để tạo tiếp xúc tối thiểu ở ngón còn thiếu — rủi ro: cần đóng bao nhiêu là đủ, tránh siết quá mạnh.
+2. **Siết ngưỡng đối xứng TRƯỚC latch** (`grasp_sym_max_dist_delta` hiện 15mm — đủ lỏng để cho qua đúng trường hợp 7.5mm gây lỗi này) — rủi ro giống Phase 28 (siết `grasp_lift_contact_z_finger` từng làm sập `lift_start_rate`), cần đo trước khi tin.
+3. **Cải thiện độ chính xác approach/centering trước khi latch** (thay đổi reward/gate cho REACH→GRASP) — hướng sâu hơn, ảnh hưởng rộng hơn.
+4. **Dùng chính ContactSensor mới làm ĐIỀU KIỆN `_grip_secure`/`_lift_can_start`** — thay proxy vị trí (`_grip_pressing`'s stall) bằng lực THẬT từ CẢ HAI ngón (yêu cầu `F_left>ngưỡng AND F_right>ngưỡng`, không chỉ trung bình) — đây là fix ĐÚNG GỐC RỄ nhất, tận dụng trực tiếp công cụ vừa xây, đảm bảo KHÔNG BAO GIỜ cho phép nhấc khi một ngón chưa thực sự chạm.
+
+User chọn: "Dùng ContactSensor làm điều kiện _grip_secure (fix gốc rễ nhất)".
+
+## Phase 33 — Implement lực thật vào `_grip_secure`/ramp-freeze: ĐÚNG hướng, chặn đúng trường hợp nguy hiểm, nhưng lộ ra giới hạn "trần đóng kẹp" độc lập
+
+### Implement
+`helpers.py::compute_state()`: thêm `left_finger_contact_force`/`right_finger_contact_force` (đọc `ContactSensor.data.force_matrix_w` qua `_t()`, chỉ nội bộ — KHÔNG vào observation 26-D, đúng nguyên tắc Phase 11). Bug nhỏ tự bắt lúc implement: `force_matrix_w` có thêm 1 chiều "filter target" (`[:, 0]` không đủ, cần `[:, 0, 0]` mới về đúng shape `(num_envs,)` sau `.norm(dim=-1)`) — gây `IndexError` ngay lần chạy đầu, phát hiện + sửa ngay qua regression gate.
+
+`grasp_assist.py::_grip_pressing`: thay điều kiện `stall > min_stall` (proxy vị trí trung bình) bằng `F_left > 0.15N AND F_right > 0.15N` (lực thật, MỖI ngón riêng). Thêm config field `grasp_press_min_force_n=0.15` (ước tính vật lý: giữ nửa trọng lượng chai qua μ≈1.4 cần ≥0.336N/ngón, chọn 0.15N làm khởi điểm thận trọng hơn).
+
+`actions.py::apply_actions`: sửa TƯƠNG TỰ điều kiện `firm_contact` (quyết định khi nào DỪNG ramp đóng) — trước dùng `stall_now` (trung bình joint1/joint2), giờ dùng lực thật CẢ HAI ngón. Ý định: nếu chỉ 1 bên chạm, ramp KHÔNG dừng, tiếp tục đóng cho tới khi bên kia cũng chạm.
+
+### Regression gate + kết quả
+| | Baseline | Sau Phase 33 |
+|---|---|---|
+| grasp_rate | 0.8333 | **0.8333 (giữ nguyên, không hồi quy)** |
+| latch_rate | 0.4667 | **0.4667 (giữ nguyên)** |
+| lift_start_rate | 0.4333 | **0.0333 (sập)** |
+| success_rate | 0.0333 | 0.0333 (không đổi) |
+| fail_modes | — | `no_lift_command: 13/30 (43%!)`, `reach: 5`, `grasp: 11` |
+
+**Ý nghĩa**: `no_lift_command=13/30` — gần MỘT NỬA số lần latch giờ bị chặn không cho nhấc (đúng thiết kế: phát hiện thiếu lực một bên, không cho thử). Đây xác nhận thêm mức độ PHỔ BIẾN của hiện tượng "chỉ 1 ngón chạm" — không phải hiếm, mà là ~43% số lần latch trong seed=0!
+
+### Giới hạn phát hiện thêm: RAMP VẪN BỊ CHẶN CỨNG bởi trần đóng kẹp, độc lập với sửa đổi vừa làm
+Dữ liệu `max_gc=0.7624995708465576` ở TẤT CẢ episode `no_lift_command` — CHÍNH XÁC bằng trần `grasp_close_freeze_at_progress=0.75` như trước khi sửa. Nghĩa là: dù `firm_contact` (điều kiện DỪNG SỚM) đã sửa đúng, ramp vẫn bị chặn bởi một giới hạn CỨNG, ĐỘC LẬP khác (`can_advance = ... & (close_progress < cap)`, `cap` từ `grasp_close_freeze_at_progress`) — ramp KHÔNG BAO GIỜ có cơ hội đóng vượt trần để bù đắp ngón còn thiếu lực. Sửa Phase 33 chỉ giải quyết "không dừng SỚM HƠN trần", chưa giải quyết "không thể đóng VƯỢT trần khi cần".
+
+### Trạng thái — bước tiến đúng nhưng chưa đủ, cần quyết định bước tiếp
+Grasp/latch không hồi quy (an toàn), hệ thống giờ TRUNG THỰC hơn (không còn "nhấc-rồi-trượt" giả tạo), nhưng `lift_start_rate`/`success_rate` chưa cải thiện vì ramp bị chặn cứng trước khi đạt lực đủ 2 bên. Cần bước tiếp theo: cho phép ramp đóng VƯỢT `grasp_close_freeze_at_progress` cụ thể khi phát hiện lực thiếu một bên (đóng bù có mục tiêu, không đóng bù vô hạn) — đây CHÍNH XÁC là ý tưởng "đóng bù chủ động" từng đề xuất ở Phase 32, giờ có bằng chứng THẬT là cần thiết, không chỉ là lựa chọn thay thế.
+
+### File sửa (Phase 33, CHƯA commit)
+`isaaclab_openarm_env/mdp/helpers.py` (`compute_state()` thêm 2 field lực), `isaaclab_openarm_env/mdp/grasp_assist.py` (`_grip_pressing` dùng lực thật), `isaaclab_openarm_env/mdp/actions.py` (`firm_contact` dùng lực thật), `isaaclab_openarm_env/config.py` (`grasp_press_min_force_n=0.15`).
+
+---
+
+## Phase 34 — Sửa `_grip_pressing`: OR-nhánh 1-ngón-chắc thay vì cố nới trần đóng kẹp (2026-09-15)
+
+### Bối cảnh
+User xem demo GUI mới (`gui_demo_phase33b.log`, seed=1) báo "không nhấc được nữa". Điều tra bằng cách so log byte-for-byte với log CŨ trước Phase 32/33 (`gui_demo_zf_fix.log`, cùng seed=1, cùng vị trí chai) xác nhận quỹ đạo GIỐNG HỆT tới bước ~825 rồi rẽ nhánh: log cũ chai bị lật (tipped), log mới tay lùi ra xa ("Lost Bottle Contact") — cả hai đều là biểu hiện KHÁC NHAU của cùng một pathology có sẵn (policy kẹt ở biên align hàng trăm bước), không phải bug logic mới.
+
+Nhưng khi đối chiếu lại với đúng con số Phase 33 đã đo (cuối phần trên): `lift_start_rate` đã SẬP từ 0.4333 → 0.0333 ngay từ Phase 33, và ĐÓ mới là nguyên nhân gốc khiến "chai không nhấc được nữa" — không phải hiện tượng lùi tay ở seed=1 (hiện tượng đó chỉ là hệ quả phụ của việc không bao giờ latch/lift được, khiến policy kẹt lâu bất thường ở GRASP).
+
+### Sửa sai giả thuyết ban đầu — KHÔNG PHẢI vấn đề trần đóng kẹp
+Phase 33 kết luận (đoạn trên) rằng bước tiếp theo là "cho ramp đóng vượt `grasp_close_freeze_at_progress`". Trước khi làm theo, đối chiếu lại bằng chứng đã có: Phase 31 ĐÃ THỬ nới trần lên 1.0 (không có force-gate) và đo được joint≈0 (đóng hết cỡ cơ học) mà lực ngón xa VẪN không tăng đáng kể (stall 0.13→0.60mm) — tức đây là **giới hạn hình học** (lệch tâm tiếp cận), không phải giới hạn do trần % đóng kẹp. Nới trần lần nữa nhiều khả năng vô ích.
+
+### Fix thật: nới điều kiện AN TOÀN quá mức của `_grip_pressing`/`firm_contact`, không đụng trần
+Phase 32/33 bắt buộc CẢ HAI ngón > 0.15N (AND) mới coi là "đang ép" — đúng về mặt vật lý nhưng quá nghiêm: vì ngón xa gần như không bao giờ đạt lực thật, điều kiện AND gần như luôn False → `_grip_secure` luôn False → LIFT gần như vô hiệu. Trước Phase 32, proxy stall trung bình 2 ngón (không phân biệt được 1-ngón-chạm) vẫn cho `lift_start_rate=0.4333` trong thực tế — nghĩa là 1 ngón ép đủ mạnh + hình học đúng đường kính chai vốn ĐÃ ĐỦ để giữ được.
+
+Thêm nhánh OR vào `_grip_pressing` (`grasp_assist.py`) và `pressing_now` (`actions.py`, mirror nhau):
+```python
+both_pressing = (left_f > min_force) & (right_f > min_force) & near_bottle          # 0.15N mỗi bên
+single_pressing = (max(left_f, right_f) > min_force_single) & near_bottle & span_ok  # 0.30N MỘT bên, ngưỡng cao hơn
+pressing = both_pressing | single_pressing
+```
+`grasp_press_min_force_single_n=0.30` (config.py) — cao hơn hẳn ngưỡng dual (0.15N) để không tin nhầm chạm yếu/nhiễu khi chỉ có 1 bên; bắt buộc kèm `span_ok` (finger_span_xy gần đúng đường kính chai) để loại trừ trường hợp đóng vào không khí.
+
+### Regression gate — khôi phục gần như chính xác baseline gốc
+```
+eval_lift_metrics.py --model-path policy_1M_success57.pt --episodes 30 --num-envs 8 \
+  --bottle-noise 0.05 --assist-scale 1.0 --stage all --seed 0 --task_phase 2
+```
+| | Baseline gốc | Phase 33 (sập) | Phase 34 (fix) |
+|---|---|---|---|
+| success_rate | 0.0333 | 0.0333 | **0.03** |
+| grasp_rate | 0.8333 | 0.8333 | **0.83** |
+| latch_rate | 0.4667 | 0.4667 | **0.50** |
+| lift_start_rate | **0.4333** | **0.0333 (sập)** | **0.43 — khôi phục** |
+
+`max_gc` vẫn kẹt đúng `0.7624995708465576` (trần 0.75) ở MỌI episode — xác nhận lại: **không cần đụng trần**, chỉ cần sửa điều kiện "đang ép" là đủ. Giả thuyết "cần đóng vượt trần" ở cuối Phase 33 SAI — cứ để trần nguyên, chỉ cần chấp nhận 1-ngón-chắc-đủ là được, đúng như thực tế đã vận hành trước Phase 32.
+
+### File sửa
+`isaaclab_openarm_env/config.py` (`grasp_press_min_force_single_n=0.30`), `isaaclab_openarm_env/mdp/grasp_assist.py` (`_grip_pressing` thêm nhánh OR), `isaaclab_openarm_env/mdp/actions.py` (`pressing_now`/`firm_contact` mirror OR, debug print `[FreezeDbg]` thêm cờ `both`/`single`).

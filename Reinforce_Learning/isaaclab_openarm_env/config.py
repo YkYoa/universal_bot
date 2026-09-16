@@ -25,6 +25,7 @@ from isaaclab.assets import (
 from isaaclab.controllers.operational_space_cfg import OperationalSpaceControllerCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.envs.mdp.actions.actions_cfg import OperationalSpaceControllerActionCfg
+from isaaclab.sensors import ContactSensorCfg
 
 from . import mdp
 import isaaclab.envs.mdp as isaaclab_mdp
@@ -71,7 +72,7 @@ QVIC_USD_PATH = os.path.join(_THIS_DIR, "qvic.usd")
 # OpenArm A1 v10 robot USD (using symlink or directory under Reinforce_Learning)
 V10_USD_PATH = os.path.join(
     _RL_DIR,
-    "openarm_description", "urdf", "robot", "v10", "v10.usd"
+    "openarm_description", "assets", "robot", "openarm_v1.0", "urdf", "v10", "v10.usd"
 )
 
 
@@ -105,7 +106,13 @@ class OpenArmSceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/openarm",
         spawn=sim_utils.UsdFileCfg(
             usd_path=V10_USD_PATH,
-            activate_contact_sensors=False,
+            # Phase 32: bật để ContactSensor (openarm_openarm_env/config.py
+            # dưới) đọc được lực tiếp xúc PhysX THẬT giữa ngón và chai — thay
+            # cho proxy vị trí (joint-target mismatch) đã chứng minh không đủ
+            # tin cậy (Phase 31: tăng stiffness 2.86x không đổi thời điểm
+            # trượt chút nào, cho thấy vấn đề không nằm ở mức đơn giản "lực
+            # actuator chưa đủ").
+            activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
                 max_depenetration_velocity=5.0,
@@ -190,6 +197,24 @@ class OpenArmSceneCfg(InteractiveSceneCfg):
             pos=(0.58, 0.22, 0.67),
             rot=_IDENTITY_QUAT,  # xyzw (>=3.0) hoặc wxyz (<3.0) — xem _identity_quat()
         ),
+    )
+
+    # Phase 32: đo lực tiếp xúc PhysX THẬT giữa mỗi ngón trái và chai — thay
+    # cho proxy vị trí (joint-target mismatch, đã chứng minh không tin cậy
+    # được khi thay đổi stiffness không đổi kết quả gì). `filter_prim_paths_expr`
+    # trỏ đúng Bottle để force_matrix_w chỉ phản ánh cặp ngón-chai, không lẫn
+    # tiếp xúc khác (bàn, kẹp còn lại...).
+    left_finger_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/openarm/openarm_left_left_finger",
+        filter_prim_paths_expr=["{ENV_REGEX_NS}/Scene/Bottle"],
+        track_pose=False,
+        history_length=1,
+    )
+    right_finger_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/openarm/openarm_left_right_finger",
+        filter_prim_paths_expr=["{ENV_REGEX_NS}/Scene/Bottle"],
+        track_pose=False,
+        history_length=1,
     )
 
     # Ground plane
@@ -705,6 +730,23 @@ class ApplePickPlaceEnvCfg(ManagerBasedRLEnvCfg):
     gripper_open_m: float = 0.044
     grasp_press_min_stall_m: float = 0.0028
     grasp_press_max_dist_f: float = 0.060
+    # Phase 32: ngưỡng lực tiếp xúc PhysX THẬT tối thiểu MỖI ngón (ContactSensor)
+    # để coi là "đang ép" — thay proxy vị trí. Ước tính vật lý: giữ nửa trọng
+    # lượng chai (0.94N/2) qua ma sát μ≈1.4 (đo thật, config finger/bottle
+    # friction) cần ≥0.336N/ngón; chọn 0.15N làm ngưỡng KHỞI ĐIỂM (thấp hơn để
+    # không quá chặt ngay từ đầu) — đã đo qua regression gate, xem
+    # terminal_command.md Phase 32.
+    grasp_press_min_force_n: float = 0.15
+    # Phase 34: BẮT BUỘC cả hai lực vượt ngưỡng (Phase 32/33) đo được làm SẬP
+    # lift_start_rate 0.4333→0.0333 (regression gate seed=0) — lệch tâm tiếp
+    # cận khiến ngón xa gần như KHÔNG BAO GIỜ đạt lực thật dù đóng hết cỡ (đã
+    # thử nới cap lên 1.0 ở Phase 31, đo được joint≈0 mà lực vẫn không tăng —
+    # không phải vấn đề cap, là hình học). Trước Phase 32, proxy stall trung
+    # bình 2 ngón (không phân biệt được 1-ngón-chạm) vẫn cho lift_start 43% —
+    # tức một ngón ép đủ mạnh + hình học đúng đường kính chai đã ĐỦ để giữ
+    # được trong thực tế. Ngưỡng single-finger cao hơn ngưỡng dual (0.30N so
+    # với 0.15N) để không tin nhầm chạm yếu/nhiễu khi chỉ có 1 bên.
+    grasp_press_min_force_single_n: float = 0.30
     # Dừng ramp đóng ngay khi phát hiện lực chạm thật, thay vì tiếp tục siết
     # tới grasp_close_freeze_at_progress bất kể đã chạm hay chưa — ramp cũ đẩy
     # văng chai ra khỏi kẹp khi siết tiếp SAU điểm chạm (xem apply_actions).

@@ -112,14 +112,25 @@ PHASE2_GRASP = {
     # [0.0, 1.0] (cơ chế lực không bao giờ kích hoạt) nhưng success_rate
     # KHÔNG ĐỔI — xác nhận cơ chế đóng kẹp không phải nút thắt còn lại. Giữ
     # nguyên 0.75 (cấu hình đơn giản, đã biết tốt nhất).
+    # Phase 31: thử nới trần lên 1.0 (đo lại giả định lịch sử "tăng cap không
+    # đổi success_rate") — ĐO ĐƯỢC XÁC NHẬN ĐÚNG: dù đóng hoàn toàn (gc=1.000,
+    # joint≈0), thời gian trượt KHÔNG cải thiện (~60 bước, bằng baseline),
+    # `stall` chỉ tăng nhẹ (0.13→0.60mm, vẫn xa ngưỡng pressing 5mm) — lực ép
+    # thực tế vẫn yếu dù lệnh đóng đã tối đa. Gợi ý vấn đề nằm ở hình học tiếp
+    # xúc (lệch tâm/khoảng hở vật lý), không phải mức đóng kẹp. Đã REVERT về 0.75.
     "grasp_close_freeze_at_progress": 0.75,
     "grasp_close_slip_creep_progress": 0.88,
     "grasp_close_exhaust_creep_enabled": False,
     "grasp_close_exhaust_max_tilt_deg": 5.0,
     "grasp_partial_lift_require_sym": True,
-    # 0.022 → 0.008: ngón được phép cao hơn điểm kẹp tới 2.2cm rồi vẫn cho nhấc →
-    # kẹp trúng phần cổ chai thuôn, chai trượt tuột khi nhấc. Siết xuống 8mm để
-    # ngón phải thực sự ở ngang thân chai.
+    # 0.022 → 0.008 (lịch sử) → 0.014 (giá trị hiện tại). Phase 27: THỬ siết
+    # lại 0.008 — ĐO ĐƯỢC (regression gate seed=0): grasp/latch giữ nguyên
+    # (0.8333/0.4667) nhưng lift_start_rate SẬP từ 0.4333 xuống 0.0333 (policy
+    # đã học quen ngưỡng 0.014, phần lớn lần latch có z_error_finger trong
+    # khoảng 0.008-0.014m — đủ ngưỡng cũ, không đủ ngưỡng mới). Đánh đổi TỆ
+    # HƠN vấn đề gốc (gần như không còn cơ hội nào được thử nhấc) — ĐÃ REVERT
+    # về 0.014, KHÔNG dùng 0.008 nữa. Giữ nguyên comment lịch sử làm bằng
+    # chứng đã thử và đo, tránh người sau thử lại đúng hướng này.
     "grasp_lift_contact_z_finger": 0.014,
     "grasp_lift_contact_dist_f": 0.040,
     "grasp_lift_contact_min_follow": 0.75,
@@ -141,6 +152,11 @@ PHASE2_LIFT = {
     # không tích luỹ → lực nhấc = osc_stiffness * delta = 90*0.018 = 1.62N. Trừ
     # trọng lượng chai 0.94N chỉ còn 0.68N thắng damping → tay bò 2.4mm/s, cần
     # 12.5s để đạt 30mm mà lift chỉ bắt đầu ~13s. 0.055 → nhanh ~17 lần.
+    # Phase 31: thử chậm lại (0.030) — ĐO ĐƯỢC chỉ trì hoãn tuyến tính thời điểm
+    # trượt (59→99 bước), KHÔNG giải quyết gốc rễ: lift_m vẫn tụt dần về 0 sau
+    # khi đạt đỉnh ~1.6mm, z_error_finger vẫn tăng đều — ma sát ĐỘNG (kinetic)
+    # không đủ giữ MỘT KHI đã bắt đầu trượt, bất kể tốc độ nhấc. Vấn đề là LỰC
+    # KẸP (normal force), không phải tốc độ. Đã REVERT về 0.055.
     "grasp_lift_world_m": 0.055,
     "grasp_lift_align_blend": 0.0,
     "grasp_lift_partial_align_blend": 0.12,

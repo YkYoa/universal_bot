@@ -765,6 +765,24 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
     grasp_body_pos_w = grasp_body_pos + origins
     grasp_tcp_pos_w = grasp_tcp_pos + origins
 
+    # Phase 32: lực tiếp xúc PhysX THẬT (ContactSensor, config.py) giữa mỗi
+    # ngón và chai — thay cho proxy vị trí (joint-target stall) đã chứng minh
+    # không phát hiện được trường hợp "đóng đối xứng về góc nhưng chỉ 1 ngón
+    # thực sự chạm" (lệch tâm tiếp cận, xem terminal_command.md Phase 32).
+    # Nội bộ CHỈ — không đưa vào observation 26-D, giống bowl_center_pos/
+    # dist_bottle_bowl_xy đã thêm an toàn trước đó.
+    n_envs = env.num_envs
+    lf_sensor = env.scene.sensors.get("left_finger_contact") if hasattr(env.scene, "sensors") else None
+    rf_sensor = env.scene.sensors.get("right_finger_contact") if hasattr(env.scene, "sensors") else None
+    if lf_sensor is not None:
+        left_finger_contact_force = _t(lf_sensor.data.force_matrix_w)[:, 0, 0].norm(dim=-1)
+    else:
+        left_finger_contact_force = torch.zeros(n_envs, device=env.device)
+    if rf_sensor is not None:
+        right_finger_contact_force = _t(rf_sensor.data.force_matrix_w)[:, 0, 0].norm(dim=-1)
+    else:
+        right_finger_contact_force = torch.zeros(n_envs, device=env.device)
+
     return {
         "origins": origins,
         "ee_world": ee_world,
@@ -778,6 +796,8 @@ def compute_state(env: ManagerBasedRLEnv) -> dict:
         "right_finger_pos": right_finger_pos,
         "dist_left_body": dist_left_body,
         "dist_right_body": dist_right_body,
+        "left_finger_contact_force": left_finger_contact_force,
+        "right_finger_contact_force": right_finger_contact_force,
         "z_error_finger_left": z_error_finger_left,
         "z_error_finger_right": z_error_finger_right,
         "finger_span_xy": finger_span_xy,

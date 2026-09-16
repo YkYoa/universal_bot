@@ -38,6 +38,7 @@ from .helpers import (
     reach_descent_ready,
     uses_grasp_lift,
     uses_place,
+    _t,
 )
 
 
@@ -103,36 +104,53 @@ def _grip_physically_closed(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
 
 
 def _grip_pressing(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
-    """Ngón đang ÉP vào vật — bằng chứng thật sự của việc đang giữ chai.
+    """Đang ép chai đủ chắc để nhấc — CẢ HAI ngón, HOẶC một ngón chắc + hình học đúng.
 
-    ``finger_span_xy`` được SUY RA từ góc khớp, nên khi khớp bị vật chặn lại thì
-    span vẫn báo "đang mở" dù kẹp đang ép rất mạnh. Đo được: khớp kẹt ở 0.0231
-    trong khi lệnh 0.0105 → chênh 12.6mm × stiffness 1500 = 18.9N ép vào chai,
-    mà span lại báo 0.0583 (rộng hơn cả chai 0.0433).
+    Phase 32: thay proxy vị trí (joint-target stall trung bình 2 ngón) bằng
+    LỰC TIẾP XÚC PHYSX THẬT của TỪNG ngón (ContactSensor, config.py). Đo trực
+    tiếp bằng debug thật (terminal_command.md Phase 32) phát hiện: khi tay
+    tiếp cận lệch tâm nhẹ (~7mm), 2 khớp vẫn đóng ĐỐI XỨNG HOÀN HẢO về góc
+    (proxy vị trí trung bình `stall` không phân biệt được), nhưng CHỈ MỘT ngón
+    thực sự chạm chai còn ngón kia hoàn toàn KHÔNG TIẾP XÚC.
 
-    Độ chênh khớp-so-với-lệnh là tín hiệu đúng: kẹp không khí thì chênh ~1.5mm,
-    kẹp chai thì ~12.6mm.
+    Phase 34: yêu cầu CẢ HAI vượt ngưỡng (Phase 32/33) ĐO ĐƯỢC làm sập
+    lift_start_rate 0.4333→0.0333 (regression gate seed=0) — lệch tâm khiến
+    ngón xa gần như KHÔNG BAO GIỜ đạt lực thật dù đóng hết cỡ (đã thử nới cap
+    lên 1.0 ở Phase 31: joint≈0 mà lực vẫn không tăng — không phải vấn đề
+    cap, là hình học không sửa được bằng cách đóng chặt hơn). Trước Phase 32,
+    stall trung bình (không phân biệt 1-ngón-chạm) vẫn cho lift_start 43% —
+    tức 1 ngón ép đủ mạnh + hình học đúng đường kính chai (span_ok) ĐÃ ĐỦ để
+    giữ được trong thực tế. Khôi phục khả năng đó bằng nhánh OR: 1 ngón vượt
+    ngưỡng CAO HƠN (single, chắc chắn không phải nhiễu) + near_bottle +
+    span_ok cũng được tính là đang ép.
     """
-    term = env.action_manager._terms.get("gripper_action")
-    if term is None or not hasattr(term, "_close_progress") or not hasattr(env, "_gripper_joint_ids"):
+    if "left_finger_contact_force" not in s or "right_finger_contact_force" not in s:
         return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
-    joint = env._robot.data.joint_pos[:, env._gripper_joint_ids].mean(dim=1)
-    open_m = float(getattr(env.cfg, "gripper_open_m", 0.044))
-    target = open_m * (1.0 - term._close_progress)
-    stall = joint - target
-    min_stall = float(getattr(env.cfg, "grasp_press_min_stall_m", 0.005))
+    min_force = float(getattr(env.cfg, "grasp_press_min_force_n", 0.15))
+    min_force_single = float(getattr(env.cfg, "grasp_press_min_force_single_n", 0.30))
     near_bottle = s["dist_finger_body"] < float(getattr(env.cfg, "grasp_press_max_dist_f", 0.060))
+    bottle_d = float(getattr(env.cfg, "bottle_diameter_m", 0.0433))
+    span_margin = float(getattr(env.cfg, "grasp_press_span_margin_m", 0.004))
+    span_ok = s["finger_span_xy"] < (bottle_d + span_margin)
+    left_f = s["left_finger_contact_force"]
+    right_f = s["right_finger_contact_force"]
+    both_pressing = (left_f > min_force) & (right_f > min_force) & near_bottle
+    single_pressing = (
+        (torch.maximum(left_f, right_f) > min_force_single) & near_bottle & span_ok
+    )
+    pressing = both_pressing | single_pressing
     if os.environ.get("DEBUG_STALL") == "1" and env.num_envs <= 16 and int(env.step_counter) % 15 == 0:
         latched = _grip_latched(env)
         for i in latched.nonzero(as_tuple=False).flatten().tolist():
             print(
-                f"  [Stall] env{i} step_ct={int(env.step_counter)} gc={float(term._close_progress[i]):.3f} "
-                f"joint={float(joint[i])*1000:.2f}mm target={float(target[i])*1000:.2f}mm "
-                f"stall={float(stall[i])*1000:.2f}mm near={bool(near_bottle[i])} "
+                f"  [Stall] env{i} step_ct={int(env.step_counter)} "
+                f"F_left={float(left_f[i]):.3f}N F_right={float(right_f[i]):.3f}N "
+                f"near={bool(near_bottle[i])} span_ok={bool(span_ok[i])} "
+                f"both={bool(both_pressing[i])} single={bool(single_pressing[i])} "
                 f"span={float(s['finger_span_xy'][i])*1000:.2f}mm",
                 flush=True,
             )
-    return (stall > min_stall) & near_bottle
+    return pressing
 
 
 def _grip_close_done(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
@@ -282,6 +300,14 @@ def _update_lift_state(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
     env._lift_rising_steps[new_phase == LIFT_RISING] += 1
     env._lift_rising_steps[new_phase != LIFT_RISING] = 0
 
+    # Phase 27 (cơ chế phục hồi sau zf_drift-abort) ĐÃ THỬ VÀ REVERT (Phase 29,
+    # terminal_command.md): đo được KHÔNG vô hại như tưởng — dù bản thân chỉ
+    # đổi hành động lúc LIFT_IDLE (đứng yên → hạ tay), nó vẫn làm lệch quỹ đạo
+    # episode đủ để regression gate không còn khớp CHÍNH XÁC baseline (success
+    # 0.033→0.067, latch/lift_start giảm nhẹ) — dù chênh lệch nhỏ, không đạt
+    # tiêu chuẩn "khớp chính xác" của project. Giữ nguyên Phase 26 (zf_drift
+    # abort sớm hơn, đã xác nhận khớp TUYỆT ĐỐI baseline).
+
     if os.environ.get("DEBUG_APPROACH") == "1" and env.num_envs <= 16:
         just_latched = _grip_latched(env) & (env._lift_ready_steps == 1) & (phase == LIFT_IDLE)
         for i in just_latched.nonzero(as_tuple=False).flatten().tolist():
@@ -316,12 +342,15 @@ def _update_lift_state(env: ManagerBasedRLEnv, s: dict) -> torch.Tensor:
                     )
                     )
                 )
+                dl = float(s["dist_left_body"][i]) * 1000 if "dist_left_body" in s else -1.0
+                dr = float(s["dist_right_body"][i]) * 1000 if "dist_right_body" in s else -1.0
                 print(
                     f"  [LiftDbg] env{i} step_ct={int(env.step_counter)} "
                     f"{names[int(phase[i])]}→{names[int(new_phase[i])]} "
                     f"| lift_m={float(s['bottle_lift'][i])*1000:.2f}mm "
                     f"tilt={float(s['bottle_tilt_deg'][i]):.1f} slip_steps={ss} "
-                    f"gc={gc:.3f} latched={bool(latched_all[i])} reason={reason}",
+                    f"gc={gc:.3f} latched={bool(latched_all[i])} reason={reason} "
+                    f"dL={dl:.2f}mm dR={dr:.2f}mm dLR={dl-dr:+.2f}mm",
                     flush=True,
                 )
 
@@ -713,16 +742,33 @@ def _update_lift_slip(env: ManagerBasedRLEnv, s: dict, armed: torch.Tensor) -> t
     if os.environ.get("DEBUG_LIFT") == "1" and env.num_envs <= 16 and int(env.step_counter) % 20 == 0:
         term2 = env.action_manager._terms.get("gripper_action")
         joint = env._robot.data.joint_pos[:, env._gripper_joint_ids].mean(dim=1) if hasattr(env, "_gripper_joint_ids") else None
+        # Phase 32: joint1/joint2 RIÊNG (không average) — nghi vấn averaging
+        # đang che giấu 1 khớp kẹt mở trong khi khớp kia đóng bình thường.
+        joint1 = env._robot.data.joint_pos[:, env._gripper_joint_ids[0]] if hasattr(env, "_gripper_joint_ids") else None
+        joint2 = env._robot.data.joint_pos[:, env._gripper_joint_ids[1]] if hasattr(env, "_gripper_joint_ids") else None
         open_m = float(getattr(env.cfg, "gripper_open_m", 0.044))
+        # Phase 32: lực tiếp xúc PhysX THẬT (ContactSensor, config.py) — thay
+        # cho proxy vị trí (stall) đã chứng minh không tin cậy được (Phase 31).
+        lf_sensor = env.scene.sensors.get("left_finger_contact") if hasattr(env, "scene") else None
+        rf_sensor = env.scene.sensors.get("right_finger_contact") if hasattr(env, "scene") else None
+        lf_force = _t(lf_sensor.data.force_matrix_w) if lf_sensor is not None else None
+        rf_force = _t(rf_sensor.data.force_matrix_w) if rf_sensor is not None else None
         for i in armed.nonzero(as_tuple=False).flatten().tolist():
             tgt = open_m * (1.0 - float(term2._close_progress[i])) if term2 is not None and hasattr(term2, "_close_progress") else -1.0
             stall = float(joint[i]) - tgt if joint is not None else -1.0
+            dl = float(s["dist_left_body"][i]) * 1000 if "dist_left_body" in s else -1.0
+            dr = float(s["dist_right_body"][i]) * 1000 if "dist_right_body" in s else -1.0
+            lf_n = float(lf_force[i, 0].norm()) if lf_force is not None else -1.0
+            rf_n = float(rf_force[i, 0].norm()) if rf_force is not None else -1.0
             print(
                 f"  [LiftSlip] env{i} step_ct={int(env.step_counter)} "
                 f"lift_m={float(s['bottle_lift'][i])*1000:.2f}mm dz_f={float(dz_f[i])*1000:+.3f}mm "
                 f"db={float(db[i])*1000:+.3f}mm slip={bool(slip[i])} slip_steps={int(env._lift_slip_steps[i])} "
                 f"joint={float(joint[i])*1000:.2f}mm tgt={tgt*1000:.2f}mm stall={stall*1000:.2f}mm "
-                f"z_f={float(s['z_error_finger'][i])*1000:.2f}mm tilt={float(s['bottle_tilt_deg'][i]):.1f}",
+                f"z_f={float(s['z_error_finger'][i])*1000:.2f}mm tilt={float(s['bottle_tilt_deg'][i]):.1f} "
+                f"dL={dl:.2f}mm dR={dr:.2f}mm dLR={dl-dr:+.2f}mm "
+                f"F_left={lf_n:.3f}N F_right={rf_n:.3f}N "
+                f"j1={float(joint1[i])*1000:.2f}mm j2={float(joint2[i])*1000:.2f}mm",
                 flush=True,
             )
 
@@ -1130,6 +1176,10 @@ def apply_grasp_arm_assist(env: ManagerBasedRLEnv, arm_actions: torch.Tensor) ->
         holding_place = env._place_phase == PLACE_HOLDING
         if holding_place.any():
             actions[holding_place] = 0.0
+
+    # Phase 27 (cơ chế phục hồi active-descent sau zf_drift-abort) ĐÃ THỬ VÀ
+    # REVERT (Phase 29, terminal_command.md) — đo được không khớp chính xác
+    # baseline dù chỉ đổi hành động lúc LIFT_IDLE. Giữ nguyên idle_hold gốc.
 
     # Đã latch nhưng lift chưa arm: giữ pose, chặn policy drift (z_f tăng ảo).
     # Gộp latched_hold + gripped_hold cũ — cả hai đều mô tả cùng một trạng thái.
