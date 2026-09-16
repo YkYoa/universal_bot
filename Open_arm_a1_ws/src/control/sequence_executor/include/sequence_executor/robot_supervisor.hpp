@@ -22,6 +22,13 @@
 // One goal at a time: a RunSequence goal arriving while another is running is
 // rejected rather than queued, because two sequences driving the same arm is
 // never what the operator meant.
+//
+// A goal arriving while motors_enabled_ is false (see that member's comment,
+// and motor_enable_client.hpp) IS queued, briefly: handleAccepted() runs the
+// hardware re-enable cycle first and only then starts the FSM, rather than
+// rejecting - the operator who dismissed the E-stop already made the safety
+// call, this just does the mechanical re-activation they'd otherwise have
+// to trigger by hand.
 // -----------------------------------------------------------------------------
 #include <memory>
 #include <string>
@@ -35,6 +42,7 @@
 
 #include "sequence_executor/builtin_actions.hpp"
 #include "sequence_executor/control_mode_probe.hpp"
+#include "sequence_executor/motor_enable_client.hpp"
 #include "sequence_executor/sequence_fsm.hpp"
 #include "sequence_executor/sequence_source.hpp"
 
@@ -87,13 +95,25 @@ private:
                                          std::shared_ptr<const RunSequence::Goal> goal);
   /// RunSequence cancel callback: forwards to the running SequenceFsm's cancel().
   rclcpp_action::CancelResponse handleCancel(const std::shared_ptr<GoalHandle>& goal_handle);
-  /// RunSequence accepted callback: stores `goal_handle` as active_goal_ and starts the FSM.
+  /// RunSequence accepted callback: stores `goal_handle` as active_goal_ and
+  /// starts the FSM - first re-enabling the physical hardware components if
+  /// motors_enabled_ is false (see motor_enable_client.hpp), so a goal
+  /// submitted right after an E-stop still runs instead of silently
+  /// commanding a de-energized arm.
   void handleAccepted(const std::shared_ptr<GoalHandle>& goal_handle);
 
   /// FsmCommand service callback: dispatches pause/resume/step/cancel/estop/
-  /// clear_fault/enter_teach/exit_teach.
+  /// clear_fault/enter_teach/exit_teach/abort_to_home/enable.
   void handleCommand(const std::shared_ptr<FsmCommand::Request> request,
                      std::shared_ptr<FsmCommand::Response> response);
+
+  /// Starts `sequence_name` (a stored sequence or "builtin:<id>") the same
+  /// way a RunSequence goal does, but without an action goal handle - for
+  /// internally-triggered runs (see abort_to_home in handleCommand()/
+  /// onSequenceFinished()). Caller is responsible for confirming
+  /// robot_state_ is IDLE first, same precondition handleGoal() enforces
+  /// for an external goal.
+  void startBuiltin(const std::string& sequence_name);
 
   /// SequenceFsm transition callback: mirrors progress onto the active goal's
   /// feedback and publishes state.
@@ -118,6 +138,7 @@ private:
   std::shared_ptr<SequenceSource> source_;
   std::shared_ptr<ControlModeProbe> mode_probe_;
   std::shared_ptr<BuiltinActionRegistry> builtins_;
+  std::shared_ptr<MotorEnableClient> motor_enable_;
   std::unique_ptr<SequenceFsm> fsm_;
   rclcpp::Logger logger_;
 
@@ -127,6 +148,22 @@ private:
 
   RobotState robot_state_ = RobotState::BOOTING;
   std::string fault_reason_;
+
+  // Independent of robot_state_: "estop" sets this false in addition to
+  // setRobotState(ESTOP), and it stays false across clear_fault (which only
+  // resets robot_state_) until "enable" - explicit or auto-triggered by the
+  // next accepted goal, see handleAccepted() - successfully re-activates
+  // the hardware components. See FsmState.msg's motors_enabled field
+  // comment for why a physical E-stop press that never goes through this
+  // command is invisible here.
+  bool motors_enabled_ = true;
+
+  // Set by handleCommand()'s "abort_to_home" while the cancel it just issued
+  // is still in flight; consumed by onSequenceFinished() once that cancel
+  // actually lands the robot in IDLE, which is when it starts kHomeSequence.
+  // Never set true across a real fault - see onSequenceFinished()'s
+  // reached_idle check.
+  bool pending_home_after_abort_ = false;
 
   // Held while a sequence runs so transitions can be mirrored onto the goal as
   // feedback and the result can be reported when it ends.

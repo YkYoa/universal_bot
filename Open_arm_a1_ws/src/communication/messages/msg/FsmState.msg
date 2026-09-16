@@ -31,3 +31,11 @@ string control_mode_active
 
 float32 progress            # 0.0 → 1.0 across the whole sequence
 string fault_reason         # empty unless FAULT/FAILED
+
+bool motors_enabled
+# Software-tracked, not read back from hardware: true until "estop" is
+# called (see FsmCommand), false from then on until a "run_sequence" goal or
+# an explicit "enable" FsmCommand successfully re-activates the hardware
+# components. A physical E-stop button press that a human never reports
+# through "estop"/the dashboard is invisible here too - there is no wiring
+# from the button into this stack, only from the software command.

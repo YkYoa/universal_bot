@@ -12,6 +12,19 @@ string command
 # "estop"       any -> ESTOP, cancels everything
 # "enter_teach" IDLE -> TEACHING (rejected unless control mode is torque)
 # "exit_teach"  TEACHING -> IDLE
+# "abort_to_home" cancels now (like "cancel"), then once actually stopped
+#               automatically runs "builtin:action_01" (home both arms).
+#               From IDLE, homes immediately (nothing to cancel). Refused
+#               from FAULT|ESTOP|TEACHING - clear_fault/exit_teach first.
+# "enable"      Re-activates the physical hardware components (see
+#               motor_enable_client.hpp) so they resend "enable" over CAN -
+#               needed after a physical E-stop press+release, which cuts
+#               driver power without ros2_control ever seeing it, so it
+#               still reports the component as "active" the whole time.
+#               Sets motors_enabled true in FsmState on success. Usually not
+#               called directly: submitting a run_sequence goal while
+#               motors_enabled is false does this automatically first (see
+#               RobotSupervisor::handleAccepted()).
 ---
 bool success
 string message

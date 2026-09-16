@@ -16,6 +16,7 @@ find_package(control_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
+find_package(lifecycle_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(planning_interface REQUIRED)
 find_package(openarm_messages REQUIRED)
@@ -29,6 +30,7 @@ set(DEPS
   trajectory_msgs
   sensor_msgs
   controller_manager_msgs
+  lifecycle_msgs
   planning_interface
   openarm_messages
 )
@@ -47,6 +49,7 @@ add_library(sequence_executor SHARED
   src/hand_api_client.cpp
   src/scene_client.cpp
   src/control_mode_probe.cpp
+  src/motor_enable_client.cpp
   src/builtin_actions.cpp
   src/sequence_fsm.cpp
   src/robot_supervisor.cpp
@@ -88,5 +91,13 @@ install(DIRECTORY launch config
 
 ament_export_targets(sequence_executorTargets HAS_LIBRARY_TARGET)
 ament_export_dependencies(${DEPS} yaml-cpp)
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_robot_supervisor test/test_robot_supervisor.cpp)
+  target_link_libraries(test_robot_supervisor sequence_executor)
+  ament_target_dependencies(test_robot_supervisor ${DEPS})
+endif()
 
 ament_package()
