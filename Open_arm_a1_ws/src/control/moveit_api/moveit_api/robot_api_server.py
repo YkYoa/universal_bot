@@ -17,6 +17,7 @@ Endpoints:
   POST /api/move/named                - Move to named pose (home, ready)
   POST /api/gripper                   - Open/close gripper
   POST /api/stop                      - Emergency stop (cancel current motion)
+  GET  /api/logs                      - Recent openarm-robot.service journal lines (debugging)
 """
 
 import os
@@ -28,6 +29,7 @@ import math
 import yaml
 import os
 import signal
+import subprocess
 from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 
 def euler_to_quaternion(roll, pitch, yaw):
@@ -350,6 +352,67 @@ def get_status():
         return jsonify(result)
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ─────────────────────────────────────────────
+# Debug Logs
+# ─────────────────────────────────────────────
+
+_LOGS_UNIT = 'openarm-robot.service'
+_LOGS_MAX_LINES = 2000
+_LOGS_DEFAULT_LINES = 200
+
+
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    """
+    Recent journal lines for openarm-robot.service - the same thing
+    `journalctl -u openarm-robot.service -n <lines>` on the robot itself
+    shows, exposed over HTTP so the dashboard (or curl) doesn't need SSH.
+
+    Query params:
+      lines    - how many recent lines (default 200, capped at 2000)
+      priority - optional journalctl -p value (e.g. "err" for errors only)
+
+    Response:
+    {
+        "success": true,
+        "unit": "openarm-robot.service",
+        "lines_requested": 200,
+        "lines": ["Sep 16 06:40:25 ubuntu ...", ...]
+    }
+    """
+    try:
+        lines = int(request.args.get('lines', _LOGS_DEFAULT_LINES))
+    except ValueError:
+        return jsonify({'success': False, 'message': "'lines' must be an integer"}), 400
+    lines = max(1, min(lines, _LOGS_MAX_LINES))
+
+    cmd = ['journalctl', '-u', _LOGS_UNIT, '-n', str(lines), '--no-pager', '-o', 'short-iso']
+    priority = request.args.get('priority')
+    if priority:
+        # journalctl validates this itself (0-7 or emerg..debug) and exits
+        # non-zero on garbage - surfaced below via returncode, not trusted
+        # blindly (this still reaches a real shell-less subprocess call, so
+        # there's no injection risk either way, just a possible CLI usage
+        # error we pass through).
+        cmd += ['-p', priority]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'message': 'journalctl timed out'}), 504
+
+    if result.returncode != 0:
+        return jsonify({'success': False, 'message': result.stderr.strip() or
+                        f'journalctl exited {result.returncode}'}), 500
+
+    return jsonify({
+        'success': True,
+        'unit': _LOGS_UNIT,
+        'lines_requested': lines,
+        'lines': result.stdout.splitlines(),
+    })
 
 
 # ─────────────────────────────────────────────
