@@ -6,6 +6,7 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/FsmState.msg"
@@ -18,7 +19,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/DriveCommand.srv"
   "srv/FsmCommand.srv"
   "srv/SceneCommand.srv"
-  DEPENDENCIES geometry_msgs moveit_msgs builtin_interfaces
+  DEPENDENCIES geometry_msgs moveit_msgs builtin_interfaces sensor_msgs
 )
 
 ament_package()

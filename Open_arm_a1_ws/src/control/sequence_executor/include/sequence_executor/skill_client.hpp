@@ -15,6 +15,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <openarm_messages/action/execute_skill.hpp>
 
 namespace sequence_executor {
@@ -32,28 +33,33 @@ public:
     const rclcpp::Node::SharedPtr& node,
     const std::string& action_name = "robot_skills_server/execute_skill");
 
-  /// Sends a "move_to_joint" goal for `arm` to `joint_targets`.
+  /// Sends a "move_to_joint" goal for `arm` to `joint_target` (name/position
+  /// pairs - see common::jointStateFor - resolved by name against the live
+  /// robot model server-side, not by positional stride/DOF).
   void moveToJoint(
-    const std::string& arm, const std::vector<double>& joint_targets, const std::string& planner_profile,
+    const std::string& arm, const sensor_msgs::msg::JointState& joint_target, const std::string& planner_profile,
     double velocity_scaling, double acceleration_scaling, ResultCallback callback);
 
   // Resolves against the SRDF's <group_state name="named_pose" group="arm">
   // server-side (MoveToNamedPoseSkill), joint-by-name via
-  // JointModelGroup::getVariableDefaultPositions - safe for a group whose DOF
-  // count varies by build (e.g. "both_arms"/"left_arm" gaining amazing_hand's
-  // "motor 8" connector joint), unlike moveToJoint's raw positional vector,
-  // which must match the live group's variable count exactly or
-  // robot_skills_node aborts (RobotState::setJointGroupPositions asserts on
-  // size mismatch).
+  // JointModelGroup::getVariableDefaultPositions - the same "resolve by name
+  // against the live model" pattern moveToJoint/moveToJointSequence now use
+  // too (see common::jointStateFor), safe for a group whose DOF count varies
+  // by build (e.g. "both_arms"/"left_arm" gaining amazing_hand's "motor 8"
+  // connector joint).
   /// Sends a "move_to_named_pose" goal for `arm` to `named_pose`.
   void moveToNamedPose(
     const std::string& arm, const std::string& named_pose, const std::string& planner_profile,
     double velocity_scaling, double acceleration_scaling, ResultCallback callback);
 
-  /// Sends a "move_to_joint_sequence" goal for `arm`'s flat, stride-DOF `joint_sequence`.
+  /// Sends a "move_to_joint_sequence" goal for `arm`'s `joint_sequence` -
+  /// each waypoint names its own joints independently (see
+  /// common::jointStateFor), so waypoints authored for different ee_types
+  /// can mix without a shared stride assumption.
   void moveToJointSequence(
-    const std::string& arm, const std::vector<double>& joint_sequence, const std::string& planner_profile,
-    double velocity_scaling, double acceleration_scaling, ResultCallback callback);
+    const std::string& arm, const std::vector<sensor_msgs::msg::JointState>& joint_sequence,
+    const std::string& planner_profile, double velocity_scaling, double acceleration_scaling,
+    ResultCallback callback);
 
   /// Sends a "move_to_pose" goal for `arm` to Cartesian `target`.
   void moveToPose(

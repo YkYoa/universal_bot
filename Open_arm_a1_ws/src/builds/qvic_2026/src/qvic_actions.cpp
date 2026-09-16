@@ -47,6 +47,7 @@
 #include <vector>
 
 #include <Eigen/Geometry>
+#include <common/joint_names.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <trajectory_shapes/trajectory_shapes.hpp>
@@ -80,14 +81,13 @@ BuiltinAction homeBothArms()
     auto logger = ctx.node->get_logger();
     auto ee_type = ctx.ee_type;
 
-    // Named pose, not the DB's raw 7-per-arm waypoint vector: "both_arms"
-    // has a <group_state name="home"> in openarm_bimanual.srdf, resolved
-    // server-side joint-by-name (MoveToNamedPoseSkill), so it stays correct
-    // even though "both_arms" is 16-DOF (not 14) under ee_type:=amazing_hand
-    // - see amazing_hand_connector's joint comment in openarm_robot.xacro.
-    // moveToJoint's raw vector has no such flexibility: robot_skills_node
-    // aborts outright if the vector's length doesn't exactly match the
-    // live group's DOF.
+    // Named pose ("both_arms" has a <group_state name="home"> in
+    // openarm_bimanual.srdf), resolved server-side joint-by-name
+    // (MoveToNamedPoseSkill) - same "resolve by name" pattern moveToJoint/
+    // moveToJointSequence now use too (see common::jointStateFor), so both
+    // stay correct whether "both_arms" is 14-DOF or 16-DOF depending on
+    // ee_type - see amazing_hand_connector's joint comment in
+    // openarm_robot.xacro.
     // "safe_rrt" (OMPL), not "fast_ptp" (Pilz PTP): confirmed on real
     // hardware (2026-08-17) that Pilz PTP fails to plan for "both_arms" -
     // a composite group of two independent 7-DOF chains, not the single
@@ -200,24 +200,25 @@ constexpr const char* kHomeSection = "homePoses";
 /// before the first move (see runArmArcWave()).
 struct ArmArcData
 {
-  std::vector<double> home;   // 7
-  std::vector<double> ready;  // 7: the first point of the arc
-  std::vector<double> out;    // flattened arc, start -> end
-  std::vector<double> back;   // the same, reversed
+  sensor_msgs::msg::JointState home;
+  sensor_msgs::msg::JointState ready;              // the first point of the arc
+  std::vector<sensor_msgs::msg::JointState> out;   // arc, start -> end
+  std::vector<sensor_msgs::msg::JointState> back;  // the same, reversed
 };
 
-/// Flattens a list of per-waypoint joint vectors into one stride-DOF vector,
-/// in forward or reversed point order, for moveToJointSequence().
-std::vector<double> flattenArc(const std::vector<std::vector<double>>& points, bool reversed)
+/// Names each of `points` (7 or 8 raw values, whichever `section` was
+/// recorded with) against `side_prefix` (see common::jointStateFor), in
+/// forward or reversed point order, for moveToJointSequence().
+std::vector<sensor_msgs::msg::JointState> buildArc(
+    const std::string& side_prefix, const std::vector<std::vector<double>>& points, bool reversed)
 {
-  std::vector<double> flat;
-  if (points.empty()) return flat;
-  flat.reserve(points.size() * points.front().size());
+  std::vector<sensor_msgs::msg::JointState> arc;
+  arc.reserve(points.size());
   for (std::size_t i = 0; i < points.size(); ++i) {
     const std::size_t k = reversed ? points.size() - 1 - i : i;
-    flat.insert(flat.end(), points[k].begin(), points[k].end());
+    arc.push_back(common::jointStateFor(side_prefix, points[k]));
   }
-  return flat;
+  return arc;
 }
 
 /// Shared body for waveLeftArmEllipse()/waveRightArmEllipse() - same logic,
@@ -233,17 +234,19 @@ void runArmArcWave(BuiltinContext& ctx, BuiltinAction::DoneCallback done,
   auto cancelled = ctx.cancelled;
   auto logger = ctx.node->get_logger();
 
+  const std::string side_prefix = common::sidePrefixForGroup(arm);
+
   auto wave = std::make_shared<ArmArcData>();
   try {
-    wave->home = source->loadWaypoint(home_waypoint);
+    wave->home = common::jointStateFor(side_prefix, source->loadWaypoint(home_waypoint));
     const auto points = source->loadSection(section);
     if (points.empty()) {
       done(false, std::string(section) + " is empty");
       return;
     }
-    wave->ready = points.front();
-    wave->out = flattenArc(points, false);
-    wave->back = flattenArc(points, true);
+    wave->ready = common::jointStateFor(side_prefix, points.front());
+    wave->out = buildArc(side_prefix, points, false);
+    wave->back = buildArc(side_prefix, points, true);
   } catch (const std::exception& e) {
     done(false, std::string("could not read the wave data: ") + e.what() +
                 " (seed the store: ros2 run qvic_2026 sequence_store_cli.py import "
@@ -418,9 +421,9 @@ BuiltinAction waveLeftArm()
     auto cancelled = ctx.cancelled;
     auto logger = ctx.node->get_logger();
 
-    std::vector<double> home;
+    sensor_msgs::msg::JointState home;
     try {
-      home = source->loadWaypoint("homePoses/laHomeAngle");
+      home = common::jointStateFor("left_", source->loadWaypoint("homePoses/laHomeAngle"));
     } catch (const std::exception& e) {
       done(false, std::string("could not read the left home waypoint: ") + e.what());
       return;
@@ -437,7 +440,8 @@ BuiltinAction waveLeftArm()
       RCLCPP_INFO(logger, "action_04: sweep %d (%s)", ++(*cycle), to_end ? "end" : "start");
 
       skill->moveToJoint(
-        "left_arm", to_end ? kWaveLeftArmEnd : kWaveLeftArmStart, kWaveProfile, 0.0, 0.0,
+        "left_arm", common::jointStateFor("left_", to_end ? kWaveLeftArmEnd : kWaveLeftArmStart),
+        kWaveProfile, 0.0, 0.0,
         [sweep, to_end, done](bool ok, const std::string& error) {
           if (!ok) {
             done(false, error);
@@ -490,9 +494,9 @@ BuiltinAction waveRightArm()
     auto cancelled = ctx.cancelled;
     auto logger = ctx.node->get_logger();
 
-    std::vector<double> home;
+    sensor_msgs::msg::JointState home;
     try {
-      home = source->loadWaypoint("homePoses/raHomeAngle");
+      home = common::jointStateFor("right_", source->loadWaypoint("homePoses/raHomeAngle"));
     } catch (const std::exception& e) {
       done(false, std::string("could not read the right home waypoint: ") + e.what());
       return;
@@ -509,7 +513,8 @@ BuiltinAction waveRightArm()
       RCLCPP_INFO(logger, "action_05: sweep %d (%s)", ++(*cycle), to_end ? "end" : "start");
 
       skill->moveToJoint(
-        "right_arm", to_end ? kWaveRightArmEnd : kWaveRightArmStart, kWaveProfile, 0.0, 0.0,
+        "right_arm", common::jointStateFor("right_", to_end ? kWaveRightArmEnd : kWaveRightArmStart),
+        kWaveProfile, 0.0, 0.0,
         [sweep, to_end, done](bool ok, const std::string& error) {
           if (!ok) {
             done(false, error);
@@ -563,9 +568,9 @@ BuiltinAction loopRightArm()
     auto cancelled = ctx.cancelled;
     auto logger = ctx.node->get_logger();
 
-    std::vector<double> home;
+    sensor_msgs::msg::JointState home;
     try {
-      home = source->loadWaypoint("homePoses/raHomeAngle");
+      home = common::jointStateFor("right_", source->loadWaypoint("homePoses/raHomeAngle"));
     } catch (const std::exception& e) {
       done(false, std::string("could not read the right home waypoint: ") + e.what());
       return;
@@ -582,7 +587,8 @@ BuiltinAction loopRightArm()
       RCLCPP_INFO(logger, "action_06: loop %d (%s)", ++(*cycle), to_end ? "end" : "start");
 
       skill->moveToJoint(
-        "right_arm", to_end ? kLoopRightArmEnd : kLoopRightArmStart, kWaveProfile, 0.0, 0.0,
+        "right_arm", common::jointStateFor("right_", to_end ? kLoopRightArmEnd : kLoopRightArmStart),
+        kWaveProfile, 0.0, 0.0,
         [loop, to_end, done](bool ok, const std::string& error) {
           if (!ok) {
             done(false, error);
@@ -639,9 +645,9 @@ BuiltinAction loopLeftArm()
     auto cancelled = ctx.cancelled;
     auto logger = ctx.node->get_logger();
 
-    std::vector<double> home;
+    sensor_msgs::msg::JointState home;
     try {
-      home = source->loadWaypoint("homePoses/laHomeAngle");
+      home = common::jointStateFor("left_", source->loadWaypoint("homePoses/laHomeAngle"));
     } catch (const std::exception& e) {
       done(false, std::string("could not read the left home waypoint: ") + e.what());
       return;
@@ -658,7 +664,8 @@ BuiltinAction loopLeftArm()
       RCLCPP_INFO(logger, "action_07: loop %d (%s)", ++(*cycle), to_end ? "end" : "start");
 
       skill->moveToJoint(
-        "left_arm", to_end ? kLoopLeftArmEnd : kLoopLeftArmStart, kWaveProfile, 0.0, 0.0,
+        "left_arm", common::jointStateFor("left_", to_end ? kLoopLeftArmEnd : kLoopLeftArmStart),
+        kWaveProfile, 0.0, 0.0,
         [loop, to_end, done](bool ok, const std::string& error) {
           if (!ok) {
             done(false, error);
@@ -690,11 +697,15 @@ BuiltinAction loopLeftArm()
 }  // namespace
 
 // ── action_09: show pose ─────────────────────────────────────────────────
-// Static both-arms pose (no sweep/loop) - one move, then done. Order matches
-// the "both_arms" SRDF group (<group name="left_arm"/><group name="right_arm"/>):
-// 7 left joints followed by 7 right joints.
-const std::vector<double> kShowPose = {
-  0.0, -12.0 * kDeg, 0.0, 48.0 * kDeg, 0.0, 0.0, 0.0,
+// Static both-arms pose (no sweep/loop) - one move, then done. Split left/
+// right (rather than one flat 14-value array implicitly ordered to match
+// the "both_arms" SRDF group) so each half is named against its own side
+// via common::jointStateFor - see showPose()'s run body. This is exactly
+// the both_arms case that used to hard-fail with "joint target has 14
+// value(s) but group 'both_arms' needs 16" under amazing_hand.
+const std::vector<double> kShowPoseLeft = {
+  0.0, -12.0 * kDeg, 0.0, 48.0 * kDeg, 0.0, 0.0, 0.0};
+const std::vector<double> kShowPoseRight = {
   0.0, 12.0 * kDeg, 0.0, 48.0 * kDeg, 0.0, 0.0, 0.0};
 
 /// action_09: single move of both arms to a fixed hardcoded "show" pose (no sweep/loop).
@@ -709,10 +720,13 @@ BuiltinAction showPose()
   action.run = [](BuiltinContext& ctx, BuiltinAction::DoneCallback done) {
     auto skill = ctx.skill;
 
+    sensor_msgs::msg::JointState show_pose = common::jointStateFor("left_", kShowPoseLeft);
+    common::appendJointState(show_pose, common::jointStateFor("right_", kShowPoseRight));
+
     // "safe_rrt" (OMPL), not "fast_ptp" (Pilz PTP) - see homeBothArms' note
     // above, Pilz PTP fails to plan for the composite "both_arms" group.
     skill->moveToJoint(
-      "both_arms", kShowPose, "safe_rrt", 0.0, 0.0,
+      "both_arms", show_pose, "safe_rrt", 0.0, 0.0,
       [done](bool ok, const std::string& error) {
         if (!ok) {
           done(false, "show move failed: " + error);

@@ -1,5 +1,6 @@
 #include <openarm_demo/openarm_demo_node.h>
 #include <common/yaml_parser.hpp>
+#include <common/joint_names.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <iostream>
@@ -133,7 +134,10 @@ namespace openarm_demo
         goal.arm = arm;
         goal.planner_profile = "safe_rrt";
         goal.planning_mode = "normal";
-        goal.joint_targets = joints;
+        // Named against `arm`'s single side - this demo path has no
+        // both_arms case (see common::jointStateFor / sequence_fsm.cpp for
+        // the both_arms-combining version).
+        goal.joint_target = common::jointStateFor(common::sidePrefixForGroup(arm), joints);
         goal.velocity_override = 0.0;
         goal.position_only = false;
 

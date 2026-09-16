@@ -11,6 +11,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(planning_interface REQUIRED)
@@ -38,6 +39,7 @@ ament_target_dependencies(robot_skills
   rclcpp
   rclcpp_action
   geometry_msgs
+  sensor_msgs
   moveit_msgs
   moveit_core
   planning_interface
@@ -58,6 +60,7 @@ ament_target_dependencies(robot_skills_node
   rclcpp
   rclcpp_action
   geometry_msgs
+  sensor_msgs
   moveit_msgs
   moveit_core
   planning_interface
@@ -83,6 +86,7 @@ ament_export_dependencies(
   rclcpp
   rclcpp_action
   geometry_msgs
+  sensor_msgs
   moveit_msgs
   moveit_core
   planning_interface

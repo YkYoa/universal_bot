@@ -11,7 +11,7 @@ SkillClient::SkillClient(const rclcpp::Node::SharedPtr& node, const std::string&
 }
 
 void SkillClient::moveToJoint(
-  const std::string& arm, const std::vector<double>& joint_targets, const std::string& planner_profile,
+  const std::string& arm, const sensor_msgs::msg::JointState& joint_target, const std::string& planner_profile,
   double velocity_scaling, double acceleration_scaling, ResultCallback callback)
 {
   ExecuteSkill::Goal goal;
@@ -19,7 +19,7 @@ void SkillClient::moveToJoint(
   goal.arm = arm;
   goal.planner_profile = planner_profile;
   goal.planning_mode = "normal";
-  goal.joint_targets = joint_targets;
+  goal.joint_target = joint_target;
   goal.velocity_override = velocity_scaling;
   goal.acceleration_override = acceleration_scaling;
   goal.position_only = false;
@@ -43,8 +43,9 @@ void SkillClient::moveToNamedPose(
 }
 
 void SkillClient::moveToJointSequence(
-  const std::string& arm, const std::vector<double>& joint_sequence, const std::string& planner_profile,
-  double velocity_scaling, double acceleration_scaling, ResultCallback callback)
+  const std::string& arm, const std::vector<sensor_msgs::msg::JointState>& joint_sequence,
+  const std::string& planner_profile, double velocity_scaling, double acceleration_scaling,
+  ResultCallback callback)
 {
   ExecuteSkill::Goal goal;
   goal.skill_name = "move_to_joint_sequence";

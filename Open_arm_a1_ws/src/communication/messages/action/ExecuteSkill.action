@@ -19,8 +19,15 @@ geometry_msgs/PoseStamped[] waypoints     # for cartesian_move
 float64 velocity_override                 # 0 = use profile default
 float64 acceleration_override             # 0 = use profile default
 bool position_only                        # skip orientation constraint
-float64[] joint_targets                   # for move_to_joint
-float64[] joint_sequence                  # for move_to_joint_sequence; flat, stride-7 chunks
+sensor_msgs/JointState joint_target        # for move_to_joint - name[i] pairs with
+                                           # position[i]; "both_arms" carries both
+                                           # sides' joints in one message (see
+                                           # common::appendJointState). Resolved by
+                                           # name against the live robot model, not
+                                           # positional order - see common::armJointNames.
+sensor_msgs/JointState[] joint_sequence    # for move_to_joint_sequence - each
+                                           # waypoint names its own joints
+                                           # independently; no assumed stride/DOF.
 ---
 # ── Result ────────────────────────────────────────────────────
 bool success

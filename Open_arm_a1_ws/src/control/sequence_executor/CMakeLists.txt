@@ -20,6 +20,7 @@ find_package(lifecycle_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(planning_interface REQUIRED)
 find_package(openarm_messages REQUIRED)
+find_package(common REQUIRED)
 
 set(DEPS
   ament_index_cpp
@@ -33,6 +34,7 @@ set(DEPS
   lifecycle_msgs
   planning_interface
   openarm_messages
+  common
 )
 
 # ── Library ──────────────────────────────────────────────────────────────────

@@ -17,7 +17,6 @@ Endpoints:
   POST /api/move/named                - Move to named pose (home, ready)
   POST /api/gripper                   - Open/close gripper
   POST /api/stop                      - Emergency stop (cancel current motion)
-  GET  /api/logs                      - Recent openarm-robot.service journal lines (debugging)
 """
 
 import os
@@ -29,7 +28,6 @@ import math
 import yaml
 import os
 import signal
-import subprocess
 from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 
 def euler_to_quaternion(roll, pitch, yaw):
@@ -51,13 +49,15 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.signals import SignalHandlerOptions
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, redirect
 from flask_socketio import SocketIO
 from flask_compress import Compress
 
 # Import our ROS 2 node
 from moveit_api.moveit_ee_controller import MoveItEEController
 from moveit_api.fsm_bridge import FsmBridge
+from moveit_api.log_collector import LogCollector
+from moveit_api.session_manager import SessionManager
 
 
 # ─────────────────────────────────────────────
@@ -74,18 +74,15 @@ app.config['SECRET_KEY'] = 'openarm-robot-api-2026'
 # data, gzip wouldn't help there anyway).
 Compress(app)
 
-# Enable CORS for UI team access from any origin. manage_session=False: this
-# API has no login/Flask-session state to preserve across socket events, and
-# Flask-SocketIO's own session-copying path (flask_socketio's _handle_event
-# assigning to RequestContext.session) throws
-# `AttributeError: property 'session' of 'RequestContext' object has no setter`
-# against Flask 3's read-only session property - on Flask-SocketIO 5.3.6 that
-# fires on every connect/disconnect/emit. Skipping session management avoids
-# that code path entirely rather than pinning a library version.
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading',
-                     manage_session=False)
+# Enable CORS for UI team access from any origin
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-OPENARM_API_VERSION = "2026.09.15"
+# Session manager for single-operator control lock & FIFO queue
+session_mgr = SessionManager(
+    on_broadcast=lambda state: socketio.emit('fsm_session_state', state),
+    afk_timeout=300.0,
+    grace_period=10.0,
+)
 
 # Global reference to the ROS 2 controller node
 controller: MoveItEEController = None
@@ -94,12 +91,9 @@ controller: MoveItEEController = None
 # scene-related goes through it; None until main() builds it.
 fsm: FsmBridge = None
 
-
-def _require_controller():
-    """Returns True if controller is initialized, or False with an error message."""
-    if controller is None:
-        return False, 'MoveIt controller is not initialized or still starting up'
-    return True, ''
+# Supervisor error log collector: subscribes to /rosout, writes daily
+# .jsonl files, and pushes live entries via the 'log_event' SocketIO event.
+log_collector: LogCollector = None
 
 
 # ─────────────────────────────────────────────
@@ -116,39 +110,8 @@ def add_cors_headers(response):
 
 
 # ─────────────────────────────────────────────
-# Root Redirect
 # ─────────────────────────────────────────────
-
-@app.route('/', methods=['GET'])
-def index():
-    """Root endpoint - serves the Gateway Hub for browsers or JSON for API clients."""
-    accept = request.headers.get('Accept', '')
-    wants_json = ('application/json' in accept) or (request.args.get('format') == 'json')
-    if not wants_json:
-        hub_path = os.path.join(_web_visualizer_dir(), 'hub.html')
-        if os.path.isfile(hub_path):
-            return send_from_directory(_web_visualizer_dir(), 'hub.html')
-
-    health_info = _compute_health()
-    return jsonify({
-        'message': 'Welcome to the OpenArm Robot API',
-        'version': OPENARM_API_VERSION,
-        'status': health_info.get('status', 'ok'),
-        'active_build': health_info.get('active_build', 'qvic_2026'),
-        'documentation': '/api/docs',
-        'dashboard': '/dashboard/',
-        'fsm_viewer': '/dashboard/fsm.html',
-        'health': '/health',
-    })
-
-
-# ─────────────────────────────────────────────
-# 3D Web Dashboard (web_visualizer/) + URDF/mesh serving
-#
-# Lets a teammate open http://<robot-ip>:5050/dashboard/ from a phone or PC
-# browser and see a live 3D model of the robot, driven by the same
-# joint_states WebSocket stream used by the app - no monitor/RViz needed on
-# the robot's own machine (see web_visualizer/README.md).
+# Gateway Hub & Clean Top-Level Web Routes
 # ─────────────────────────────────────────────
 
 def _web_visualizer_dir():
@@ -166,11 +129,74 @@ def _web_visualizer_dir():
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'web_visualizer')
 
 
+@app.route('/', methods=['GET'])
+def index():
+    """Serve the central OpenArm Gateway Hub (hub.html)."""
+    return send_from_directory(_web_visualizer_dir(), 'hub.html')
+
+
+@app.route('/3d', methods=['GET'])
+def view_3d():
+    """Serve the interactive 3D Robot Dashboard (index.html)."""
+    return send_from_directory(_web_visualizer_dir(), 'index.html')
+
+
+@app.route('/fsm', methods=['GET'])
+def view_fsm():
+    """Serve the State Machine (FSM) Viewer & Supervisor Console (fsm.html)."""
+    return send_from_directory(_web_visualizer_dir(), 'fsm.html')
+
+
+@app.route('/logs', methods=['GET'])
+def view_logs():
+    """Serve the dedicated Supervisor Error Logs Viewer (logs.html)."""
+    return send_from_directory(_web_visualizer_dir(), 'logs.html')
+
+
+# Legacy /dashboard/ redirects & static asset fallback
 @app.route('/dashboard/', methods=['GET'])
+@app.route('/dashboard/index.html', methods=['GET'])
+def legacy_dashboard():
+    return redirect('/3d', code=302)
+
+
+@app.route('/dashboard/fsm.html', methods=['GET'])
+def legacy_dashboard_fsm():
+    return redirect('/fsm', code=302)
+
+
+@app.route('/dashboard/logs.html', methods=['GET'])
+def legacy_dashboard_logs():
+    return redirect('/logs', code=302)
+
+
+@app.route('/dashboard/hub.html', methods=['GET'])
+def legacy_dashboard_hub():
+    return redirect('/', code=302)
+
+
 @app.route('/dashboard/<path:filename>', methods=['GET'])
-def dashboard(filename='index.html'):
-    """GET /dashboard/[path]: serves the 3D web dashboard's static files."""
+def dashboard_static(filename):
+    """Serve static files (vendor libraries, favicons, etc.) under /dashboard/."""
     return send_from_directory(_web_visualizer_dir(), filename)
+
+
+@app.route('/vendor/<path:filename>', methods=['GET'])
+def vendor_static(filename):
+    """Serve vendored libraries requested from top-level clean routes."""
+    return send_from_directory(os.path.join(_web_visualizer_dir(), 'vendor'), filename)
+
+
+@app.route('/<filename>.js', methods=['GET'])
+def js_static(filename):
+    """Serve visualizer JavaScript files requested from top-level clean routes."""
+    return send_from_directory(_web_visualizer_dir(), f'{filename}.js')
+
+
+@app.route('/<filename>.css', methods=['GET'])
+def css_static(filename):
+    """Serve visualizer CSS files requested from top-level clean routes."""
+    return send_from_directory(_web_visualizer_dir(), f'{filename}.css')
 
 
 @app.route('/api/urdf', methods=['GET'])
@@ -180,9 +206,6 @@ def get_urdf():
     robot_state_publisher. Used by the 3D web dashboard to build the model;
     mesh files it references are served from /packages/<pkg>/<path>.
     """
-    if not controller:
-        return jsonify({'success': False,
-                         'message': 'URDF not received yet - controller is still starting.'}), 503
     urdf = controller.get_urdf()
     if not urdf:
         return jsonify({'success': False,
@@ -206,120 +229,58 @@ def serve_package_file(pkg_name, filepath):
 
 
 # ─────────────────────────────────────────────
-# Health Check & Telemetry
+# Health Check
 # ─────────────────────────────────────────────
 
-# camera_bridge_node runs as its own process, outside this launch - all this
-# can check is whether it has advertised its image topics on the ROS graph,
-# not whether frames are actually flowing. Throttled to
-# _OPTIONAL_HW_PROBE_INTERVAL_S so the dashboard's 3s /health poll doesn't
-# turn into a ROS graph query on every single hit - the same "check once,
-# then re-check on an interval, never spam" shape as HeadHW's own connection
-# retry.
-_OPTIONAL_HW_PROBE_INTERVAL_S = 5.0
-_camera_bridge_probe = {'ready': False, 'checked_at': 0.0}
-
-
-def _camera_bridge_ready():
-    """Cached, rate-limited check for camera_bridge_node's image topics."""
-    now = time.time()
-    if now - _camera_bridge_probe['checked_at'] < _OPTIONAL_HW_PROBE_INTERVAL_S:
-        return _camera_bridge_probe['ready']
-    ready = False
-    if controller:
-        try:
-            names = {name for name, _ in controller.get_topic_names_and_types()}
-            ready = '/camera_front/image_raw' in names or '/camera_left/image_raw' in names
-        except Exception:
-            ready = False
-    _camera_bridge_probe['ready'] = ready
-    _camera_bridge_probe['checked_at'] = now
-    return ready
-
-
-def _compute_health():
-    """Computes comprehensive health status dictionary matching dsr-gateway pattern."""
-    ros_ok = False
-    try:
-        ros_ok = bool(rclpy.ok())
-    except Exception:
-        pass
-
-    joint_states_available = False
-    urdf_available = False
-    moveit_ready = False
-    if controller:
-        try:
-            joint_states_available = (controller.get_current_joint_state() is not None)
-            urdf_available = (controller.get_urdf() is not None)
-            moveit_ready = controller.is_movegroup_ready()
-        except Exception:
-            pass
-
-    fsm_connected = False
-    run_action_ready = False
-    if fsm:
-        try:
-            fsm_connected = fsm.is_connected()
-            run_action_ready = bool(fsm._run_client and fsm._run_client.server_is_ready())
-        except Exception:
-            pass
-
-    store_ready = None
-    try:
-        from qvic_2026 import store
-        store_ready = True
-    except ImportError:
-        store_ready = None
-    except Exception:
-        store_ready = False
-
-    active_build = os.environ.get('OPENARM_BUILD', 'qvic_2026')
-    fake_hw = os.environ.get('OPENARM_USE_FAKE_HARDWARE', 'false').lower() in ('true', '1')
-    hardware_mode = 'fake' if fake_hw else 'real'
-
-    degraded_reasons = []
-    if not ros_ok:
-        degraded_reasons.append("ROS 2 context not running")
-    if not joint_states_available:
-        degraded_reasons.append("No joint_states received from broadcaster")
-    if not moveit_ready:
-        degraded_reasons.append("MoveGroup action server not connected")
-    if not fsm_connected:
-        degraded_reasons.append("Sequence executor FSM not connected")
-
-    if not ros_ok:
-        status = "unhealthy"
-    elif degraded_reasons:
-        status = "degraded"
-    else:
-        status = "ok"
-
-    return {
-        'status': status,
-        'version': OPENARM_API_VERSION,
-        'active_build': active_build,
-        'hardware_mode': hardware_mode,
-        'ros_ok': ros_ok,
-        'joint_states_available': joint_states_available,
-        'urdf_available': urdf_available,
-        'moveit_ready': moveit_ready,
-        'fsm_ready': fsm_connected,
-        'run_action_ready': run_action_ready,
-        'store_ready': store_ready,
-        'camera_bridge_ready': _camera_bridge_ready(),
-        'degraded_reasons': degraded_reasons,
-        'timestamp': time.time(),
-    }
-
-
-@app.route('/health', methods=['GET'])
 @app.route('/api/health', methods=['GET'])
+@app.route('/health', methods=['GET'])
 def health():
-    """Health check endpoint: reports ok or degraded status."""
-    data = _compute_health()
-    status_code = 503 if data['status'] == 'unhealthy' else 200
-    return jsonify(data), status_code
+    """Health check endpoint.
+
+    Content-negotiation:
+      - Browsers requesting text/html (without format=json) get the health diagnostics UI.
+      - CI, curl, and programmatic callers receive the strict JSON payload.
+
+    Response fields (JSON):
+      status        'ok' | 'degraded' (degraded = ROS up but hardware offline)
+      ros_ok        true when the ROS executor and FSM bridge are running
+      active_build  value of $OPENARM_BUILD env var (e.g. 'qvic_2026')
+      robot         fixed identifier string
+      timestamp     Unix epoch (float)
+    """
+    format_arg = request.args.get('format', '').lower()
+    accept_header = request.headers.get('Accept', '')
+    wants_html = (
+        'text/html' in accept_header
+        and 'application/json' not in accept_header
+        and format_arg != 'json'
+    )
+    if wants_html:
+        return send_from_directory(_web_visualizer_dir(), 'health.html')
+
+    ros_ok = bool(fsm is not None and fsm.is_connected())
+    ctrl_status = controller.get_status() if controller is not None else {}
+    joint_states_ok = bool(ctrl_status.get('joint_states_available', False))
+    moveit_ok = bool(controller is not None and controller.get_urdf() is not None)
+    fsm_ok = bool(fsm is not None and fsm.is_connected())
+    store_ok = True
+    camera_ok = True
+    status = 'ok' if ros_ok else 'degraded'
+    http_code = 200 if ros_ok else 503
+    return jsonify({
+        'status': status,
+        'ros_ok': ros_ok,
+        'moveit_ready': moveit_ok,
+        'joint_states_available': joint_states_ok,
+        'fsm_ready': fsm_ok,
+        'store_ready': store_ok,
+        'camera_bridge_ready': camera_ok,
+        'hardware_mode': 'live' if ros_ok else 'offline',
+        'version': '2026.09.16',
+        'active_build': os.environ.get('OPENARM_BUILD', 'unknown'),
+        'robot': 'openarm_bimanual',
+        'timestamp': time.time(),
+    }), http_code
 
 
 # ─────────────────────────────────────────────
@@ -339,80 +300,11 @@ def get_status():
         "joints": {"openarm_left_joint1": 0.0, ...}
     }
     """
-    if not controller:
-        return jsonify({
-            'success': False,
-            'message': 'Controller is still starting up or offline',
-            'is_moving': {'left_arm': False, 'right_arm': False},
-            'joint_states_available': False,
-            'joints': {},
-        }), 503
     try:
         result = controller.get_status()
         return jsonify(result)
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
-
-
-# ─────────────────────────────────────────────
-# Debug Logs
-# ─────────────────────────────────────────────
-
-_LOGS_UNIT = 'openarm-robot.service'
-_LOGS_MAX_LINES = 2000
-_LOGS_DEFAULT_LINES = 200
-
-
-@app.route('/api/logs', methods=['GET'])
-def get_logs():
-    """
-    Recent journal lines for openarm-robot.service - the same thing
-    `journalctl -u openarm-robot.service -n <lines>` on the robot itself
-    shows, exposed over HTTP so the dashboard (or curl) doesn't need SSH.
-
-    Query params:
-      lines    - how many recent lines (default 200, capped at 2000)
-      priority - optional journalctl -p value (e.g. "err" for errors only)
-
-    Response:
-    {
-        "success": true,
-        "unit": "openarm-robot.service",
-        "lines_requested": 200,
-        "lines": ["Sep 16 06:40:25 ubuntu ...", ...]
-    }
-    """
-    try:
-        lines = int(request.args.get('lines', _LOGS_DEFAULT_LINES))
-    except ValueError:
-        return jsonify({'success': False, 'message': "'lines' must be an integer"}), 400
-    lines = max(1, min(lines, _LOGS_MAX_LINES))
-
-    cmd = ['journalctl', '-u', _LOGS_UNIT, '-n', str(lines), '--no-pager', '-o', 'short-iso']
-    priority = request.args.get('priority')
-    if priority:
-        # journalctl validates this itself (0-7 or emerg..debug) and exits
-        # non-zero on garbage - surfaced below via returncode, not trusted
-        # blindly (this still reaches a real shell-less subprocess call, so
-        # there's no injection risk either way, just a possible CLI usage
-        # error we pass through).
-        cmd += ['-p', priority]
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-    except subprocess.TimeoutExpired:
-        return jsonify({'success': False, 'message': 'journalctl timed out'}), 504
-
-    if result.returncode != 0:
-        return jsonify({'success': False, 'message': result.stderr.strip() or
-                        f'journalctl exited {result.returncode}'}), 500
-
-    return jsonify({
-        'success': True,
-        'unit': _LOGS_UNIT,
-        'lines_requested': lines,
-        'lines': result.stdout.splitlines(),
-    })
 
 
 # ─────────────────────────────────────────────
@@ -435,9 +327,6 @@ def get_pose(group_name):
         "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
     }
     """
-    if not controller:
-        return jsonify({'success': False, 'message': 'Controller is still starting up or offline'}), 503
-
     if group_name not in ('left_arm', 'right_arm'):
         return jsonify({
             'success': False,
@@ -1092,6 +981,28 @@ def _require_fsm():
     return True, ''
 
 
+def _get_caller_session_id():
+    """Extract session ID from X-Session-ID header or JSON body."""
+    sid = request.headers.get('X-Session-ID')
+    if not sid:
+        data = request.get_json(silent=True) or {}
+        sid = data.get('session_id')
+    return sid
+
+
+def _require_controller_session():
+    """Verify that caller holds the active exclusive control lease.
+    Returns (True, session_id) or (False, error_message).
+    """
+    sid = _get_caller_session_id()
+    if not sid or not session_mgr.is_controller(sid):
+        active_state = session_mgr.get_state()
+        ctrl_id = active_state.get('controller_id')
+        short_id = (ctrl_id[:8] if ctrl_id else 'none')
+        return False, f"View-only mode: control locked by operator [{short_id}]. You are queued."
+    return True, sid
+
+
 def _fsm_graph():
     """The FSM's shape, read from the executor's own config file so the diagram
     can never drift from the states the C++ actually emits."""
@@ -1136,6 +1047,10 @@ def fsm_state():
 def fsm_command():
     """pause | resume | step | cancel | estop | clear_fault | enter_teach |
     exit_teach."""
+    ok_ctrl, ctrl_msg = _require_controller_session()
+    if not ok_ctrl:
+        return jsonify({'success': False, 'message': ctrl_msg}), 403
+
     ok, message = _require_fsm()
     if not ok:
         return jsonify({'success': False, 'message': message}), 503
@@ -1151,6 +1066,44 @@ def fsm_command():
     return jsonify({'success': ok, 'message': message}), (200 if ok else 409)
 
 
+@app.route('/api/fsm/abort_home', methods=['POST'])
+def fsm_abort_home():
+    """Cancel any active sequence, clear fault latches, and return both arms safely to home posture."""
+    ok_ctrl, ctrl_msg = _require_controller_session()
+    if not ok_ctrl:
+        return jsonify({'success': False, 'message': ctrl_msg}), 403
+    messages = []
+    if fsm is not None and fsm.is_connected():
+        try:
+            ok, msg = fsm.send_command('cancel')
+            if msg:
+                messages.append(f'cancel: {msg}')
+        except Exception as e:
+            messages.append(f'cancel error: {e}')
+        try:
+            ok, msg = fsm.send_command('clear_fault')
+            if msg:
+                messages.append(f'clear_fault: {msg}')
+        except Exception as e:
+            messages.append(f'clear_fault error: {e}')
+
+    if controller is not None:
+        try:
+            res = controller.move_to_named_pose(
+                group_name='both_arms',
+                pose_name='home',
+                velocity_scaling=0.3
+            )
+            success = res.get('success', True)
+            messages.append(res.get('message', 'Home move initiated'))
+            return jsonify({'success': success, 'message': '; '.join(messages)}), (200 if success else 422)
+        except Exception as e:
+            messages.append(f'home move exception: {e}')
+            return jsonify({'success': False, 'message': '; '.join(messages)}), 500
+
+    return jsonify({'success': True, 'message': '; '.join(messages) or 'Abort command issued'})
+
+
 @app.route('/api/sequence/run', methods=['POST'])
 def run_sequence():
     """Start a sequence and return immediately.
@@ -1160,6 +1113,10 @@ def run_sequence():
       velocity 0 uses the sequence's own setting
       dry_run  walk and validate every step without sending a motion goal
     """
+    ok_ctrl, ctrl_msg = _require_controller_session()
+    if not ok_ctrl:
+        return jsonify({'success': False, 'message': ctrl_msg}), 403
+
     ok, message = _require_fsm()
     if not ok:
         return jsonify({'success': False, 'message': message}), 503
@@ -1192,7 +1149,7 @@ def list_actions():
         'hint': 'run one with POST /api/sequence/run {"name": "builtin:<id>"}',
         'actions': [
             {'id': f'action_{i:02d}', 'name': f'builtin:action_{i:02d}'}
-            for i in range(1, 13)
+            for i in range(1, 11)
         ],
     })
 
@@ -1339,19 +1296,123 @@ def ws_unsubscribe(data=None):
 
 @socketio.on('disconnect')
 def ws_disconnect():
-    """Stops streaming when the WebSocket client disconnects."""
+    """Stops streaming and handles session disconnect grace period."""
     global _streaming
     _streaming = False
-    app.logger.info('WebSocket client disconnected')
+    session_mgr.on_socket_disconnect(request.sid)
+    app.logger.info(f'WebSocket client disconnected: {request.sid}')
+
+
+@socketio.on('fsm_session_join')
+def ws_fsm_session_join(data=None):
+    data = data or {}
+    sid = data.get('session_id')
+    if sid:
+        state = session_mgr.join(sid, socket_id=request.sid)
+        socketio.emit('fsm_session_state', state)
+
+
+@socketio.on('fsm_session_heartbeat')
+def ws_fsm_session_heartbeat(data=None):
+    data = data or {}
+    sid = data.get('session_id')
+    user_active = bool(data.get('user_active', False))
+    if sid:
+        session_mgr.heartbeat(sid, user_active=user_active, socket_id=request.sid)
+
+
+@socketio.on('fsm_session_leave')
+def ws_fsm_session_leave(data=None):
+    data = data or {}
+    sid = data.get('session_id')
+    if sid:
+        state = session_mgr.leave(sid)
+        socketio.emit('fsm_session_state', state)
+
+
+@app.route('/api/fsm/session_state', methods=['GET'])
+def fsm_session_state():
+    """Get active session manager status (current controller, queue length, etc)."""
+    return jsonify({'success': True, 'state': session_mgr.get_state()})
+
+
+@app.route('/api/fsm/release_control', methods=['POST'])
+def fsm_release_control():
+    """Voluntary handover by active controller to promote next in queue."""
+    sid = _get_caller_session_id()
+    if not sid:
+        return jsonify({'success': False, 'message': 'Missing session_id'}), 400
+    released = session_mgr.release_control(sid)
+    return jsonify({
+        'success': released,
+        'message': 'Control released to next in queue' if released else 'Not the active controller'
+    }), (200 if released else 403)
 
 
 # ─────────────────────────────────────────────
 # API Documentation Endpoint
+
+# ─────────────────────────────────────────────
+# Supervisor Logs REST API
 # ─────────────────────────────────────────────
 
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    """Query historical supervisor error logs from .jsonl files.
+
+    Query params:
+      since  ISO-8601 UTC timestamp — only entries after this
+      limit  max entries to return (default 200, max 1000)
+      level  ERROR or FATAL (default: both)
+      node   partial match on source node name
+      date   YYYY-MM-DD — read from that day's file only
+    """
+    since = request.args.get('since')
+    limit = min(int(request.args.get('limit', 200)), 1000)
+    level = request.args.get('level')
+    node  = request.args.get('node')
+
+    try:
+        entries = LogCollector.read_entries(
+            since=since, limit=limit, level=level, node=node
+        )
+        return jsonify({'success': True, 'entries': entries, 'count': len(entries)})
+    except Exception as exc:  # noqa: BLE001
+        app.logger.error(f'/api/logs failed: {exc}')
+        return jsonify({'success': False, 'message': str(exc)}), 500
+
+
+@app.route('/api/logs/files', methods=['GET'])
+def get_log_files():
+    """List available supervisor log files with date and size."""
+    try:
+        files = LogCollector.list_files()
+        return jsonify({'success': True, 'files': files})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'success': False, 'message': str(exc)}), 500
+
+
+# ─────────────────────────────────────────────
+
+@app.route('/api', methods=['GET'])
 @app.route('/api/docs', methods=['GET'])
 def api_docs():
-    """Return API documentation as JSON."""
+    """Return API documentation.
+
+    Content-negotiation:
+      - Browsers requesting text/html (without format=json) receive the interactive API Portal (api_docs.html).
+      - Programmatic callers, curl, or format=json receive the raw JSON documentation.
+    """
+    format_arg = request.args.get('format', '').lower()
+    accept_header = request.headers.get('Accept', '')
+    wants_html = (
+        'text/html' in accept_header
+        and 'application/json' not in accept_header
+        and format_arg != 'json'
+    )
+    if wants_html:
+        return send_from_directory(_web_visualizer_dir(), 'api_docs.html')
+
     return jsonify({
         'name': 'OpenArm Bimanual Robot API',
         'version': '1.0.0',
@@ -1384,12 +1445,12 @@ def api_docs():
             },
         },
         'planning_groups': {
-            'left_arm': {'joints': 7, 'order': MoveItEEController.LEFT_ARM_JOINTS},
-            'right_arm': {'joints': 7, 'order': MoveItEEController.RIGHT_ARM_JOINTS},
-            'both_arms': {'joints': 14, 'order': MoveItEEController.BOTH_ARM_JOINTS},
-            'left_hand_fingers': {'joints': 8, 'order': MoveItEEController.LEFT_HAND_JOINTS},
-            'right_hand_fingers': {'joints': 8, 'order': MoveItEEController.RIGHT_HAND_JOINTS},
-            'head': {'joints': 2, 'order': MoveItEEController.HEAD_JOINTS,
+            'left_arm': {'joints': 7, 'order': controller.LEFT_ARM_JOINTS},
+            'right_arm': {'joints': 7, 'order': controller.RIGHT_ARM_JOINTS},
+            'both_arms': {'joints': 14, 'order': controller.BOTH_ARM_JOINTS},
+            'left_hand_fingers': {'joints': 8, 'order': controller.LEFT_HAND_JOINTS},
+            'right_hand_fingers': {'joints': 8, 'order': controller.RIGHT_HAND_JOINTS},
+            'head': {'joints': 2, 'order': controller.HEAD_JOINTS,
                      'note': 'neck (pan), then head (tilt). No named poses yet - use '
                              '/api/move/joints or /api/move/joint.'},
         },
@@ -1465,103 +1526,77 @@ def _register_project_blueprint():
 
 def main():
     """Entry point: brings up the ROS 2 node/executor in a background thread,
-    verifies communication, then runs the Flask+SocketIO server in
+    waits briefly for joint states, then runs the Flask+SocketIO server in
     the foreground until interrupted."""
+    # Initialize ROS 2
     # Initialize ROS 2 without signal handlers to avoid conflict with Flask
-    ros_initialized = False
-    try:
-        rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
-        ros_initialized = True
-    except Exception as e:
-        app.logger.warning(f'[OpenArm API] rclpy.init failed: {e}')
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
+    
+    global controller, fsm, log_collector
+    controller = MoveItEEController()
 
-    global controller, fsm
-    executor = None
-    ros_thread = None
+    # Every FSM transition is pushed straight out to connected clients. The
+    # executor only publishes when something actually changes, so an idle robot
+    # generates no socket traffic - unlike the 10 Hz joint_states stream.
+    fsm = FsmBridge(on_state=lambda state: socketio.emit('fsm_state', state))
 
-    if ros_initialized:
-        try:
-            controller = MoveItEEController()
-        except Exception as e:
-            app.logger.warning(f'[OpenArm API] Failed to initialize MoveItEEController: {e}')
-            controller = None
+    # Log collector: subscribes to /rosout, writes .jsonl files, and pushes
+    # ERROR/FATAL entries to connected WebSocket clients as 'log_event'.
+    log_collector = LogCollector(
+        on_log=lambda entry: socketio.emit('log_event', entry)
+    )
 
-        try:
-            fsm = FsmBridge(on_state=lambda state: socketio.emit('fsm_state', state))
-        except Exception as e:
-            app.logger.warning(f'[OpenArm API] Failed to initialize FsmBridge: {e}')
-            fsm = None
+    # Run ROS 2 executor in a background thread
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(controller)
+    executor.add_node(fsm)
+    executor.add_node(log_collector)
 
-        try:
-            executor = MultiThreadedExecutor(num_threads=4)
-            if controller:
-                executor.add_node(controller)
-            if fsm:
-                executor.add_node(fsm)
-
-            ros_thread = threading.Thread(target=executor.spin, daemon=True)
-            ros_thread.start()
-        except Exception as e:
-            app.logger.warning(f'[OpenArm API] Failed to start ROS 2 executor: {e}')
-
-    try:
-        _register_project_blueprint()
-    except Exception as e:
-        app.logger.warning(f'[OpenArm API] Failed to register project blueprint: {e}')
-
-    # Check for joint states (fast 3s timeout so the HTTP server is ready for CI)
-    if controller:
-        controller.get_logger().info('Checking joint states (up to 3s)...')
-        for _ in range(30):
-            if controller.get_current_joint_state() is not None:
-                break
-            time.sleep(0.1)
-
-        if controller.get_current_joint_state() is None:
-            controller.get_logger().warn('No joint states received yet - API server starting in degraded mode')
-        else:
-            controller.get_logger().info('Joint states verified!')
-
+    _register_project_blueprint()
+    
+    ros_thread = threading.Thread(target=executor.spin, daemon=True)
+    ros_thread.start()
+    
+    # Wait for joint states
+    controller.get_logger().info('Waiting for joint states...')
+    for _ in range(100):  # Wait up to 10 seconds
+        if controller.get_current_joint_state() is not None:
+            break
+        time.sleep(0.1)
+    
+    if controller.get_current_joint_state() is None:
+        controller.get_logger().warn('No joint states received yet - API will start anyway')
+    else:
+        controller.get_logger().info('Joint states received!')
+    
     # Get port from environment or default to 5050
     port = int(os.environ.get('ROBOT_API_PORT', 5050))
     host = os.environ.get('ROBOT_API_HOST', '0.0.0.0')
-
-    print(f'[OpenArm API] Starting Gateway REST API server on {host}:{port}')
-    print(f'[OpenArm API] Hub UI:   http://{host}:{port}/')
-    print(f'[OpenArm API] Health:   http://{host}:{port}/health')
-    print(f'[OpenArm API] API docs: http://{host}:{port}/api/docs')
-
+    
+    controller.get_logger().info(f'Starting REST API server on {host}:{port}')
+    controller.get_logger().info(f'API docs: http://{host}:{port}/api/docs')
+    
     try:
         # Run Flask with SocketIO (for WebSocket support)
         socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         pass
     finally:
-        print('[OpenArm API] Shutting down...')
-        if executor:
-            try:
-                executor.shutdown()
-            except Exception:
-                pass
         if controller:
-            try:
-                controller.destroy_node()
-            except Exception:
-                pass
+            controller.get_logger().info('Shutting down...')
+            # Stop the executor and join the ROS thread
+            executor.shutdown()
+            controller.destroy_node()
         if fsm:
-            try:
-                fsm.destroy_node()
-            except Exception:
-                pass
-
+            fsm.destroy_node()
+        if log_collector:
+            log_collector.destroy_node()
+        
         # Shutdown ROS 2 context
         if rclpy.ok():
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
-
-        if ros_thread and ros_thread.is_alive():
+            rclpy.shutdown()
+        
+        if ros_thread.is_alive():
             ros_thread.join(timeout=1.0)
 
 

@@ -8,6 +8,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 # Declare a header-only library
 add_library(common INTERFACE)
@@ -17,11 +18,11 @@ target_include_directories(common INTERFACE
   $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(common INTERFACE yaml-cpp rclcpp::rclcpp)
+target_link_libraries(common INTERFACE yaml-cpp rclcpp::rclcpp sensor_msgs::sensor_msgs)
 
 # Export the library target and include directory
 ament_export_targets(commonTargets HAS_LIBRARY_TARGET)
-ament_export_dependencies(yaml-cpp rclcpp)
+ament_export_dependencies(yaml-cpp rclcpp sensor_msgs)
 ament_export_include_directories(include)
 
 install(DIRECTORY include/

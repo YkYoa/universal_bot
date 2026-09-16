@@ -4,6 +4,7 @@
 #include "robot_skills/planning_mode.hpp"
 #include "motion_planner/moveit_cpp_planner_manager.hpp"
 #include "openarm_messages/action/execute_skill.hpp"
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <memory>
@@ -13,7 +14,7 @@ namespace robot_skills
 {
     /// Everything one ExecuteSkill goal needs, decoded from the action goal
     /// into whichever target fields the requested skill actually reads
-    /// (target_pose / named_pose / waypoints / joint_targets / joint_sequence
+    /// (target_pose / named_pose / waypoints / joint_target / joint_sequence
     /// are mutually exclusive in practice, per skill).
     struct SkillRequest
     {
@@ -28,8 +29,8 @@ namespace robot_skills
         double velocity_override = 0.0;
         double acceleration_override = 0.0;
         bool position_only = false;
-        std::vector<double> joint_targets;
-        std::vector<double> joint_sequence;  // flat, stride-7 chunks
+        sensor_msgs::msg::JointState joint_target;
+        std::vector<sensor_msgs::msg::JointState> joint_sequence;  // each waypoint names its own joints
     };
 
     /// Outcome of one execute() call, reported back as the ExecuteSkill result.

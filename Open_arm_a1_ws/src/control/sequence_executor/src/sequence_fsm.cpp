@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <chrono>
 
+#include <common/joint_names.hpp>
+
 #include "sequence_executor/step_parser.hpp"
 
 namespace sequence_executor {
@@ -407,16 +409,24 @@ void SequenceFsm::dispatchMoveJoint(const Step& step)
 
 void SequenceFsm::dispatchMoveJointInto(const Step& step, Done done)
 {
-  std::vector<double> targets;
+  sensor_msgs::msg::JointState target;
   try {
     if (!step.positions.empty()) {
-      targets = step.positions;
-    } else {
-      targets = source_->loadWaypoint(step.waypoint);
-      if (!step.right_waypoint.empty()) {
-        const auto right = source_->loadWaypoint(step.right_waypoint);
-        targets.insert(targets.end(), right.begin(), right.end());
+      // Raw-positions path (Step.positions, set directly by the caller
+      // rather than looked up by section/name) - named against step.arm's
+      // single side. "both_arms" isn't supported here: a flat vector alone
+      // carries no left/right split point, so there is nothing to name it
+      // against - use waypoint/right_waypoint instead.
+      if (step.arm == "both_arms") {
+        done(false, "move_joint: 'positions' does not support arm=both_arms - use waypoint/right_waypoint instead");
+        return;
       }
+      target = common::jointStateFor(common::sidePrefixForGroup(step.arm), step.positions);
+    } else if (!step.right_waypoint.empty()) {
+      target = common::jointStateFor("left_", source_->loadWaypoint(step.waypoint));
+      common::appendJointState(target, common::jointStateFor("right_", source_->loadWaypoint(step.right_waypoint)));
+    } else {
+      target = common::jointStateFor(common::sidePrefixForGroup(step.arm), source_->loadWaypoint(step.waypoint));
     }
   } catch (const std::exception& e) {
     done(false, e.what());
@@ -425,7 +435,7 @@ void SequenceFsm::dispatchMoveJointInto(const Step& step, Done done)
 
   transition(SeqState::STEP_EXECUTING);
   clients_.skill->moveToJoint(
-    step.arm, targets, spec_.planner_profile, velocityFor(step), accelerationFor(step),
+    step.arm, target, spec_.planner_profile, velocityFor(step), accelerationFor(step),
     std::move(done));
 }
 
@@ -456,15 +466,21 @@ void SequenceFsm::dispatchMoveJointSequenceInto(const Step& step, Done done)
            step.exclude_points.end();
   };
 
-  std::vector<double> flat;
+  // When there's no right_section, `left` holds whichever single side
+  // step.arm names (it's "left" only when paired with `right` for a
+  // both_arms sequence - otherwise it's just "the loaded section").
+  const std::string left_prefix = right.empty() ? common::sidePrefixForGroup(step.arm) : "left_";
+
+  std::vector<sensor_msgs::msg::JointState> flat;
   for (std::size_t i = 0; i < left.size(); ++i) {
     if (excluded(i)) {
       continue;
     }
-    flat.insert(flat.end(), left[i].begin(), left[i].end());
+    sensor_msgs::msg::JointState waypoint = common::jointStateFor(left_prefix, left[i]);
     if (!right.empty()) {
-      flat.insert(flat.end(), right[i].begin(), right[i].end());
+      common::appendJointState(waypoint, common::jointStateFor("right_", right[i]));
     }
+    flat.push_back(std::move(waypoint));
   }
 
   if (flat.empty()) {

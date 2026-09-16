@@ -1,4 +1,5 @@
 #include "robot_skills/skills/move_to_joint_sequence_skill.hpp"
+#include <moveit/robot_state/robot_state.hpp>
 
 namespace robot_skills
 {
@@ -26,34 +27,60 @@ SkillResult MoveToJointSequenceSkill::execute(
 
     RCLCPP_INFO(node_->get_logger(), "[MoveToJointSequenceSkill] Planning joint sequence for arm: %s", req.arm.c_str());
 
-    const auto* jmg = planner_->getMoveItCpp()->getRobotModel()->getJointModelGroup(req.arm);
+    auto robot_model = planner_->getMoveItCpp()->getRobotModel();
+    const auto* jmg = robot_model->getJointModelGroup(req.arm);
     if (!jmg) {
         result.success = false;
         result.error_message = "Unknown planning group: " + req.arm;
         RCLCPP_ERROR(node_->get_logger(), "[MoveToJointSequenceSkill] %s", result.error_message.c_str());
         return result;
     }
-    const size_t dof = jmg->getVariableCount();
 
-    if (req.joint_sequence.empty() || req.joint_sequence.size() % dof != 0) {
-        result.success = false;
-        result.error_message = "joint_sequence must be a non-empty, flat array with a multiple-of-" +
-                                std::to_string(dof) + " length (group '" + req.arm + "' has " +
-                                std::to_string(dof) + " DOF).";
-        RCLCPP_ERROR(node_->get_logger(), "[MoveToJointSequenceSkill] %s", result.error_message.c_str());
-        return result;
-    }
-    if (req.joint_sequence.size() < dof * 2) {
+    if (req.joint_sequence.size() < 2) {
         result.success = false;
         result.error_message = "joint_sequence needs at least 2 waypoints (use move_to_joint for a single target).";
         RCLCPP_ERROR(node_->get_logger(), "[MoveToJointSequenceSkill] %s", result.error_message.c_str());
         return result;
     }
 
+    // Resolve each waypoint's name->position pairs against the live robot
+    // model independently (same pattern as MoveToJointSkill) - a waypoint
+    // recorded under one ee_type (e.g. wavePoses' 7-value openarm_hand data)
+    // still resolves correctly against a group booted under another, since
+    // there is no positional stride/DOF to get wrong.
     std::vector<std::vector<double>> waypoints;
-    waypoints.reserve(req.joint_sequence.size() / dof);
-    for (size_t i = 0; i < req.joint_sequence.size(); i += dof) {
-        waypoints.emplace_back(req.joint_sequence.begin() + static_cast<long>(i), req.joint_sequence.begin() + static_cast<long>(i + dof));
+    waypoints.reserve(req.joint_sequence.size());
+    for (std::size_t w = 0; w < req.joint_sequence.size(); ++w) {
+        const auto& js = req.joint_sequence[w];
+        if (js.name.size() != js.position.size()) {
+            result.success = false;
+            result.error_message = "waypoint " + std::to_string(w) + ": name/position length mismatch (" +
+                std::to_string(js.name.size()) + " names, " + std::to_string(js.position.size()) + " positions).";
+            RCLCPP_ERROR(node_->get_logger(), "[MoveToJointSequenceSkill] %s", result.error_message.c_str());
+            return result;
+        }
+
+        moveit::core::RobotState wp_state(robot_model);
+        wp_state.setToDefaultValues();
+        std::size_t matched = 0;
+        for (std::size_t i = 0; i < js.name.size(); ++i) {
+            if (robot_model->hasJointModel(js.name[i])) {
+                wp_state.setVariablePosition(js.name[i], js.position[i]);
+                ++matched;
+            }
+        }
+        if (matched == 0) {
+            result.success = false;
+            result.error_message = "waypoint " + std::to_string(w) +
+                ": none of its joint names exist on the live robot model.";
+            RCLCPP_ERROR(node_->get_logger(), "[MoveToJointSequenceSkill] %s", result.error_message.c_str());
+            return result;
+        }
+        wp_state.update();
+
+        std::vector<double> group_positions;
+        wp_state.copyJointGroupPositions(jmg, group_positions);
+        waypoints.push_back(std::move(group_positions));
     }
 
     // 1. Build planning request
