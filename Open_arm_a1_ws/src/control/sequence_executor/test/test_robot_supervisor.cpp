@@ -411,6 +411,61 @@ TEST_F(RobotSupervisorTest, AbortToHomeCalledTwiceIsSafe)
   EXPECT_EQ(home_runs, 2) << "one home run per abort_to_home call, no double-queueing";
 }
 
+// Deliberately does NOT use RobotSupervisorTest/FakeMotorEnableClient: that
+// fixture exists so most tests don't need a real controller_manager, but it
+// also means none of them ever call the real MotorEnableClient::enableAll()
+// - which is exactly what crashed production on 2026-09-16
+// (motor_enable_client.hpp's file header comment has the full story).
+// spin_until_future_complete(node_, ...) is only safe before node_ is added
+// to an executor; handleAccepted() calls it from inside a callback that is
+// only running because node_ already IS added to one. This test adds node_
+// to executor_ first, same as production's executor_app.cpp, then sends a
+// goal while motors_enabled_ defaults to false - reproducing the crash
+// scenario exactly. There is no real controller_manager here, so enableAll()
+// is expected to fail (the goal gets aborted) - the property under test is
+// that the process survives to report that failure instead of aborting.
+TEST(MotorEnableClientRegressionTest, EnableAllDuringLiveGoalDoesNotCrashProcess)
+{
+  using RunSequence = openarm_messages::action::RunSequence;
+
+  auto node = std::make_shared<rclcpp::Node>("test_motor_enable_regression");
+  auto source = std::make_shared<UnusedSequenceSource>();
+  auto mode_probe = std::make_shared<sequence_executor::ControlModeProbe>(node, "");
+  // No fake here - the real MotorEnableClient, talking to a
+  // controller_manager that does not exist in this test process.
+  auto supervisor =
+    std::make_shared<RobotSupervisor>(node, source, mode_probe, makeTestRegistry());
+  supervisor->start();
+
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(node);
+
+  auto run_client = rclcpp_action::create_client<RunSequence>(node, "~/run_sequence");
+  const auto deadline = std::chrono::steady_clock::now() + 10s;
+  while (!run_client->action_server_is_ready() && std::chrono::steady_clock::now() < deadline) {
+    executor.spin_some();
+  }
+  ASSERT_TRUE(run_client->action_server_is_ready());
+
+  RunSequence::Goal goal;
+  goal.sequence_name = "builtin:action_01";
+  auto goal_future = run_client->async_send_goal(goal);
+
+  // The real timeout: enableAll()'s own service waits (2-5s each, see
+  // motor_enable_client.cpp) plus the network round trips above, so this
+  // needs real headroom, not the 2s spinUntil() default used elsewhere in
+  // this file. Reaching this deadline without the process having aborted
+  // already IS the pass condition, independent of what the goal result was.
+  const auto goal_deadline = std::chrono::steady_clock::now() + 15s;
+  while (std::chrono::steady_clock::now() < goal_deadline) {
+    executor.spin_some();
+    std::this_thread::sleep_for(10ms);
+  }
+
+  executor.remove_node(node);
+  SUCCEED() << "process survived enableAll() running from inside a live goal callback";
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

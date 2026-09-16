@@ -19,9 +19,20 @@
 //
 // Talks to controller_manager's list_hardware_components and
 // set_hardware_component_state services, blocking on
-// rclcpp::spin_until_future_complete the same way ControlModeProbe does
-// (see control_mode_probe.cpp) - there is no other executor thread to hand
-// this off to from inside a service/action callback on this node.
+// rclcpp::spin_until_future_complete - but NOT against the node passed in.
+// ControlModeProbe (control_mode_probe.cpp) gets away with spinning the
+// real node because it only ever probes once, at startup, before
+// executor_app.cpp's executor.add_node(node)/spin(). enableAll() is called
+// from inside RobotSupervisor::handleAccepted() and handleCommand(), which
+// only run AT ALL because that same node is already registered with and
+// being spun by the main executor - spin_until_future_complete() tries to
+// add_node() it to a second, temporary executor, and rclcpp refuses a node
+// already owned by one ("Node '...' has already been added to an
+// executor.", an uncaught std::runtime_error that aborts the whole
+// process). Found live in production 2026-09-16: qvic_fsm_node crash-
+// looped on every accepted goal after this class's first deploy. The fix
+// is to spin a second, throwaway node (internal_node_) that is never
+// added to any other executor instead of node_ itself.
 // -----------------------------------------------------------------------------
 #include <cstdint>
 #include <string>
@@ -65,6 +76,11 @@ private:
 
   rclcpp::Node::SharedPtr node_;
   rclcpp::Logger logger_;
+  // Never added to any other executor - see file header comment. Only used
+  // to own the two clients below and as the argument to
+  // spin_until_future_complete(); node_ is still what logger_ and the
+  // caller's own node identity come from.
+  rclcpp::Node::SharedPtr internal_node_;
   rclcpp::Client<ListHardwareComponents>::SharedPtr list_client_;
   rclcpp::Client<SetHardwareComponentState>::SharedPtr set_state_client_;
 };

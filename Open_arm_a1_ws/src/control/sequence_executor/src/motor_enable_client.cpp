@@ -15,11 +15,14 @@ constexpr const char* kMockPluginName = "mock_components/GenericSystem";
 }  // namespace
 
 MotorEnableClient::MotorEnableClient(const rclcpp::Node::SharedPtr& node)
-  : node_(node), logger_(node_->get_logger())
+  : node_(node),
+    logger_(node_->get_logger()),
+    internal_node_(std::make_shared<rclcpp::Node>(
+      std::string(node_->get_name()) + "_motor_enable_internal"))
 {
-  list_client_ = node_->create_client<ListHardwareComponents>(
+  list_client_ = internal_node_->create_client<ListHardwareComponents>(
     "/controller_manager/list_hardware_components");
-  set_state_client_ = node_->create_client<SetHardwareComponentState>(
+  set_state_client_ = internal_node_->create_client<SetHardwareComponentState>(
     "/controller_manager/set_hardware_component_state");
 }
 
@@ -37,7 +40,7 @@ bool MotorEnableClient::setComponentState(const std::string& name, uint8_t targe
   request->target_state.label = target_label;
 
   auto future = set_state_client_->async_send_request(request);
-  if (rclcpp::spin_until_future_complete(node_, future.future, std::chrono::seconds(5)) !=
+  if (rclcpp::spin_until_future_complete(internal_node_, future.future, std::chrono::seconds(5)) !=
       rclcpp::FutureReturnCode::SUCCESS) {
     set_state_client_->remove_pending_request(future);
     error = "timed out waiting for '" + name + "' to reach '" + target_label + "'";
@@ -68,7 +71,7 @@ bool MotorEnableClient::enableAll(std::string& message)
 
   auto future =
     list_client_->async_send_request(std::make_shared<ListHardwareComponents::Request>());
-  if (rclcpp::spin_until_future_complete(node_, future.future, std::chrono::seconds(3)) !=
+  if (rclcpp::spin_until_future_complete(internal_node_, future.future, std::chrono::seconds(3)) !=
       rclcpp::FutureReturnCode::SUCCESS) {
     list_client_->remove_pending_request(future);
     message = "timed out listing hardware components";
