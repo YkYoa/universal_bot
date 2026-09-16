@@ -1,35 +1,29 @@
-/* FSM viewer.
+/* FSM viewer + real-time error console.
  *
  * Draws both layers of the state machine from /api/fsm/graph and lights up
  * whichever node the robot is in, following `fsm_state` socket events.
  *
- * Deliberately plain: no framework, no build step, no graph library, and the
- * only script it loads is the socket.io client already vendored for the 3D
- * dashboard. It is served off the robot to a phone on the same LAN, so it has
- * to work with no internet and no npm.
+ * Also subscribes to `log_event` socket events from the server-side
+ * LogCollector (/rosout -> robot_api_server -> SocketIO) and renders them
+ * in the collapsible Console section below Detail.
  *
- * app.js is a separate, minified bundle - this file is intentionally not part
- * of it.
+ * Deliberately plain: no framework, no build step, no graph library.
+ * app.js is a separate, minified bundle - this file is not part of it.
  */
 (function () {
   'use strict';
 
   var KIND_COLOR = {
-    start: '#4a5058', normal: '#4a5058', active: '#3a7bd5',
-    success: '#2ecc71', warning: '#e2b93b', error: '#d9534f', special: '#9b6dd6'
+    start: '#38bdf8', normal: '#475569', active: '#38bdf8',
+    success: '#10b981', warning: '#f59e0b', error: '#f43f5e', special: '#a855f7'
   };
 
-  var el = function (id) { return document.getElementById(id); };
-  var layers = {};        // layer id -> {spec, nodes: {id -> {circle, label}}}
+  var el = function (id) { return document.getElementById(id); }
+  var layers = {};
   var lastState = null;
   var lastNodeByLayer = {};
 
   // ── layout ────────────────────────────────────────────────────────────────
-  //
-  // Nodes go on a circle, edges are chords. With seven and nine states the
-  // circle stays legible, every edge is a straight line, and the layout is
-  // fully determined by the node order in fsm_graph.json - so the diagram
-  // looks the same on every load and after every redeploy.
 
   function layout(spec, width, height) {
     var cx = width / 2, cy = height / 2;
@@ -72,12 +66,9 @@
     spec.edges.forEach(function (edge) {
       var a = pos[edge.from], b = pos[edge.to];
       if (!a || !b) { return; }
-      // Trim the line to the circle edges so the arrowhead lands on the rim
-      // rather than under the node.
       var dx = b.x - a.x, dy = b.y - a.y;
       var len = Math.hypot(dx, dy) || 1;
       var ux = dx / len, uy = dy / len;
-      // Offset perpendicular so A->B and B->A do not draw on top of each other.
       var ox = -uy * 5, oy = ux * 5;
       var line = svgEl('line', {
         x1: a.x + ux * radius + ox, y1: a.y + uy * radius + oy,
@@ -104,12 +95,10 @@
       var title = svgEl('title');
       title.textContent = node.label + ' — ' + node.description;
       circle.appendChild(title);
-
       var label = svgEl('text', {
         x: p.x, y: p.y + 4, 'text-anchor': 'middle', class: 'node-label'
       });
       label.textContent = node.label;
-
       group.appendChild(circle);
       group.appendChild(label);
       nodeLayer.appendChild(group);
@@ -122,22 +111,19 @@
   function highlight(layerId, activeId) {
     var layer = layers[layerId];
     if (!layer) { return; }
-
     Object.keys(layer.nodes).forEach(function (id) {
       var node = layer.nodes[id];
       var on = id === activeId;
-      node.circle.setAttribute('fill', on ? node.color : '#23262c');
+      node.circle.setAttribute('fill', on ? node.color : '#0f172a');
+      node.circle.setAttribute('stroke', on ? '#38bdf8' : node.color);
       node.circle.setAttribute('stroke-width', on ? 3 : 1.5);
-      node.circle.setAttribute('opacity', on || !activeId ? 1 : 0.55);
+      node.circle.setAttribute('opacity', on || !activeId ? 1 : 0.45);
     });
-
-    // Briefly brighten the edge just traversed, so a fast transition is still
-    // visible rather than only showing up as the destination lighting.
     var previous = lastNodeByLayer[layerId];
     if (previous && activeId && previous !== activeId) {
       var edge = layer.edges[previous + '>' + activeId];
       if (edge) {
-        edge.setAttribute('stroke', 'rgba(255,255,255,0.75)');
+        edge.setAttribute('stroke', '#38bdf8');
         edge.setAttribute('stroke-width', 2.4);
         setTimeout(function () {
           edge.setAttribute('stroke', 'rgba(255,255,255,0.16)');
@@ -155,12 +141,34 @@
     highlight('robot', state.robot_state);
     highlight('sequence', state.sequence_state || null);
 
-    el('mode').textContent = 'control mode: ' + (state.control_mode_active || '?');
-    el('seq').textContent = state.sequence_name
-      ? state.sequence_name + (state.loop_total === -1
-          ? ' (loop ' + (state.loop_index + 1) + ', forever)'
-          : ' (loop ' + (state.loop_index + 1) + '/' + state.loop_total + ')')
-      : 'no sequence';
+    var robotStateEl = el('fsm-robot-state');
+    var robotPill = el('fsm-robot-pill');
+    if (robotStateEl) {
+      robotStateEl.textContent = state.robot_state || 'IDLE';
+    }
+    if (robotPill) {
+      if (state.robot_state === 'RUNNING' || state.robot_state === 'IDLE') {
+        robotPill.className = 'pill pill-live';
+      } else if (state.robot_state === 'PAUSED' || state.robot_state === 'BOOTING') {
+        robotPill.className = 'pill pill-degraded';
+      } else {
+        robotPill.className = 'pill pill-dead';
+      }
+    }
+
+    var modeEl = el('mode');
+    if (modeEl) {
+      modeEl.textContent = state.control_mode_active || 'position';
+    }
+
+    var seqEl = el('seq');
+    if (seqEl) {
+      seqEl.textContent = state.sequence_name
+        ? state.sequence_name + (state.loop_total === -1
+            ? ' (loop ' + (state.loop_index + 1) + ', forever)'
+            : ' (loop ' + (state.loop_index + 1) + '/' + state.loop_total + ')')
+        : 'no sequence';
+    }
 
     var fault = el('fault');
     if (state.fault_reason) {
@@ -175,13 +183,30 @@
     var running = state.robot_state === 'RUNNING';
     var paused = state.robot_state === 'PAUSED';
     var faulted = state.robot_state === 'FAULT' || state.robot_state === 'ESTOP';
-    el('btnPause').disabled = !running;
-    el('btnResume').disabled = !paused;
-    el('btnStep').disabled = !paused;
-    el('btnCancel').disabled = !(running || paused);
-    el('btnClear').disabled = !faulted;
-    el('btnRun').disabled = running || paused || faulted;
-    el('btnDry').disabled = running || paused || faulted;
+
+    if (!_isController) {
+      el('btnPause').disabled = true;
+      el('btnResume').disabled = true;
+      el('btnStep').disabled = true;
+      el('btnCancel').disabled = true;
+      el('btnClear').disabled = true;
+      el('btnEstop').disabled = true;
+      var abortBtn = el('btnAbortHome');
+      if (abortBtn) { abortBtn.disabled = true; }
+      el('btnRun').disabled = true;
+      el('btnDry').disabled = true;
+    } else {
+      el('btnPause').disabled = !running;
+      el('btnResume').disabled = !paused;
+      el('btnStep').disabled = !paused;
+      el('btnCancel').disabled = !(running || paused);
+      el('btnClear').disabled = !faulted;
+      el('btnEstop').disabled = false;
+      var abortBtn = el('btnAbortHome');
+      if (abortBtn) { abortBtn.disabled = false; }
+      el('btnRun').disabled = running || paused || faulted;
+      el('btnDry').disabled = running || paused || faulted;
+    }
 
     renderSteps(state);
     renderDetail(state);
@@ -235,14 +260,316 @@
     });
   }
 
-  // ── transport ─────────────────────────────────────────────────────────────
+  // ── Console ───────────────────────────────────────────────────────────────
+
+  var MAX_LOG_ENTRIES = 50;
+  var _logEntries = [];    // [{level, node, ts, msg, file, line}, ...]
+  var _activeFilters = { WARN: true, ERROR: true, FATAL: true };
+  var _userScrolled = false;  // true when user has scrolled up in the console
+
+  function initConsole() {
+    var header = el('consoleHeader');
+    var section = el('consoleSection');
+    var body = el('consoleBody');
+
+    // Toggle expand/collapse
+    function toggleConsole() {
+      var open = section.classList.toggle('open');
+      header.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) { scrollConsoleToBottom(); }
+    }
+    header.addEventListener('click', toggleConsole);
+    header.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleConsole(); }
+    });
+
+    // Detect user scroll (so we don't force scroll to bottom while they're reading)
+    body.addEventListener('scroll', function () {
+      var atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 20;
+      _userScrolled = !atBottom;
+    });
+
+    // Severity filter buttons
+    document.querySelectorAll('.sev-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var lvl = btn.getAttribute('data-level');
+        _activeFilters[lvl] = !_activeFilters[lvl];
+        btn.classList.toggle('active', _activeFilters[lvl]);
+        rebuildConsole();
+      });
+    });
+  }
+
+  function scrollConsoleToBottom() {
+    var body = el('consoleBody');
+    if (body) { body.scrollTop = body.scrollHeight; }
+  }
+
+  function formatTs(tsStr) {
+    // "2026-09-16T13:45:00.123Z" → "13:45:00"
+    try {
+      return tsStr.substring(11, 19);
+    } catch (e) { return tsStr || ''; }
+  }
+
+  function buildEntryEl(entry) {
+    var div = document.createElement('div');
+    div.className = 'log-entry';
+
+    var ts = document.createElement('span');
+    ts.className = 'log-ts';
+    ts.textContent = formatTs(entry.ts);
+
+    var lvl = document.createElement('span');
+    lvl.className = 'log-lvl ' + (entry.level || 'ERROR');
+    lvl.textContent = entry.level || 'ERROR';
+
+    var node = document.createElement('span');
+    node.className = 'log-node';
+    // Shorten long node names
+    var nodeName = (entry.node || '').replace('sequence_executor_node', 'seq_exec')
+                                     .replace('MoveItCppPlannerManager', 'planner');
+    node.textContent = '[' + nodeName + ']';
+
+    var msg = document.createElement('span');
+    msg.className = 'log-msg';
+    msg.textContent = entry.msg || '';
+
+    div.appendChild(ts);
+    div.appendChild(lvl);
+    div.appendChild(node);
+    div.appendChild(msg);
+    return div;
+  }
+
+  function rebuildConsole() {
+    var body = el('consoleBody');
+    var emptyEl = el('consoleEmpty');
+    if (!body) return;
+
+    // Clear all entries (keep the empty placeholder)
+    var children = Array.from(body.querySelectorAll('.log-entry'));
+    children.forEach(function (c) { c.remove(); });
+
+    var visible = _logEntries.filter(function (e) {
+      return _activeFilters[e.level] !== false;
+    });
+
+    if (visible.length === 0) {
+      if (emptyEl) emptyEl.style.display = '';
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    visible.forEach(function (entry) {
+      body.appendChild(buildEntryEl(entry));
+    });
+
+    if (!_userScrolled) { scrollConsoleToBottom(); }
+  }
+
+  function addLogEntry(entry) {
+    // Add to buffer, cap at MAX_LOG_ENTRIES
+    _logEntries.push(entry);
+    if (_logEntries.length > MAX_LOG_ENTRIES) {
+      _logEntries.shift();
+    }
+
+    // Only append to DOM if we pass the active filter
+    if (_activeFilters[entry.level] === false) return;
+
+    var body = el('consoleBody');
+    var emptyEl = el('consoleEmpty');
+    if (!body) return;
+
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    body.appendChild(buildEntryEl(entry));
+
+    // Prune DOM nodes beyond MAX_LOG_ENTRIES
+    var entries = body.querySelectorAll('.log-entry');
+    while (entries.length > MAX_LOG_ENTRIES) {
+      body.removeChild(entries[0]);
+      entries = body.querySelectorAll('.log-entry');
+    }
+
+    // Update console unread issue count badge
+    var countBadge = el('consoleBadge');
+    if (countBadge) {
+      countBadge.textContent = _logEntries.length + (_logEntries.length === 1 ? ' issue' : ' issues');
+      countBadge.style.background = 'rgba(244, 63, 94, 0.25)';
+      countBadge.style.color = '#fb7185';
+    }
+
+    if (!_userScrolled) { scrollConsoleToBottom(); }
+
+    // Auto-expand the console on ERROR or FATAL (if collapsed, never on WARN)
+    if (entry.level === 'ERROR' || entry.level === 'FATAL') {
+      var section = el('consoleSection');
+      var header = el('consoleHeader');
+      if (section && !section.classList.contains('open')) {
+        section.classList.add('open');
+        header && header.setAttribute('aria-expanded', 'true');
+      }
+    }
+  }
+
+  // ── session management & transport ─────────────────────────────────────────
+
+  var SESSION_STORAGE_KEY = 'oa_fsm_session_id';
+  var _sessionId = sessionStorage.getItem(SESSION_STORAGE_KEY);
+  if (!_sessionId) {
+    _sessionId = 'op_' + Math.random().toString(36).substring(2, 10);
+    sessionStorage.setItem(SESSION_STORAGE_KEY, _sessionId);
+  }
+  var _isController = false;
+  var _userLastActive = Date.now();
+  var _socket = null;
 
   function post(path, body) {
     return fetch(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-ID': _sessionId
+      },
       body: JSON.stringify(body || {})
     }).then(function (r) { return r.json().catch(function () { return {}; }); });
+  }
+
+  function recordUserActivity() {
+    _userLastActive = Date.now();
+    var toast = el('afkWarningToast');
+    if (toast) { toast.style.display = 'none'; }
+  }
+
+  function handleSessionState(state) {
+    if (!state) return;
+    var ctrlId = state.controller_id;
+    var isMe = (ctrlId === _sessionId);
+    _isController = isMe;
+
+    var overlay = el('fsmViewOnlyOverlay');
+    var ctrlPill = el('sessionStatus');
+    var ctrlDot = el('sessionDot');
+    var relBtn = el('btnReleaseControl');
+    var overlayCtrl = el('overlayCtrlId');
+    var overlayQueue = el('overlayQueuePos');
+
+    if (isMe) {
+      if (overlay) {
+        overlay.style.display = 'none';
+        overlay.setAttribute('aria-hidden', 'true');
+      }
+      if (ctrlPill) { ctrlPill.textContent = 'Control: You'; }
+      if (ctrlDot) { ctrlDot.style.background = '#34d399'; }
+      if (relBtn) { relBtn.style.display = 'inline-block'; }
+    } else {
+      if (overlay) {
+        overlay.style.display = 'flex';
+        overlay.setAttribute('aria-hidden', 'false');
+      }
+      var shortCtrl = ctrlId ? ctrlId.substring(0, 8) : 'None';
+      if (ctrlPill) { ctrlPill.textContent = 'Control: ' + shortCtrl; }
+      if (ctrlDot) { ctrlDot.style.background = '#f59e0b'; }
+      if (relBtn) { relBtn.style.display = 'none'; }
+      if (overlayCtrl) { overlayCtrl.textContent = 'Operator [' + shortCtrl + ']'; }
+
+      var q = state.queue || [];
+      var myIdx = q.indexOf(_sessionId);
+      if (overlayQueue) {
+        if (myIdx >= 0) {
+          overlayQueue.textContent = '#' + (myIdx + 1) + ' in line';
+        } else {
+          overlayQueue.textContent = 'Spectating';
+        }
+      }
+    }
+
+    if (lastState) {
+      render(lastState);
+    }
+  }
+
+  function initSessionTracking(socket) {
+    _socket = socket;
+    ['pointermove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach(function (ev) {
+      window.addEventListener(ev, recordUserActivity, { passive: true });
+    });
+
+    socket.emit('fsm_session_join', { session_id: _sessionId });
+    socket.on('fsm_session_state', handleSessionState);
+
+    fetch('/api/fsm/session_state').then(function (r) { return r.json(); }).then(function (res) {
+      if (res && res.success && res.state) {
+        handleSessionState(res.state);
+      }
+    }).catch(function () {});
+
+    setInterval(function () {
+      if (socket && socket.connected) {
+        var userActive = (Date.now() - _userLastActive < 30000);
+        socket.emit('fsm_session_heartbeat', {
+          session_id: _sessionId,
+          user_active: userActive
+        });
+      }
+    }, 10000);
+
+    setInterval(function () {
+      if (!_isController) {
+        var toast = el('afkWarningToast');
+        if (toast) toast.style.display = 'none';
+        return;
+      }
+      var idleMs = Date.now() - _userLastActive;
+      var remainingMs = 300000 - idleMs;
+      var toast = el('afkWarningToast');
+      var countdown = el('afkCountdown');
+
+      if (remainingMs > 0 && remainingMs <= 30000) {
+        if (toast) toast.style.display = 'flex';
+        if (countdown) countdown.textContent = Math.ceil(remainingMs / 1000);
+      } else {
+        if (toast) toast.style.display = 'none';
+      }
+    }, 1000);
+
+    var leaveBtn = el('btnLeaveQueue');
+    if (leaveBtn) {
+      leaveBtn.onclick = function () {
+        if (socket && socket.connected) {
+          socket.emit('fsm_session_leave', { session_id: _sessionId });
+        }
+        window.location.href = '/';
+      };
+    }
+
+    var relBtn = el('btnReleaseControl');
+    if (relBtn) {
+      relBtn.onclick = function () {
+        if (confirm('Yield robot control to the next operator in queue?')) {
+          post('/api/fsm/release_control').then(function (res) {
+            if (res && res.message) {
+              el('runMsg').textContent = res.message;
+            }
+          });
+        }
+      };
+    }
+
+    var keepBtn = el('btnKeepControl');
+    if (keepBtn) {
+      keepBtn.onclick = function () {
+        recordUserActivity();
+      };
+    }
+
+    window.addEventListener('beforeunload', function () {
+      if (socket && socket.connected) {
+        socket.emit('fsm_session_leave', { session_id: _sessionId });
+      }
+    });
   }
 
   function command(name) {
@@ -253,14 +580,19 @@
 
   function setConn(ok, text) {
     var badge = el('conn');
-    badge.textContent = text;
-    badge.className = 'badge ' + (ok ? 'live' : 'dead');
+    if (badge) {
+      badge.textContent = text;
+      badge.className = 'badge ' + (ok ? 'live' : 'dead');
+    }
+    var connWrapper = el('conn-wrapper');
+    if (connWrapper) {
+      connWrapper.className = 'pill ' + (ok ? 'pill-live' : 'pill-dead');
+    }
+    // Also update unified nav badge
+    if (window.oaNav) { window.oaNav.setBadge(ok, text); }
   }
 
   function loadSequences() {
-    // The CRUD endpoints come from the project package's blueprint, which a
-    // workspace may not have - fall back to the builtin actions, which the
-    // generic server always exposes.
     fetch('/api/sequences').then(function (r) { return r.json(); }).then(function (res) {
       var picker = el('seqPicker');
       var names = res.success ? res.sequences.map(function (s) { return s.name; }) : [];
@@ -279,7 +611,7 @@
           picker.innerHTML = '<option value="">no sequences found</option>';
         }
       });
-    }).catch(function () { /* the picker just stays empty */ });
+    }).catch(function () { /* picker stays empty */ });
   }
 
   function start() {
@@ -297,18 +629,53 @@
     });
 
     loadSequences();
+    initConsole();
 
     var socket = io();
-    socket.on('connect', function () { setConn(true, 'live'); });
+    socket.on('connect',    function () {
+      setConn(true,  'live');
+      socket.emit('fsm_session_join', { session_id: _sessionId });
+    });
     socket.on('disconnect', function () { setConn(false, 'socket lost'); });
-    socket.on('fsm_state', render);
+    socket.on('fsm_state',  render);
 
-    el('btnPause').onclick = function () { command('pause'); };
+    initSessionTracking(socket);
+
+    // ── Real-time log events from LogCollector ──
+    socket.on('log_event', function (entry) {
+      addLogEntry(entry);
+    });
+
+    // Wire up nav badge
+    if (window.oaNav) { window.oaNav.setSocket(socket); }
+
+    el('btnPause').onclick  = function () { command('pause'); };
     el('btnResume').onclick = function () { command('resume'); };
-    el('btnStep').onclick = function () { command('step'); };
+    el('btnStep').onclick   = function () { command('step'); };
     el('btnCancel').onclick = function () { command('cancel'); };
-    el('btnClear').onclick = function () { command('clear_fault'); };
-    el('btnEstop').onclick = function () { command('estop'); };
+    el('btnClear').onclick  = function () { command('clear_fault'); };
+    el('btnEstop').onclick  = function () { command('estop'); };
+
+    var btnAbortHome = el('btnAbortHome');
+    if (btnAbortHome) {
+      btnAbortHome.onclick = function () {
+        btnAbortHome.disabled = true;
+        var prevText = btnAbortHome.textContent;
+        btnAbortHome.textContent = 'Aborting ➔ Home...';
+        el('runMsg').textContent = 'Issuing abort & returning to home posture...';
+        post('/api/fsm/abort_home').then(function (res) {
+          btnAbortHome.disabled = false;
+          btnAbortHome.textContent = prevText;
+          if (res && res.message) {
+            el('runMsg').textContent = res.message;
+          }
+        }).catch(function (err) {
+          btnAbortHome.disabled = false;
+          btnAbortHome.textContent = prevText;
+          el('runMsg').textContent = 'Abort failed: ' + (err.message || err);
+        });
+      };
+    }
 
     function run(dry) {
       var name = el('seqPicker').value;
