@@ -30,6 +30,7 @@ head_board:
   led_port: 9878   # RGB/MODE/BRIGHTNESS (head_led_node)
 
 control_mode: position
+#control_mode: torque
 position_mode_velocity: 1.0
 
 hand_rotate_ratio: 1.0
@@ -37,5 +38,5 @@ hand_rotate_ratio: 1.0
 shutdown:
   disable_retries: 3
   retry_delay_ms: 100
-  home_timeout_ms: 3000
+  home_timeout_ms: 30000
   home_tolerance: 0.05

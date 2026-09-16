@@ -1,4 +1,5 @@
 #include "motion_planner/moveit_cpp_planner_manager.hpp"
+#include <common/joint_vector.hpp>
 #include <algorithm>
 #include <cstdlib>
 #include <moveit/robot_state/conversions.hpp>
@@ -574,8 +575,18 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
             planning_component->setGoal(request.getTargetPose().value(), ee_link);
         }
     } else if (!request.getJointTargets().empty()) {
+        // Adapt a 7-value/8-value mismatch (openarm_hand vs amazing_hand's
+        // extra finger_joint1) before the hard size check below, instead of
+        // rejecting every joint target authored for the "other" ee_type -
+        // see common::adaptJointVectorToGroupSize's doc comment.
+        const moveit::core::JointModelGroup* target_jmg =
+            moveit_cpp_->getRobotModel()->getJointModelGroup(request.getGroupName());
+        const std::vector<double> adapted_target = target_jmg
+            ? common::adaptJointVectorToGroupSize(request.getJointTargets(), target_jmg->getVariableCount())
+            : request.getJointTargets();
+
         const std::string size_error = checkJointVectorSize(
-            moveit_cpp_->getRobotModel(), request.getGroupName(), request.getJointTargets().size());
+            moveit_cpp_->getRobotModel(), request.getGroupName(), adapted_target.size());
         if (!size_error.empty()) {
             response.success = false;
             response.error_message = size_error;
@@ -585,7 +596,7 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         }
         moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
         goal_state.setToDefaultValues();
-        goal_state.setJointGroupPositions(request.getGroupName(), request.getJointTargets());
+        goal_state.setJointGroupPositions(request.getGroupName(), adapted_target);
         goal_state.update();
         planning_component->setGoal(goal_state);
     } else if (!request.getJointSequence().empty()) {
@@ -600,13 +611,29 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         // segments.
         const auto& joint_sequence = request.getJointSequence();
 
+        // Adapt each waypoint for a 7-value/8-value ee_type mismatch before
+        // the size check below, same as the single joint-target branch above
+        // - a joint_sequence built for one ee_type (e.g. wavePoses' 7-value
+        // openarm_hand data) is common input for a group booted under the
+        // other (amazing_hand's 8-value groups).
+        const moveit::core::JointModelGroup* sequence_jmg =
+            moveit_cpp_->getRobotModel()->getJointModelGroup(request.getGroupName());
+        const size_t sequence_target_count = sequence_jmg ? sequence_jmg->getVariableCount() : 0;
+        std::vector<std::vector<double>> adapted_sequence;
+        adapted_sequence.reserve(joint_sequence.size());
+        for (const auto& waypoint : joint_sequence) {
+            adapted_sequence.push_back(sequence_jmg
+                ? common::adaptJointVectorToGroupSize(waypoint, sequence_target_count)
+                : waypoint);
+        }
+
         // Every waypoint, not just the first: checking only front() let a
         // wrong-length interior waypoint reach setJointGroupPositions() below
         // unchecked (still an assert/SIGABRT waiting to happen) - fail before
         // any segment plans instead of partway through the sequence.
-        for (size_t i = 0; i < joint_sequence.size(); ++i) {
+        for (size_t i = 0; i < adapted_sequence.size(); ++i) {
             const std::string size_error = checkJointVectorSize(
-                moveit_cpp_->getRobotModel(), request.getGroupName(), joint_sequence[i].size());
+                moveit_cpp_->getRobotModel(), request.getGroupName(), adapted_sequence[i].size());
             if (!size_error.empty()) {
                 response.success = false;
                 response.error_message = "waypoint " + std::to_string(i) + ": " + size_error;
@@ -639,7 +666,7 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
             planning_component->setStartState(active_state);
 
             moveit::core::RobotState goal_state(active_state);
-            goal_state.setJointGroupPositions(request.getGroupName(), joint_sequence[i]);
+            goal_state.setJointGroupPositions(request.getGroupName(), adapted_sequence[i]);
             goal_state.update();
             planning_component->setGoal(goal_state);
 
@@ -1098,12 +1125,17 @@ void MoveItCppPlannerManager::publish_target_marker_for_request(const planning_i
     } else if (!request.getWaypoints().empty()) {
         target_pose = request.getWaypoints().back();
     } else if (!request.getJointTargets().empty()) {
+        const moveit::core::JointModelGroup* marker_jmg = moveit_cpp_ && moveit_cpp_->getRobotModel()
+            ? moveit_cpp_->getRobotModel()->getJointModelGroup(request.getGroupName()) : nullptr;
+        const std::vector<double> adapted_target = marker_jmg
+            ? common::adaptJointVectorToGroupSize(request.getJointTargets(), marker_jmg->getVariableCount())
+            : request.getJointTargets();
         if (moveit_cpp_ && moveit_cpp_->getRobotModel() &&
             checkJointVectorSize(moveit_cpp_->getRobotModel(), request.getGroupName(),
-                                  request.getJointTargets().size()).empty()) {
+                                  adapted_target.size()).empty()) {
             moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
             goal_state.setToDefaultValues();
-            goal_state.setJointGroupPositions(request.getGroupName(), request.getJointTargets());
+            goal_state.setJointGroupPositions(request.getGroupName(), adapted_target);
             goal_state.update();
 
             std::string ee_link = ee_link_for_group(request.getGroupName());
@@ -1127,12 +1159,17 @@ void MoveItCppPlannerManager::publish_target_marker_for_request(const planning_i
             }
         }
     } else if (!request.getJointSequence().empty()) {
+        const moveit::core::JointModelGroup* marker_seq_jmg = moveit_cpp_ && moveit_cpp_->getRobotModel()
+            ? moveit_cpp_->getRobotModel()->getJointModelGroup(request.getGroupName()) : nullptr;
+        const std::vector<double> adapted_last_waypoint = marker_seq_jmg
+            ? common::adaptJointVectorToGroupSize(request.getJointSequence().back(), marker_seq_jmg->getVariableCount())
+            : request.getJointSequence().back();
         if (moveit_cpp_ && moveit_cpp_->getRobotModel() &&
             checkJointVectorSize(moveit_cpp_->getRobotModel(), request.getGroupName(),
-                                  request.getJointSequence().back().size()).empty()) {
+                                  adapted_last_waypoint.size()).empty()) {
             moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
             goal_state.setToDefaultValues();
-            goal_state.setJointGroupPositions(request.getGroupName(), request.getJointSequence().back());
+            goal_state.setJointGroupPositions(request.getGroupName(), adapted_last_waypoint);
             goal_state.update();
 
             std::string ee_link = ee_link_for_group(request.getGroupName());

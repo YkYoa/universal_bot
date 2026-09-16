@@ -50,6 +50,12 @@ EXPECTED_VALUE_COUNT = {"hand_yaw": (4,), "hand_flex": (4,), "angle": (7, 8), "p
 
 ARM_TO_PREFIX = {"left_arm": "la", "right_arm": "ra"}
 
+# left_arm/right_arm's actual live variable count, keyed by the ee_type a
+# sequence declares - see EXPECTED_VALUE_COUNT's comment for why "angle"
+# alone can't catch a section built for the wrong ee_type. "none" behaves
+# like openarm_hand here (no amazing_hand connector joint either).
+EE_TYPE_VALUE_COUNT = {"amazing_hand": 8, "openarm_hand": 7, "none": 7}
+
 
 def _values(raw):
     """sequence.yaml writes vectors as a comma-separated scalar, but a real
@@ -187,6 +193,53 @@ def _parse_speeds(node):
     return out
 
 
+def _check_ee_type_match(section_name, body, ee_type):
+    """Raise store.StoreError if an angle-kind waypoint in `body` has a value
+    count that doesn't match what `ee_type` needs (EE_TYPE_VALUE_COUNT).
+
+    EXPECTED_VALUE_COUNT alone accepts 7 or 8 for any "angle" waypoint, so it
+    only catches an outright wrong count (e.g. 6) - it can't catch "waveHome
+    has 7 values but this sequence declares amazing_hand (needs 8)", which is
+    exactly the mismatch that let qvic_2026_wavepose_bimanual reach the
+    planner and fail there instead of at import (see moveit_cpp_planner_
+    manager.cpp's checkJointVectorSize). Unknown/blank ee_type is left
+    unchecked - the caller already fell back to the old guess for those.
+    """
+    expected = EE_TYPE_VALUE_COUNT.get(ee_type)
+    if expected is None:
+        return
+    hard_mismatches = []
+    for key, raw in body.items():
+        if _kind_for(key) != "angle":
+            continue
+        count = len(_values(raw))
+        diff = abs(count - expected)
+        if diff == 0:
+            continue
+        if diff == 1:
+            # Recoverable at runtime: MoveItCppPlannerManager::plan() pads a
+            # missing trailing value (or drops an extra one) before planning
+            # - see common::adaptJointVectorToGroupSize in
+            # utilities/common/include/common/joint_vector.hpp. A diff of
+            # exactly 1 is the amazing_hand connector joint, the only DOF
+            # difference this robot's ee_types ever have - warn instead of
+            # blocking the import, but recording native `expected`-value
+            # data is still the fix, not relying on the auto-adjust forever.
+            print(
+                f"warning: sequences: '{section_name}/{key}' has {count} value(s), "
+                f"ee_type '{ee_type}' expects {expected} - runtime will auto-adjust, "
+                f"but consider re-recording it with {expected} values"
+            )
+            continue
+        hard_mismatches.append(f"{key} has {count} value(s)")
+    if hard_mismatches:
+        raise store.StoreError(
+            f"section '{section_name}' has {len(hard_mismatches)} waypoint(s) that don't match "
+            f"ee_type '{ee_type}' (needs {expected} values) by more than the one-joint gap "
+            f"the runtime can auto-adjust: " + "; ".join(hard_mismatches)
+        )
+
+
 def _steps_for(node, sections, speeds):
     """Flatten one `sequences:` entry into an ordered step list.
 
@@ -195,12 +248,14 @@ def _steps_for(node, sections, speeds):
     now walks.
     """
     arm = node.get("arm", "left_arm")
+    ee_type = node.get("ee_type", "")
     steps = []
 
     home = node.get("home_section")
     if home:
         if home not in sections:
             raise store.StoreError(f"home_section '{home}' has no matching section")
+        _check_ee_type_match(home, sections[home], ee_type)
         steps.extend(_home_steps(home, sections[home], arm, speeds))
 
     body_sections = _tokens(node.get("body_sections"))
@@ -210,18 +265,21 @@ def _steps_for(node, sections, speeds):
         for section in body_sections:
             if section not in sections:
                 raise store.StoreError(f"body_sections entry '{section}' has no matching section")
+            _check_ee_type_match(section, sections[section], ee_type)
             hand = _hand_step(section, sections[section])
             if hand:
                 steps.append(hand)
     elif body:
         if body not in sections:
             raise store.StoreError(f"body_section '{body}' has no matching section")
+        _check_ee_type_match(body, sections[body], ee_type)
         vel, acc = speeds.get(body, (0.0, 0.0))
         params = {"arm": arm, "section": body, "velocity": vel, "acceleration": acc}
         right = node.get("body_right_section")
         if right:
             if right not in sections:
                 raise store.StoreError(f"body_right_section '{right}' has no matching section")
+            _check_ee_type_match(right, sections[right], ee_type)
             params["right_section"] = right
         excluded = [int(t) for t in _tokens(node.get("exclude_points"))]
         if excluded:

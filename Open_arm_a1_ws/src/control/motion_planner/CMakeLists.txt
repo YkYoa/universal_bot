@@ -15,6 +15,7 @@ find_package(moveit_core REQUIRED)
 find_package(moveit_ros_planning REQUIRED)
 find_package(planning_interface REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(common REQUIRED)
 
 # ── Library ──────────────────────────────────────────────────────────────────
 add_library(motion_planner SHARED
@@ -38,6 +39,7 @@ ament_target_dependencies(motion_planner
   moveit_ros_planning
   planning_interface
   yaml-cpp
+  common
 )
 
 # ── Install targets and headers ──────────────────────────────────────────────
@@ -66,6 +68,7 @@ ament_export_dependencies(
   moveit_ros_planning
   planning_interface
   yaml-cpp
+  common
 )
 
 ament_package()
