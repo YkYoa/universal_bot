@@ -11,6 +11,7 @@ find_package(yaml-cpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(computation REQUIRED)
 find_package(common REQUIRED)
 find_package(openarm_messages REQUIRED)
@@ -26,6 +27,7 @@ ament_target_dependencies(openarm_demo_node
   geometry_msgs
   std_msgs
   std_srvs
+  sensor_msgs
   computation
   common
   openarm_messages

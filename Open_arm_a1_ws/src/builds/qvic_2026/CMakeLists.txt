@@ -13,6 +13,7 @@ find_package(rclcpp REQUIRED)
 find_package(sequence_executor REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(trajectory_shapes REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(PkgConfig REQUIRED)
@@ -39,7 +40,7 @@ target_include_directories(qvic_fsm_node PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-ament_target_dependencies(qvic_fsm_node rclcpp sequence_executor geometry_msgs trajectory_shapes Eigen3)
+ament_target_dependencies(qvic_fsm_node rclcpp sequence_executor geometry_msgs trajectory_shapes sensor_msgs Eigen3)
 target_link_libraries(qvic_fsm_node PkgConfig::SQLite3 yaml-cpp)
 
 install(TARGETS qvic_fsm_node
