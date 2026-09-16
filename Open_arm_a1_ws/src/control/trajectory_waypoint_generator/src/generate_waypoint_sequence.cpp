@@ -390,7 +390,7 @@ int main(int argc, char** argv)
        ament_index_cpp::get_package_share_directory("openarm_moveit_config") + "/config/kinematics.yaml"}));
 
   const std::string description_pkg = ament_index_cpp::get_package_share_directory("openarm_description");
-  const std::string xacro_path = description_pkg + "/urdf/robot/v10.urdf.xacro";
+  const std::string xacro_path = description_pkg + "/assets/robot/openarm_v1.0/urdf/v10.urdf.xacro";
   const std::string urdf_xml = runXacro(xacro_path,
     "bimanual:=true ros2_control:=true use_fake_hardware:=true mobile_base:=true "
     "mobile_base_xyz:='0 0 0.31' mobile_base_body_xyz:='0 0 0'");

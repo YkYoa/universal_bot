@@ -1,0 +1,406 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!--
+  Assembles one full robot: arm(s) (openarm_arm.xacro) + base
+  (openarm_base.xacro) + body (openarm_body_macro.xacro) + the selected
+  end-effector (assets/end_effector/<ee_type>/urdf/<ee_type>_macro.xacro,
+  chosen dynamically via ee_type) + ros2_control (openarm.ros2_control.xacro
+  / openarm.bimanual.ros2_control.xacro). Called once (single arm) or twice
+  (bimanual:=true) by v10.urdf.xacro.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:macro name="openarm_robot"
+    params="arm_type
+            joint_limits
+            control_gains
+            kinematics
+            kinematics_link
+            kinematics_offset
+            inertials
+            body_type
+            body_inertials
+            body_kinematics
+            body_kinematics_link
+            ee_kinematics_link
+            parent:='world'
+            xyz:='0 0 0'
+            rpy:='0 0 0'
+            hand:='false'
+            ee_type:=''
+            ros2_control:=false
+            can_interface:=''
+            use_fake_hardware:=false
+            left_use_fake_hardware:='inherit'
+            right_use_fake_hardware:='inherit'
+            head_use_fake_hardware:=false
+            fake_sensor_commands:=false
+            no_prefix:='false'
+            arm_prefix:=''
+            body_prefix:=''
+            arm_connected_to='base'
+            body_connected_to='world'
+            bimanual:=false
+            right_arm_base_xyz='0 0 0'
+            left_arm_base_xyz='0 0 0'
+            right_arm_base_rpy='0 0 0'
+            left_arm_base_rpy='0 0 0'
+            left_can_interface:='can1'
+            right_can_interface:='can0'
+            left_arm_prefix:='left_'
+            right_arm_prefix:='right_'
+            can_fd:='true'
+            control_mode:='mit'
+            position_mode_velocity:='1.0'
+            shutdown_disable_retries:='3'
+            shutdown_retry_delay_ms:='100'
+            shutdown_home_timeout_ms:='3000'
+            shutdown_home_tolerance:='0.05'
+            gazebo:=false
+            mobile_base:=false
+            mobile_base_xyz:='0 0 0'
+            mobile_base_rpy:='0 0 0'
+            mobile_base_arm_xyz:='0 0 0'
+            mobile_base_arm_rpy:='0 0 0'
+            mobile_base_body_xyz:='0 0 0'
+            mobile_base_body_rpy:='0 0 0'
+            "
+            >
+
+    <xacro:include filename="$(find openarm_description)/assets/robot/openarm_v1.0/urdf/arm/openarm_macro.xacro" />
+    <xacro:include filename="$(find openarm_description)/assets/robot/openarm_v1.0/urdf/arm/openarm_arm.xacro" />
+    <xacro:include filename="$(find openarm_description)/assets/robot/openarm_v1.0/urdf/base/openarm_base.xacro" />
+    <xacro:include filename="$(find openarm_description)/assets/robot/openarm_v1.0/urdf/body/openarm_body_macro.xacro" />
+    <xacro:include filename="$(find openarm_description)/assets/robot/openarm_v1.0/urdf/body/openarm_body.xacro" />
+    <xacro:include filename="$(find openarm_description)/assets/end_effector/openarm_hand/urdf/openarm_hand.xacro" />
+    <xacro:include filename="$(find openarm_description)/assets/end_effector/openarm_hand/urdf/openarm_hand_macro.xacro" />
+    <xacro:include filename="$(find openarm_description)/assets/end_effector/amazing_hand/urdf/r_ahand_macro.xacro" />
+    <xacro:include filename="$(find openarm_description)/assets/end_effector/amazing_hand/urdf/l_ahand_macro.xacro" />
+    <xacro:include filename="$(find openarm_description)/assets/robot/openarm_v1.0/urdf/ros2_control/openarm.ros2_control.xacro" />
+    <xacro:include filename="$(find openarm_description)/assets/robot/openarm_v1.0/urdf/ros2_control/openarm.bimanual.ros2_control.xacro" />
+    <xacro:if value="${ee_type != 'none'}">
+        <xacro:include filename="$(find openarm_description)/assets/end_effector/${ee_type}/urdf/${ee_type}_arguments.xacro" />
+    </xacro:if>
+
+    <xacro:property name="arm_prefix_modified" value="${'' if arm_prefix == '' else arm_prefix + '_'}" />
+    <xacro:property name="body_prefix_modified" value="${'' if body_prefix == '' else body_prefix + '_'}" />
+    <xacro:property name="base_link_name" value="openarm_base_link" />
+    <!-- Body mounts onto the base's mesh-bearing link, not the outer anchor:
+         openarm_base_link is an empty anchor sitting 0.31m below
+         openarm_base_link_body (see openarm_base.xacro's floor_offset_joint,
+         which lifts the mesh/wheels off the anchor so the base renders on
+         the floor instead of sunk into it). The body/torso needs to sit on
+         top of the actual base mesh, so it has to hang off that same lifted
+         link, not the un-lifted anchor underneath it. -->
+    <xacro:property name="base_mount_link_name" value="openarm_base_link_body" />
+
+    <xacro:if value="${mobile_base}">
+        <xacro:openarm_base
+        description_pkg="openarm_description"
+        connected_to=""
+        xyz="${mobile_base_xyz}"
+        rpy="${mobile_base_rpy}" />
+    </xacro:if>
+
+    <xacro:if value="${bimanual}">
+
+        <!-- body_link0's own mesh origin sits mid-mesh (bottom extends 0.662m below
+             it, verified via STL bounding box), while the base mount link's origin
+             sits at its own mesh's top surface. Mounting at zero offset buries most
+             of the chassis inside/below the base, so v2 needs this extra lift on
+             top of whatever mobile_base_body_xyz the caller supplied. -->
+        <xacro:openarm_body
+        body_type="${body_type}"
+        body_prefix="${body_prefix_modified}"
+        no_prefix="${no_prefix}"
+        description_pkg="openarm_description"
+        connected_to="${base_mount_link_name if mobile_base else body_connected_to}"
+        xyz="${('0.061 0.006 0.662' if body_type == 'v2' else mobile_base_body_xyz) if mobile_base else xyz}"
+        rpy="${('0 0 0' if body_type == 'v2' else mobile_base_body_rpy) if mobile_base else rpy}"
+        inertials="${body_inertials}"
+        kinematics="${body_kinematics}"
+        kinematics_link="${body_kinematics_link}"
+        create_connected_link="${not mobile_base}" />
+
+        <!-- left arm -->
+        <xacro:openarm_arm
+        arm_type="${arm_type}"
+        arm_prefix="left_"
+        no_prefix="false"
+        description_pkg="openarm_description"
+        connected_to="openarm_body_link0"
+        xyz="${left_arm_base_xyz}"
+        rpy="${left_arm_base_rpy}"
+        joint_limits="${joint_limits}"
+        inertials="${inertials}"
+        kinematics="${kinematics}"
+        kinematics_link="${kinematics_link}"
+        kinematics_offset="${kinematics_offset}" />
+
+        <!-- right arm -->
+        <xacro:openarm_arm
+        arm_type="${arm_type}"
+        arm_prefix="right_"
+        no_prefix="false"
+        description_pkg="openarm_description"
+        connected_to="openarm_body_link0"
+        xyz="${right_arm_base_xyz}"
+        rpy="${right_arm_base_rpy}"
+        joint_limits="${joint_limits}"
+        inertials="${inertials}"
+        kinematics="${kinematics}"
+        kinematics_link="${kinematics_link}"
+        kinematics_offset="${kinematics_offset}" />
+
+        <!-- ros2_control hardware interfaces for bimanual setup -->
+        <xacro:if value="${ros2_control}">
+            <xacro:openarm_bimanual_ros2_control
+            arm_type="${arm_type}"
+            control_gains="${control_gains}"
+            left_can_interface="${left_can_interface}"
+            right_can_interface="${right_can_interface}"
+            use_fake_hardware="${use_fake_hardware}"
+            left_use_fake_hardware="${left_use_fake_hardware}"
+            right_use_fake_hardware="${right_use_fake_hardware}"
+            head_use_fake_hardware="${head_use_fake_hardware}"
+            fake_sensor_commands="${fake_sensor_commands}"
+            left_arm_prefix="${left_arm_prefix}"
+            right_arm_prefix="${right_arm_prefix}"
+            gazebo="${gazebo}"
+            hand="${hand}"
+            ee_type="${ee_type}"
+            body_type="${body_type}"
+            no_prefix="${no_prefix}"
+            hand_rotate_ratio="$(arg hand_rotate_ratio)"
+            shutdown_disable_retries="${shutdown_disable_retries}"
+            shutdown_retry_delay_ms="${shutdown_retry_delay_ms}"
+            shutdown_home_timeout_ms="${shutdown_home_timeout_ms}"
+            shutdown_home_tolerance="${shutdown_home_tolerance}"/>
+        </xacro:if>
+
+        <xacro:if value="$(eval hand and ee_type == 'openarm_hand')">
+            <xacro:openarm_hand
+                connected_to="openarm_left_link7"
+                arm_type="${arm_type}"
+                arm_prefix="left_"
+                ee_type="${ee_type}"
+                ee_kinematics_link="${xacro.load_yaml('$(find openarm_description)/assets/end_effector/openarm_hand/config/kinematics_link.yaml')}"
+                ee_inertials="${xacro.load_yaml('$(find openarm_description)/assets/end_effector/openarm_hand/config/inertials.yaml')}"
+                rpy_ee="$(arg rpy_ee)"
+                xyz_ee="$(arg xyz_ee)"
+                tcp_xyz="$(arg tcp_xyz)"
+                tcp_rpy="$(arg tcp_rpy)"
+                description_pkg="$(arg description_pkg)"
+            />
+            <xacro:openarm_hand
+                connected_to="openarm_right_link7"
+                arm_type="${arm_type}"
+                arm_prefix="right_"
+                ee_type="${ee_type}"
+                ee_kinematics_link="${xacro.load_yaml('$(find openarm_description)/assets/end_effector/openarm_hand/config/kinematics_link.yaml')}"
+                ee_inertials="${xacro.load_yaml('$(find openarm_description)/assets/end_effector/openarm_hand/config/inertials.yaml')}"
+                rpy_ee="$(arg rpy_ee)"
+                xyz_ee="$(arg xyz_ee)"
+                tcp_xyz="$(arg tcp_xyz)"
+                tcp_rpy="$(arg tcp_rpy)"
+                description_pkg="$(arg description_pkg)"
+            />
+          </xacro:if>
+
+        <xacro:if value="$(eval hand and ee_type == 'amazing_hand')">
+            <!-- Physical connector plate between the arm flange and the hand
+                 root (see amazing_hand_arguments.xacro for connector_xyz/
+                 connector_rpy/connector_xyz_left/connector_rpy_left/
+                 connector_scale). One macro, instantiated once per side since
+                 each needs its own link/joint names and can take its own
+                 mount xyz/rpy. -->
+            <xacro:macro name="amazing_hand_connector" params="side parent xyz rpy">
+                <link name="openarm_${side}_ahand_connector">
+                    <visual>
+                        <origin xyz="0 0 -0.035" rpy="0 0 0" />
+                        <geometry>
+                            <mesh filename="package://openarm_description/assets/end_effector/amazing_hand/meshes/visual/connector.STL"
+                                  scale="$(arg connector_scale)" />
+                        </geometry>
+                    </visual>
+                    <collision>
+                        <origin xyz="0 0 0" rpy="0 0 0" />
+                        <geometry>
+                            <mesh filename="package://openarm_description/assets/end_effector/amazing_hand/meshes/collision/connector.STL"
+                                  scale="$(arg connector_scale)" />
+                        </geometry>
+                    </collision>
+                    <!-- Lumped mass for the WHOLE amazing_hand, calibrated via
+                         gravity_calibration_tool (control/gravity_compensation_controller)
+                         against 6 real captured poses on real hardware: weighted
+                         least-squares fit against measured joint torque gave
+                         0.5938 kg, closely matching the hand's real measured
+                         weight (~0.5 kg) - validates that this connector (on the
+                         KDL chain, unlike most of the hand's own links which sit
+                         on branches invisible to chain-based gravity torque) is a
+                         sound place to lump it. Re-run the calibration tool if the
+                         connector's mount position or the real hand's mass changes. -->
+                         placed here for gravity_compensation_controller: the hand's
+                         own URDF is a closed-loop mechanism cut into an open tree,
+                         so most of its real link masses live on branches that
+                         aren't on the arm's base->hand_tcp KDL chain and are
+                         invisible to ChainDynParam-based static gravity torque no
+                         matter how accurate their individual values are. This
+                         connector link IS on that chain, has real mount geometry
+                         (unlike the zero-geometry ahand_root/hand_tcp reference
+                         links), and sits closest to the hand's actual mass - a
+                         reasonable single point to lump the whole hand's weight
+                         for gravity comp purposes. Origin/inertia are rough
+                         estimates (offset matches the visual mesh's own origin),
+                         not calibrated CAD values - fine for static gravity
+                         torque (mass + COM matter far more than the inertia
+                         tensor there), not precise enough for anything dynamic. -->
+                    <inertial>
+                        <origin xyz="0 0 -0.05" rpy="0 0 0" />
+                        <mass value="0.5938" />
+                        <inertia ixx="0.0006" ixy="0.0" ixz="0.0"
+                                 iyy="0.0006" iyz="0.0" izz="0.0004" />
+                    </inertial>
+                </link>
+                <!-- "Motor 8": the same real CAN motor (DM4310, id 0x08) that
+                     drives openarm_hand's finger_joint1 gripper actuator -
+                     hand_ is xacro-arg "hand" (default true) independent of
+                     ee_type, so OpenArm_v10HW already exports a
+                     command/state interface named openarm_${side}_finger_joint1
+                     regardless of which end-effector is attached (see
+                     generate_joint_names() in hardware_interface.cpp). Naming
+                     this joint the same lets that pre-existing interface
+                     attach here instead of floating unclaimed. Axis/limits
+                     are placeholders - verify against the real mechanism
+                     before running on hardware (see amazing_hand_arguments.xacro). -->
+                <joint name="openarm_${side}_finger_joint1" type="revolute">
+                    <origin xyz="${xyz}" rpy="${rpy}" />
+                    <parent link="${parent}" />
+                    <child link="openarm_${side}_ahand_connector" />
+                    <axis xyz="$(arg hand_rotate_axis)" />
+                    <limit lower="$(arg hand_rotate_lower)" upper="$(arg hand_rotate_upper)"
+                           effort="$(arg hand_rotate_effort)" velocity="$(arg hand_rotate_velocity)" />
+                </joint>
+            </xacro:macro>
+
+            <xacro:amazing_hand_connector side="left" parent="openarm_left_link7"
+                xyz="$(arg connector_xyz_left)" rpy="$(arg connector_rpy_left)" />
+            <xacro:amazing_hand_left
+                connected_to="openarm_left_ahand_connector"
+                prefix="openarm_left_ahand_"
+                xyz="$(arg xyz_ee)"
+                rpy="$(arg rpy_ee)"
+            />
+            <xacro:amazing_hand_connector side="right" parent="openarm_right_link7"
+                xyz="$(arg connector_xyz_right)" rpy="$(arg connector_rpy_right)" />
+            <xacro:amazing_hand_right
+                connected_to="openarm_right_ahand_connector"
+                prefix="openarm_right_ahand_"
+                xyz="$(arg xyz_ee_right)"
+                rpy="$(arg rpy_ee_right)"
+            />
+            <!-- left_arm/right_arm MoveIt groups (defined once, shared across
+                 ee_type values) chain to openarm_<side>_hand_tcp regardless of
+                 which hand is attached; openarm_hand's own macro creates that
+                 link itself, so amazing_hand must too. Placed at the hand's
+                 mount point (same placeholder-calibration caveat as xyz_ee/
+                 rpy_ee above, not the true fingertip/grasp frame). -->
+            <link name="openarm_left_hand_tcp" />
+            <joint name="openarm_left_ahand_tcp_joint" type="fixed">
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <parent link="openarm_left_ahand_root" />
+                <child link="openarm_left_hand_tcp" />
+            </joint>
+            <link name="openarm_right_hand_tcp" />
+            <joint name="openarm_right_ahand_tcp_joint" type="fixed">
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <parent link="openarm_right_ahand_root" />
+                <child link="openarm_right_hand_tcp" />
+            </joint>
+            <xacro:if value="${ros2_control}">
+                <xacro:include filename="$(find openarm_description)/assets/end_effector/amazing_hand/urdf/ahand.ros2_control.xacro" />
+                <xacro:amazing_hand_ros2_control
+                    prefix="openarm_left_"
+                    link_prefix="openarm_left_ahand_"
+                />
+                <xacro:amazing_hand_ros2_control
+                    prefix="openarm_right_"
+                    link_prefix="openarm_right_ahand_"
+                />
+            </xacro:if>
+        </xacro:if>
+    </xacro:if>
+
+    <xacro:if value="${not bimanual}">
+
+        <xacro:openarm_arm
+        arm_type="${arm_type}"
+        arm_prefix="${arm_prefix_modified}"
+        no_prefix="${no_prefix}"
+        xyz="${mobile_base_arm_xyz if mobile_base else xyz}"
+        rpy="${mobile_base_arm_rpy if mobile_base else rpy}"
+        joint_limits="${joint_limits}"
+        kinematics="${kinematics}"
+        kinematics_link="${kinematics_link}"
+        inertials="${inertials}"
+        connected_to="${base_link_name if mobile_base else ''}"
+        />
+
+        <xacro:if value="${ros2_control}">
+
+        <xacro:openarm_arm_ros2_control
+            arm_type="${arm_type}"
+            control_gains="${control_gains}"
+            arm_prefix="${arm_prefix_modified}"
+            can_interface="${can_interface}"
+            use_fake_hardware="${use_fake_hardware}"
+            fake_sensor_commands="${fake_sensor_commands}"
+            hand="${hand}"
+            hand_rotate_ratio="$(arg hand_rotate_ratio)"
+            ee_type="${ee_type}"
+            bimanual="false"
+            can_fd="${can_fd}"/>
+        </xacro:if>
+
+        <xacro:if value="${hand and ee_type == 'openarm_hand'}">
+
+        <xacro:property name="special_connection" value="$(arg special_connection)" />
+        <!-- <xacro:property name="connection" value="${special_connection if special_connection != '' else arm_type + '_link7'}" /> -->
+        <xacro:property name="connection" value="${special_connection if special_connection != '' else 'openarm' + '_link7'}" />
+
+        <xacro:if value="$(eval hand and ee_type == 'openarm_hand')">
+        <xacro:openarm_hand
+            connected_to="${arm_prefix_modified}${connection}"
+            arm_type="${arm_type}"
+            arm_prefix="${arm_prefix_modified}"
+            ee_type="${ee_type}"
+            ee_kinematics_link="${xacro.load_yaml('$(find openarm_description)/assets/end_effector/openarm_hand/config/kinematics_link.yaml')}"
+            ee_inertials="${xacro.load_yaml('$(find openarm_description)/assets/end_effector/openarm_hand/config/inertials.yaml')}"
+            rpy_ee="$(arg rpy_ee)"
+            xyz_ee="$(arg xyz_ee)"
+            tcp_xyz="$(arg tcp_xyz)"
+            tcp_rpy="$(arg tcp_rpy)"
+            description_pkg="$(arg description_pkg)"/>
+        </xacro:if>
+        </xacro:if>
+
+        <xacro:if value="${hand and ee_type == 'amazing_hand'}">
+        <xacro:property name="special_connection" value="$(arg special_connection)" />
+        <xacro:property name="connection" value="${special_connection if special_connection != '' else 'openarm' + '_link7'}" />
+        <xacro:amazing_hand_right
+            connected_to="${arm_prefix_modified}${connection}"
+            prefix="${arm_prefix_modified}ahand_"
+            xyz="$(arg xyz_ee)"
+            rpy="$(arg rpy_ee)"
+        />
+        <xacro:if value="${ros2_control}">
+            <xacro:include filename="$(find openarm_description)/assets/end_effector/amazing_hand/urdf/ahand.ros2_control.xacro" />
+            <xacro:amazing_hand_ros2_control
+                prefix="${arm_prefix_modified}"
+                link_prefix="${arm_prefix_modified}ahand_"
+            />
+        </xacro:if>
+        </xacro:if>
+
+        </xacro:if>
+
+  </xacro:macro>
+</robot>

@@ -7,7 +7,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, RegisterEventHandler
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution, PythonExpression
+from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -95,9 +95,12 @@ def launch_setup(context, *args, **kwargs):
     use_rviz = LaunchConfiguration("use_rviz")
     ee_type = LaunchConfiguration("ee_type")
     body_type = LaunchConfiguration("body_type")
-    is_amazing_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'amazing_hand'"]))
-    is_openarm_hand = IfCondition(PythonExpression(["'", ee_type, "' == 'openarm_hand'"]))
-    is_body_v2 = IfCondition(PythonExpression(["'", body_type, "' == 'v2'"]))
+    # Resolved eagerly (not IfCondition) so the ee_type/body_type-gated
+    # controller spawners below can be included/excluded from the plain
+    # Python list that the sequential spawner chain is built from.
+    is_amazing_hand = ee_type.perform(context) == "amazing_hand"
+    is_openarm_hand = ee_type.perform(context) == "openarm_hand"
+    is_body_v2 = body_type.perform(context) == "v2"
 
     # head:=auto (default) - real hardware only if hardware_config.yaml enables
     # it AND the ethernet interface actually has a live link right now.
@@ -200,7 +203,7 @@ def launch_setup(context, *args, **kwargs):
     robot_description_args = [
         PathJoinSubstitution([FindExecutable(name="xacro")]),
         " ",
-        PathJoinSubstitution([FindPackageShare("openarm_description"), "urdf", "robot", "v10.urdf.xacro"]),
+        PathJoinSubstitution([FindPackageShare("openarm_description"), "assets", "robot", "openarm_v1.0", "urdf", "v10.urdf.xacro"]),
         " ",
         "bimanual:=true",
         " ",
@@ -338,58 +341,50 @@ def launch_setup(context, *args, **kwargs):
         output="both",
     )
 
-    joint_state_broadcaster_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=["joint_state_broadcaster", "-c", "/controller_manager"],
-    )
-    left_arm_controller_spawner = Node(
-        package="controller_manager", executable="spawner",
-        arguments=["left_arm_controller", "-c", "/controller_manager"],
-    )
-    right_arm_controller_spawner = Node(
-        package="controller_manager", executable="spawner",
-        arguments=["right_arm_controller", "-c", "/controller_manager"],
-    )
-
-    left_gripper_controller_spawner = Node(
-        package="controller_manager", executable="spawner",
-        arguments=["left_gripper_controller", "-c", "/controller_manager"],
-        condition=is_openarm_hand,
-    )
-    right_gripper_controller_spawner = Node(
-        package="controller_manager", executable="spawner",
-        arguments=["right_gripper_controller", "-c", "/controller_manager"],
-        condition=is_openarm_hand,
-    )
-    hand_controller_spawners = [
-        Node(
+    # Controller spawners must NOT all launch in parallel: `spawner` loads,
+    # configures, activates, then verifies via list_controllers, and with
+    # ~8 spawners hammering controller_manager at once - especially since it
+    # can't get RT scheduling here (see the "Could not enable FIFO RT
+    # scheduling policy" warning at startup) - that verification step can
+    # lose the race against the control loop and report a spurious "Failed
+    # to activate/load controller" even though the switch went through.
+    # So build the list in order and chain each spawner off the previous
+    # one's exit via OnProcessExit (same pattern already used below for the
+    # gravity-comp enable calls) instead of returning them all as siblings.
+    def _spawner(name):
+        """Builds one `controller_manager spawner` Node for controller `name`.
+        Never returned directly into the launch description - always chained
+        via spawner_chain_handlers so only one spawner talks to
+        controller_manager at a time (see the comment above)."""
+        return Node(
             package="controller_manager", executable="spawner",
             arguments=[name, "-c", "/controller_manager"],
-            condition=is_amazing_hand,
         )
-        for name in ("left_hand_j1_controller", "left_hand_j2_controller",
-                     "right_hand_j1_controller", "right_hand_j2_controller",
-                     # "Motor 8" (openarm_<side>_finger_joint1) repurposed to
-                     # spin the amazing_hand connector - see
-                     # bimanual_controllers.yaml.
-                     "left_hand_rotate_controller", "right_hand_rotate_controller")
-    ]
-    head_controller_spawner = Node(
-        package="controller_manager", executable="spawner",
-        arguments=["head_controller", "-c", "/controller_manager"],
-        condition=is_body_v2,
-    )
 
+    spawner_names = ["joint_state_broadcaster", "left_arm_controller", "right_arm_controller"]
+    if is_openarm_hand:
+        spawner_names += ["left_gripper_controller", "right_gripper_controller"]
+    if is_amazing_hand:
+        # "Motor 8" (openarm_<side>_finger_joint1) repurposed to spin the
+        # amazing_hand connector - see bimanual_controllers.yaml.
+        spawner_names += ["left_hand_j1_controller", "left_hand_j2_controller",
+                           "right_hand_j1_controller", "right_hand_j2_controller",
+                           "left_hand_rotate_controller", "right_hand_rotate_controller"]
+    if is_body_v2:
+        spawner_names.append("head_controller")
     # amazing_hand's closed-loop finger linkage (ball/cylindrical/revolute
     # loop-closure joints, no other state source) is solved in-process by
     # robot_hardware_interface/AmazingHandHW (see ahand.ros2_control.xacro)
     # and reported as normal ros2_control state interfaces, published by
     # joint_state_broadcaster like everything else - no separate node here.
-    base_controller_spawner = Node(
-        package="controller_manager", executable="spawner",
-        arguments=["base_controller", "-c", "/controller_manager"],
-    )
+    spawner_names.append("base_controller")
+
+    controller_spawners = [_spawner(name) for name in spawner_names]
+    spawner_chain_handlers = [
+        RegisterEventHandler(OnProcessExit(target_action=controller_spawners[i],
+                                            on_exit=[controller_spawners[i + 1]]))
+        for i in range(len(controller_spawners) - 1)
+    ]
 
     # control_mode: torque only - auto load+configure+activate the gravity-
     # comp controllers AND auto-call their ~/enable service, so the arms
@@ -404,20 +399,24 @@ def launch_setup(context, *args, **kwargs):
     # If you are not physically ready to support both arms the instant this
     # launch starts, do not use control_mode: torque, or edit
     # hardware_config.yaml back to "mit"/"position" first.
+    #
+    # Chained onto the tail of controller_spawners (rather than launched in
+    # parallel with it) for the same race-avoidance reason as above.
     gravity_comp_spawners = []
     gravity_comp_enable_handlers = []
     if control_mode == "torque":
         for side in ("left", "right"):
-            spawner = Node(
-                package="controller_manager", executable="spawner",
-                arguments=[f"{side}_gravity_comp_controller", "-c", "/controller_manager"],
-            )
+            spawner = _spawner(f"{side}_gravity_comp_controller")
             enable_call = ExecuteProcess(
                 cmd=["ros2", "service", "call", f"/{side}_gravity_comp_controller/enable",
                      "std_srvs/srv/SetBool", "{data: true}"],
                 output="screen",
             )
+            predecessor = gravity_comp_spawners[-1] if gravity_comp_spawners else controller_spawners[-1]
             gravity_comp_spawners.append(spawner)
+            gravity_comp_enable_handlers.append(
+                RegisterEventHandler(OnProcessExit(target_action=predecessor, on_exit=[spawner]))
+            )
             gravity_comp_enable_handlers.append(
                 RegisterEventHandler(OnProcessExit(target_action=spawner, on_exit=[enable_call]))
             )
@@ -442,6 +441,15 @@ def launch_setup(context, *args, **kwargs):
             bounds_tolerances,
             {"use_sim_time": False},
         ],
+        # amazing_hand's ~30 sub-links per side have no collision geometry
+        # (servo horns/frames too fine-grained to be worth collision-checking)
+        # - moveit_core WARNs about every single one on every model load,
+        # drowning out real startup progress. Silence just that logger
+        # (move_group calls moveit::setNodeLoggerName("move_group") itself,
+        # giving this a deterministic name - see motion_planner/
+        # moveit_cpp_planner_manager.cpp for the equivalent fix on the
+        # robot_skills_node side, used by sequence_executor.launch.py).
+        arguments=["--ros-args", "--log-level", "move_group.moveit.moveit.core.robot_model:=error"],
     )
 
     rviz_node = Node(
@@ -449,7 +457,9 @@ def launch_setup(context, *args, **kwargs):
         executable="rviz2",
         name="rviz2",
         output="log",
-        arguments=["-d", rviz_config_file],
+        # Same "no collision geometry" spam silenced the same way.
+        arguments=["-d", rviz_config_file,
+                   "--ros-args", "--log-level", "rviz2.moveit.core.robot_model:=error"],
         parameters=[
             robot_description,
             robot_description_semantic,
@@ -470,15 +480,8 @@ def launch_setup(context, *args, **kwargs):
         head_home_node,
         robot_state_publisher_node,
         ros2_control_node,
-        joint_state_broadcaster_spawner,
-        left_arm_controller_spawner,
-        right_arm_controller_spawner,
-        left_gripper_controller_spawner,
-        right_gripper_controller_spawner,
-        *hand_controller_spawners,
-        head_controller_spawner,
-        base_controller_spawner,
-        *gravity_comp_spawners,
+        controller_spawners[0],
+        *spawner_chain_handlers,
         *gravity_comp_enable_handlers,
         move_group_node,
         rviz_node,

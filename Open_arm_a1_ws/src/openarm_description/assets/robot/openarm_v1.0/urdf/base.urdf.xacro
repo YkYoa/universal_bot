@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Standalone entry point for the mobile base only (no arm/body/hand),
+     used by display_base.launch.py to visualize/debug the base in
+     isolation. openarm_robot.xacro includes openarm_base.xacro directly
+     instead when the base is part of a full robot. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="openarm_base">
+
+  <xacro:include filename="$(find openarm_description)/assets/robot/openarm_v1.0/urdf/base/openarm_base.xacro" />
+
+  <xacro:openarm_base
+    description_pkg="openarm_description"
+    connected_to="world"
+    xyz="0 0 0.31"
+    rpy="0 0 0" />
+
+</robot>

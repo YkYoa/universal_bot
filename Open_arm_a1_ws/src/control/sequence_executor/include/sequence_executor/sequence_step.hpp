@@ -103,6 +103,11 @@ struct SequenceSpec
   std::string name;
   std::string description;
   std::string arm = "left_arm";
+  // Which hand this sequence's waypoints were authored/recorded for - empty
+  // means "not declared", which validate() treats as no requirement (older
+  // sequences, and every builtin, which has no per-action ee_type field of
+  // its own). See sequence.yaml's `sequences:` header comment.
+  std::string ee_type;
   std::string planner_profile;
   std::string required_control_mode = kModeAny;
   int repeat = 1;                          // -1 = forever

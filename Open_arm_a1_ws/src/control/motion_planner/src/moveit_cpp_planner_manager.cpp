@@ -7,6 +7,7 @@
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
 #include <moveit/trajectory_processing/ruckig_traj_smoothing.hpp>
 #include <moveit/planning_scene_monitor/planning_scene_monitor.hpp>
+#include <moveit/utils/logger.hpp>
 #include <filesystem>
 #include <fstream>
 #include <yaml-cpp/yaml.h>
@@ -263,6 +264,19 @@ namespace motion_planner
 bool MoveItCppPlannerManager::initialize(const std::shared_ptr<rclcpp::Node>& node)
 {
     node_ = node;
+
+    // Without this, MoveItCpp's internal RobotModelLoader falls back to an
+    // auto-generated node name (e.g. "moveit_2243900787") for every
+    // moveit::getLogger(...) call inside moveit_core - a fresh random
+    // number every process start, making "no collision geometry"/other
+    // moveit_core WARNs impossible to silence by logger name via
+    // --ros-args --log-level (the name isn't known ahead of time and
+    // changes every run) and harder to grep from the console. move_group's
+    // own executable calls this with its own node name (see this
+    // function's doc comment in moveit/utils/logger.hpp) - do the same
+    // here so this node's moveit_core logs get the same deterministic,
+    // filterable "robot_skills_node.moveit...." prefix instead.
+    moveit::setNodeLoggerName(node->get_name());
 
     // Initialize MoveItCpp options
     moveit_cpp::MoveItCpp::Options opts(node);
@@ -586,14 +600,20 @@ planning_interface::PlannerResponse MoveItCppPlannerManager::plan(const planning
         // segments.
         const auto& joint_sequence = request.getJointSequence();
 
-        const std::string size_error = checkJointVectorSize(
-            moveit_cpp_->getRobotModel(), request.getGroupName(), joint_sequence.front().size());
-        if (!size_error.empty()) {
-            response.success = false;
-            response.error_message = size_error;
-            publish_target_marker_for_request(request, false);
-            publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
-            return response;
+        // Every waypoint, not just the first: checking only front() let a
+        // wrong-length interior waypoint reach setJointGroupPositions() below
+        // unchecked (still an assert/SIGABRT waiting to happen) - fail before
+        // any segment plans instead of partway through the sequence.
+        for (size_t i = 0; i < joint_sequence.size(); ++i) {
+            const std::string size_error = checkJointVectorSize(
+                moveit_cpp_->getRobotModel(), request.getGroupName(), joint_sequence[i].size());
+            if (!size_error.empty()) {
+                response.success = false;
+                response.error_message = "waypoint " + std::to_string(i) + ": " + size_error;
+                publish_target_marker_for_request(request, false);
+                publish_trajectory_markers(moveit_msgs::msg::RobotTrajectory(), request.getGroupName(), false);
+                return response;
+            }
         }
 
         moveit::core::RobotStatePtr start_state;

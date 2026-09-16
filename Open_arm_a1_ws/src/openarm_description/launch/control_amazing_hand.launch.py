@@ -1,3 +1,9 @@
+"""Real-hardware bringup for one amazing_hand: ros2_control + MoveIt, no arm attached.
+
+Entry point for `ros2 launch openarm_description control_amazing_hand.launch.py`.
+Xacro source: assets/end_effector/amazing_hand/urdf/ahand_with_control.urdf.xacro.
+Controller/MoveIt config: assets/end_effector/amazing_hand/config/.
+"""
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -27,7 +33,7 @@ def generate_launch_description():
             PathJoinSubstitution([FindExecutable(name="xacro")]),
             " ",
             PathJoinSubstitution([FindPackageShare("openarm_description"),
-                                  "urdf", "ee", "amazing_hand", "ahand_with_control.urdf.xacro"]),
+                                  "assets", "end_effector", "amazing_hand", "urdf", "ahand_with_control.urdf.xacro"]),
             " side:=", side,
         ]
     )
@@ -35,11 +41,11 @@ def generate_launch_description():
 
     controllers_yaml = PathJoinSubstitution([
         FindPackageShare("openarm_description"),
-        "config", "hand", "amazing_hand", "ahand_controllers.yaml",
+        "assets", "end_effector", "amazing_hand", "config", "ahand_controllers.yaml",
     ])
 
     moveit_config_dir = os.path.join(
-        get_package_share_directory("openarm_description"), "config", "hand", "amazing_hand")
+        get_package_share_directory("openarm_description"), "assets", "end_effector", "amazing_hand", "config")
 
     # SRDF isn't a substitution-friendly format (no per-side content needed,
     # it's the same 8 joint names regardless of side), so just read it like

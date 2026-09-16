@@ -60,6 +60,14 @@ SequenceFsm::SequenceFsm(rclcpp::Node::SharedPtr node, std::shared_ptr<SequenceS
     builtins_(std::move(builtins)),
     logger_(node_->get_logger())
 {
+  // Declared here (once, regardless of which executable owns `node_` -
+  // qvic_fsm_node or the plain sequence_executor_node) rather than in each
+  // main(), so BuiltinContext.ee_type below is always safe to read: passed
+  // in as a launch-time parameter (see sequence_executor.launch.py) from the
+  // same ee_type value that built this robot's URDF/SRDF/controllers.
+  if (!node_->has_parameter("ee_type")) {
+    node_->declare_parameter<std::string>("ee_type", "");
+  }
 }
 
 void SequenceFsm::setCallbacks(TransitionCallback on_transition, FinishedCallback on_finished)
@@ -193,6 +201,16 @@ std::string SequenceFsm::validate()
            "' but the arm came up in '" + active_mode +
            "'. The mode is fixed at startup - change control_mode in "
            "hardware_config.yaml and restart the hardware to run this.";
+  }
+
+  // Empty on either side means "not declared" - permissive, same spirit as
+  // modeIsCompatible()'s unknown-mode handling, so older sequences/builtins
+  // without an ee_type keep working exactly as before this check existed.
+  const std::string robot_ee_type = node_->get_parameter_or<std::string>("ee_type", "");
+  if (!spec_.ee_type.empty() && !robot_ee_type.empty() && spec_.ee_type != robot_ee_type) {
+    return "sequence '" + spec_.name + "' needs ee_type='" + spec_.ee_type +
+           "' but the robot booted with ee_type='" + robot_ee_type +
+           "'. ee_type is fixed at launch - relaunch with the right ee_type to run this.";
   }
 
   if (builtin_) {
@@ -677,6 +695,7 @@ void SequenceFsm::runBuiltin()
   context.hand = clients_.hand;
   context.scene = clients_.scene;
   context.source = source_;
+  context.ee_type = node_->get_parameter_or<std::string>("ee_type", "");
   // Not just cancel_requested_: for a builtin with nothing in flight on
   // clients_.skill (e.g. headRotate(), which only ever calls hand->setHead()
   // - cancelActiveGoal() has no skill goal to find), SequenceFsm::cancel()

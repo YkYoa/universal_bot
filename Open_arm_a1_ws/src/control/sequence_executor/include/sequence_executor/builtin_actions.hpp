@@ -46,6 +46,13 @@ struct BuiltinContext
   std::shared_ptr<SceneClient> scene;
   std::shared_ptr<SequenceSource> source;
 
+  // "none" / "openarm_hand" / "amazing_hand" - whatever this robot actually
+  // booted with (the same value that built its URDF/SRDF/controllers), so
+  // an action can decide up front whether a hand-specific step applies
+  // instead of blindly attempting it and swallowing the failure. Empty if
+  // the launching node never declared/set the "ee_type" parameter.
+  std::string ee_type;
+
   // Poll between async hops. Returns true once the operator has cancelled or
   // e-stopped; an action that ignores it simply cannot be stopped early.
   std::function<bool()> cancelled;

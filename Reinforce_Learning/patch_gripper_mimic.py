@@ -26,7 +26,7 @@ from pxr import Usd  # noqa: E402
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 V10_USD_PATH = os.path.abspath(os.path.join(
-    _THIS_DIR, "openarm_description", "urdf", "robot", "v10", "v10.usd"
+    _THIS_DIR, "openarm_description", "assets", "robot", "openarm_v1.0", "urdf", "v10", "v10.usd"
 ))
 
 NEW_FREQ = 200.0

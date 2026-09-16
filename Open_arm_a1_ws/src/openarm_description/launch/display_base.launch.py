@@ -1,3 +1,8 @@
+"""No-hardware RViz visualization of the mobile base alone (no arm/body/hand).
+
+Entry point for `ros2 launch openarm_description display_base.launch.py`.
+Xacro source: assets/robot/openarm_v1.0/urdf/base.urdf.xacro.
+"""
 import os
 
 from launch import LaunchDescription
@@ -14,7 +19,7 @@ def generate_launch_description():
         [
             PathJoinSubstitution([FindExecutable(name="xacro")]),
             " ",
-            PathJoinSubstitution([FindPackageShare("openarm_description"), "urdf", "robot", "base.urdf.xacro"]),
+            PathJoinSubstitution([FindPackageShare("openarm_description"), "assets", "robot", "openarm_v1.0", "urdf", "base.urdf.xacro"]),
         ]
     )
     

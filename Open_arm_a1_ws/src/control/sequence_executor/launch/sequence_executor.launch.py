@@ -25,8 +25,9 @@ import os
 import yaml
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, RegisterEventHandler
 from launch.conditions import IfCondition, UnlessCondition
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
     Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 )
@@ -91,7 +92,7 @@ def launch_setup(context, *args, **kwargs):
     robot_description_content = Command([
         PathJoinSubstitution([FindExecutable(name="xacro")]), " ",
         PathJoinSubstitution([FindPackageShare("openarm_description"),
-                              "urdf", "robot", "v10.urdf.xacro"]),
+                              "assets", "robot", "openarm_v1.0", "urdf", "v10.urdf.xacro"]),
         " bimanual:=true ros2_control:=true use_fake_hardware:=", use_fake_hardware,
         " head_use_fake_hardware:=",
         PythonExpression(["'false' if '", head, "' == 'true' else 'true'"]),
@@ -188,41 +189,53 @@ def launch_setup(context, *args, **kwargs):
         condition=UnlessCondition(isaacsim),
     )
 
-    spawners = [
-        Node(package="controller_manager", executable="spawner",
-             arguments=[c, "-c", "/controller_manager"],
-             parameters=[{"use_sim_time": use_sim_time}],
-             condition=UnlessCondition(isaacsim))
-        for c in ["joint_state_broadcaster",
-                  "left_arm_controller",  "right_arm_controller",
-                  # body v2 articulated neck + head - unconditional because
-                  # robot_description below never overrides xacro's own
-                  # body_type default ("v2"), unlike bringup.launch.py's
-                  # is_body_v2-gated spawner (real hardware also supports v1).
-                  "head_controller"]
-    ]
+    # Controller spawners must NOT all launch in parallel: `spawner` loads,
+    # configures, activates, then verifies via list_controllers, and with
+    # several spawners hammering controller_manager at once - especially
+    # when it can't get RT scheduling (see the "Could not enable FIFO RT
+    # scheduling policy" warning ros2_control_node prints at startup) - that
+    # verification step can lose the race against the control loop and
+    # report a spurious "Failed to activate/load controller" even though the
+    # switch actually went through. So resolve isaacsim/ee_type eagerly to
+    # plain Python (rather than IfCondition, which can't gate list
+    # membership) and chain each spawner off the previous one's exit via
+    # OnProcessExit instead of returning them all as parallel siblings.
+    isaacsim_val = isaacsim.perform(context) == "true"
+    ee_type_val = ee_type.perform(context)
+    is_openarm_hand = ee_type_val == "openarm_hand"
+    is_amazing_hand = ee_type_val == "amazing_hand"
 
-    is_openarm_hand_not_isaacsim = IfCondition(PythonExpression(
-        ["'", ee_type, "' == 'openarm_hand' and '", isaacsim, "' == 'false'"]))
-    gripper_spawners = [
-        Node(package="controller_manager", executable="spawner",
-             arguments=[c, "-c", "/controller_manager"],
-             parameters=[{"use_sim_time": use_sim_time}],
-             condition=is_openarm_hand_not_isaacsim)
-        for c in ["left_gripper_controller", "right_gripper_controller"]
-    ]
+    def _spawner(name):
+        """Builds one `controller_manager spawner` Node for controller `name`.
+        Never returned directly into the launch description - always chained
+        via spawner_chain_handlers so only one spawner talks to
+        controller_manager at a time (see the comment above)."""
+        return Node(package="controller_manager", executable="spawner",
+                    arguments=[name, "-c", "/controller_manager"],
+                    parameters=[{"use_sim_time": use_sim_time}])
 
-    is_amazing_hand_not_isaacsim = IfCondition(PythonExpression(
-        ["'", ee_type, "' == 'amazing_hand' and '", isaacsim, "' == 'false'"]))
-    hand_spawners = [
-        Node(package="controller_manager", executable="spawner",
-             arguments=[c, "-c", "/controller_manager"],
-             parameters=[{"use_sim_time": use_sim_time}],
-             condition=is_amazing_hand_not_isaacsim)
-        for c in ["left_hand_j1_controller", "left_hand_j2_controller",
-                  "right_hand_j1_controller", "right_hand_j2_controller",
-                  "left_hand_rotate_controller", "right_hand_rotate_controller"]
-    ]
+    controller_spawners = []
+    spawner_chain_handlers = []
+    if not isaacsim_val:
+        spawner_names = ["joint_state_broadcaster",
+                          "left_arm_controller", "right_arm_controller",
+                          # body v2 articulated neck + head - unconditional because
+                          # robot_description below never overrides xacro's own
+                          # body_type default ("v2"), unlike bringup.launch.py's
+                          # is_body_v2-gated spawner (real hardware also supports v1).
+                          "head_controller"]
+        if is_openarm_hand:
+            spawner_names += ["left_gripper_controller", "right_gripper_controller"]
+        if is_amazing_hand:
+            spawner_names += ["left_hand_j1_controller", "left_hand_j2_controller",
+                               "right_hand_j1_controller", "right_hand_j2_controller",
+                               "left_hand_rotate_controller", "right_hand_rotate_controller"]
+        controller_spawners = [_spawner(name) for name in spawner_names]
+        spawner_chain_handlers = [
+            RegisterEventHandler(OnProcessExit(target_action=controller_spawners[i],
+                                                on_exit=[controller_spawners[i + 1]]))
+            for i in range(len(controller_spawners) - 1)
+        ]
 
     move_group = Node(
         package="moveit_ros_move_group",
@@ -238,6 +251,14 @@ def launch_setup(context, *args, **kwargs):
             bounds_tolerances,
             {"use_sim_time": use_sim_time},
         ],
+        # amazing_hand's ~30 sub-links per side have no collision geometry
+        # (servo horns/frames too fine-grained to be worth collision-checking)
+        # - moveit_core WARNs about every single one on every model load,
+        # drowning out real startup progress. Silence just that logger
+        # (move_group calls moveit::setNodeLoggerName("move_group") itself,
+        # giving this the deterministic name below - see the matching fix
+        # in motion_planner/moveit_cpp_planner_manager.cpp for robot_skills).
+        arguments=["--ros-args", "--log-level", "move_group.moveit.moveit.core.robot_model:=error"],
         condition=UnlessCondition(isaacsim),
     )
 
@@ -259,6 +280,14 @@ def launch_setup(context, *args, **kwargs):
             bounds_tolerances,
             {"use_sim_time": use_sim_time},
         ],
+        # Same "no collision geometry" spam as move_group above, silenced the
+        # same way. This node's own moveit_core logger name was previously
+        # random per-run (e.g. "moveit_2243900787...", picked internally by
+        # MoveItCpp's RobotModelLoader whenever nothing has called
+        # moveit::setNodeLoggerName yet) - motion_planner/
+        # moveit_cpp_planner_manager.cpp now calls it explicitly with this
+        # node's own name, which is what makes the name below deterministic.
+        arguments=["--ros-args", "--log-level", "robot_skills_node.moveit.moveit.core.robot_model:=error"],
         condition=UnlessCondition(isaacsim),
     )
 
@@ -273,6 +302,11 @@ def launch_setup(context, *args, **kwargs):
             "sequence_name": sequence_name,
             "db_path": db_path,
             "use_sim_time": use_sim_time,
+            # Same value used above to build the URDF/SRDF/controller set -
+            # exposed at runtime too so BuiltinContext.ee_type (see
+            # builtin_actions.hpp) reflects what this robot actually booted
+            # with instead of an action having to guess or blindly try.
+            "ee_type": ee_type_val,
         }],
     )
 
@@ -293,7 +327,12 @@ def launch_setup(context, *args, **kwargs):
         executable="rviz2",
         name="rviz2",
         output="log",
-        arguments=["-d", rviz_cfg],
+        # Same "no collision geometry" spam silenced the same way as
+        # move_group/robot_skills above - rviz2's MoveIt display plugin logs
+        # under a deterministic "rviz2.moveit...." name since it's always
+        # started with node name "rviz2" (no random-suffix problem here).
+        arguments=["-d", rviz_cfg,
+                   "--ros-args", "--log-level", "rviz2.moveit.core.robot_model:=error"],
         parameters=[
             robot_description,
             robot_description_semantic,
@@ -310,9 +349,8 @@ def launch_setup(context, *args, **kwargs):
         head_motor_driver_node,
         rsp,
         ros2_ctrl,
-        *spawners,
-        *gripper_spawners,
-        *hand_spawners,
+        *([controller_spawners[0]] if controller_spawners else []),
+        *spawner_chain_handlers,
         move_group,
         robot_skills,
         sequence_executor,

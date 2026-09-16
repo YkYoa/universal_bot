@@ -17,7 +17,7 @@ def generate_launch_description():
         [
             PathJoinSubstitution([FindExecutable(name="xacro")]),
             " ",
-            PathJoinSubstitution([FindPackageShare("openarm_description"), "urdf", "robot", "v10.urdf.xacro"]),
+            PathJoinSubstitution([FindPackageShare("openarm_description"), "assets", "robot", "openarm_v1.0", "urdf", "v10.urdf.xacro"]),
             " ",
             "bimanual:=true",
             " ",

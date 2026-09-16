@@ -92,11 +92,11 @@ Substitute `can0` for the right arm's motor 8.
 ## After recalibrating motor 8
 
 The joint limits (`hand_rotate_lower`/`hand_rotate_upper` in
-`openarm_description/urdf/ee/amazing_hand_arguments.xacro`, default
+`openarm_description/assets/end_effector/amazing_hand/urdf/amazing_hand_arguments.xacro`, default
 `-1.570796`/`1.570796` = +-90deg) are relative to wherever "0" is defined by
 this calibration. If you moved zero by a non-trivial amount, re-check that
 the mechanism can still physically reach both limits without hitting
 anything, and adjust `hand_rotate_lower`/`hand_rotate_upper` (or
 `hand_rotate_axis` if the rotation direction itself seems backwards) via
 launch args if needed - see the joint's comment in
-`openarm_description/urdf/robot/openarm_robot.xacro`.
+`openarm_description/assets/robot/openarm_v1.0/urdf/openarm_robot.xacro`.

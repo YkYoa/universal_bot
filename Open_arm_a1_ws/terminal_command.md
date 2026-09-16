@@ -74,7 +74,7 @@ openarm-can-cli -i can1 enable --id 1,2,3,4,5,6,7
 
 **Motor 8 (gripper/amazing_hand connector)** — same `disable`/`set_zero`/`show_param`/`enable` pattern with `--id 8` on the appropriate interface. **Do NOT** use the vendor's `openarm-can-zero-position-calibration` tool on motor 8 if `ee_type=amazing_hand` — it seeks a mechanical hard stop that doesn't exist in that direction and will spin indefinitely (has happened before). That tool is still fine for joints 1-7.
 
-After recalibrating motor 8 by a non-trivial amount, re-check `hand_rotate_lower`/`hand_rotate_upper` in `openarm_description/urdf/ee/amazing_hand_arguments.xacro` still make physical sense.
+After recalibrating motor 8 by a non-trivial amount, re-check `hand_rotate_lower`/`hand_rotate_upper` in `openarm_description/assets/end_effector/amazing_hand/urdf/amazing_hand_arguments.xacro` still make physical sense.
 
 ## 3. Bring up
 
@@ -85,6 +85,9 @@ Three different launch entry points depending on what you need:
 ros2 launch robot_hardware_interface bringup.launch.py arms:=auto head:=auto use_rviz:=true ee_type:=amazing_hand body_type:=v2
 ```
 `arms`/`head`: `auto` (default, detects live CAN/ethernet link), or force `true`/`false`.
+--------------------------------------------------------------
+control robot arm through topic list 
+
 
 **A2. One arm real, the other fake** (added 2026-08-28 — `arms:=` alone is all-or-nothing and previously crashed `ros2_control_node` entirely if the other side's CAN wasn't ready). Use `left_arm:=`/`right_arm:=` to override a side independently — `same` (default) follows `arms:=`, or force `true`/`false`/`auto` per side:
 ```bash
@@ -102,6 +105,44 @@ ros2 launch moveit_api robot_api.launch.py use_rviz:=false use_moveit:=true use_
 ros2 launch qvic_2026 qvic_2026.launch.py arm:=both ee_type:=none head:=true use_fake_hardware:=false use_rviz:=false use_api:=true use_db:=true autostart:=false
 ```
 Set `use_fake_hardware:=true` for a dry run without touching real motors.
+
+**C2. Local dry-run on the laptop, isolated from IQ9075** (added 2026-09-11). The laptop's default `ROS_DOMAIN_ID=42` + `~/.ros/cyclonedds.xml` (see project memory `dds-rmw-setup-iq9075`) unicast-peer with `192.168.1.226` by design — fine for remote RViz, but it means a plain local launch shares the same DDS domain as a live IQ9075 bringup: duplicate node names (`robot_state_publisher`, `controller_manager`, `move_group`, ...) and topics (`/joint_states`, controller commands, ...) can crosstalk with the real robot. Override both per-invocation (don't touch `.bashrc`'s defaults, which you want when actually bridging to IQ9075):
+```bash
+ROS_DOMAIN_ID=99 CYCLONEDDS_URI="" ros2 launch qvic_2026 qvic_2026.launch.py \
+  arm:=both ee_type:=amazing_hand head:=true use_fake_hardware:=true use_rviz:=true \
+  use_api:=false use_db:=true autostart:=false
+```
+- Use `export` (not a bare `VAR=val` line) if setting these in a separate terminal from the one launching — a bare assignment only sticks for that shell if the var was already exported elsewhere (e.g. `ROS_DOMAIN_ID` via `.bashrc`); it silently won't reach a fresh, unrelated terminal's `ros2` calls otherwise.
+- `ee_type` must match what the sequence data was recorded for — `qvic_2026`'s `sequence.yaml` (`homePoses`'s `lhHomeYaw`/`lhHomeFlex`/etc., and the extra 8th "motor 8" value in `laHomeAngle`/`raHomeAngle` — `both_arms` is 16-DOF under `amazing_hand`, 14 under `openarm_hand`/`none`) is `amazing_hand` data (`left_hand_j1_controller` etc.); `openarm_hand`/`none` will fail hand-pose steps with `.../follow_joint_trajectory not available` even though arm-only steps succeed either way.
+- If a controller_manager overrun WARN (`Overrun detected! ... missed cycles`) causes a step to fail with `Blocking execution failed with status: TIMED_OUT`, it's `ros2_control_node` not getting real-time scheduling (`Could not enable FIFO RT scheduling policy: Operation not permitted` at startup). Fix once, needs a relogin/reboot to take effect:
+  ```bash
+  echo "hans   -  rtprio  98" | sudo tee /etc/security/limits.d/99-ros2-control-rtprio.conf
+  # log out/in or reboot, then confirm: ulimit -Hr  →  should print 98, not 0
+  ```
+
+### Local run with the REST API + web dashboard (`use_api:=true`)
+
+`robot_api_server` needs Flask — install via **apt**, not pip (`pip install --user` hits `externally-managed-environment` on this box, and a venv would need `--system-site-packages` to still see the apt-installed `rclpy`; apt is simplest and matches this package's own `package.xml` deps):
+```bash
+sudo apt install python3-flask python3-flask-socketio python3-flask-compress
+```
+Then launch with `use_api:=true`:
+```bash
+ROS_DOMAIN_ID=99 CYCLONEDDS_URI="" ros2 launch qvic_2026 qvic_2026.launch.py \
+  arm:=both ee_type:=amazing_hand head:=true use_fake_hardware:=true use_rviz:=false \
+  use_api:=true use_db:=true autostart:=false
+```
+Open in a browser:
+- `http://localhost:5050/dashboard/fsm.html` — sequence picker + **Run**/**Dry run** buttons, plus Pause/Resume/Step/Cancel/**Clear fault**/E-stop. This is the fast path for repeated testing — no more retyping `ros2 action send_goal`/`service call fsm_command` by hand each time.
+- `http://localhost:5050/dashboard/` — 3D pose/joint-state visualizer.
+- `http://localhost:5050/api/docs` — full REST API reference.
+
+CLI equivalents (no API/dashboard needed — node name is always `sequence_executor_node` regardless of package):
+```bash
+ros2 action send_goal /sequence_executor_node/run_sequence openarm_messages/action/RunSequence \
+  "{sequence_name: 'qvic_2026_both', repeat_override: 0, velocity_override: 0.0, dry_run: false}" --feedback
+ros2 service call /sequence_executor_node/fsm_command openarm_messages/srv/FsmCommand "{command: 'clear_fault'}"
+```
 
 ## 4. MoveIt — remote RViz from laptop
 

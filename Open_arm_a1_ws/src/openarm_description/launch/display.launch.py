@@ -1,3 +1,8 @@
+"""No-hardware RViz visualization of the full v10 robot (arm/body/base/ee, any combination).
+
+Entry point for `ros2 launch openarm_description display.launch.py`.
+Xacro source: assets/robot/openarm_v1.0/urdf/v10.urdf.xacro.
+"""
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -98,7 +103,7 @@ def generate_launch_description():
         [
             PathJoinSubstitution([FindExecutable(name="xacro")]),
             " ",
-            PathJoinSubstitution([FindPackageShare("openarm_description"), "urdf", "robot", "v10.urdf.xacro"]),
+            PathJoinSubstitution([FindPackageShare("openarm_description"), "assets", "robot", "openarm_v1.0", "urdf", "v10.urdf.xacro"]),
             " ",
             "arm_type:=", arm_type,
             " ",

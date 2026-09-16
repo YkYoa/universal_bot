@@ -14,7 +14,7 @@ from pxr import Usd, UsdPhysics, Sdf
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 V10_USD_PATH = os.path.abspath(os.path.join(
-    _THIS_DIR, "openarm_description", "urdf", "robot", "v10", "v10.usd"
+    _THIS_DIR, "openarm_description", "assets", "robot", "openarm_v1.0", "urdf", "v10", "v10.usd"
 ))
 
 print(f"\n=== Inspecting and Patching Robot USD: {V10_USD_PATH} ===\n")

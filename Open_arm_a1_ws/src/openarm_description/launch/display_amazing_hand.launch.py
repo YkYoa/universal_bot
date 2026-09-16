@@ -1,3 +1,8 @@
+"""No-hardware RViz visualization of one amazing_hand, driven by slider input.
+
+Entry point for `ros2 launch openarm_description display_amazing_hand.launch.py`.
+Static source: assets/end_effector/amazing_hand/urdf/{l,r}_ahand.urdf.
+"""
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
@@ -52,7 +57,7 @@ def generate_launch_description():
         [
             PathJoinSubstitution([FindExecutable(name="xacro")]),
             " ",
-            PathJoinSubstitution([FindPackageShare("openarm_description"), "urdf", "ee", "amazing_hand", urdf_file]),
+            PathJoinSubstitution([FindPackageShare("openarm_description"), "assets", "end_effector", "amazing_hand", "urdf", urdf_file]),
         ]
     )
 
@@ -62,7 +67,7 @@ def generate_launch_description():
         ["'knuckles_only.yaml' if '", command_space, "' == 'knuckle' else 'actuators_only.yaml'"])
     slider_joints_params = PathJoinSubstitution([
         FindPackageShare("openarm_description"),
-        "config", "hand", "amazing_hand", sliders_yaml,
+        "assets", "end_effector", "amazing_hand", "config", sliders_yaml,
     ])
 
     rviz_config_file = PathJoinSubstitution([

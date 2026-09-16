@@ -12,7 +12,7 @@
 # this value once that's been checked against the actual head assembly.
 #
 # min_angle_rad/max_angle_rad match the URDF's actual joint limits
-# (openarm_description/urdf/body/openarm_body.xacro: both neck_joint and
+# (openarm_description/assets/robot/openarm_v1.0/urdf/body/openarm_body.xacro: both neck_joint and
 # head_joint are +-1.0472 rad / +-60deg), not HEAD_DRIVER_SPEC.md's
 # placeholder values.
 #

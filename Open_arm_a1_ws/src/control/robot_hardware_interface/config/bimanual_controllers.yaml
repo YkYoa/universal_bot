@@ -205,6 +205,15 @@ right_forward_velocity_controller:
 
 left_gravity_comp_controller:
   ros__parameters:
+    # 7 joints only (2026-09-15): under ee_type:=openarm_hand, the KDL chain
+    # base_link->tip_link below does NOT include openarm_left_finger_joint1
+    # (unlike amazing_hand, where the connector rotation sits in that same
+    # chain - see amazing_hand_connector's joint comment in
+    # openarm_robot.xacro) - controller_manager refused to configure with an
+    # 8-entry `joints` list ("KDL chain ... joint order does not match the
+    # 'joints' parameter - refusing to configure (would send torques to the
+    # wrong joints)"). If ee_type:=amazing_hand needs gravity comp again,
+    # that's a separate 8-joint config, not this one.
     joints:
       - openarm_left_joint1
       - openarm_left_joint2
@@ -213,16 +222,15 @@ left_gravity_comp_controller:
       - openarm_left_joint5
       - openarm_left_joint6
       - openarm_left_joint7
-      - openarm_left_finger_joint1
     base_link: openarm_body_link0
     tip_link: openarm_left_hand_tcp
     ramp_duration_sec: 2.0
-    # One value per `joints` entry above, in order (joint1..7, finger_joint1).
+    # One value per `joints` entry above, in order.
     # joint7 raised to 1.0 (2026-08-17): it holds worse than the others -
     # its gravity torque is ~0 across its whole range (mass near its own
     # rotation axis), so it has no equilibrium point of its own and relies
     # entirely on this damping to kill drift/momentum after release.
-    joint_damping_nm_per_rad_s: [0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 1.0, 0.45]
+    joint_damping_nm_per_rad_s: [0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 1.0]
     # Virtual detent (2026-08-17): damping alone only slows joint7's drift,
     # it can't stop it (no gravity equilibrium of its own to slow toward -
     # see joint_damping_nm_per_rad_s comment). This adds a light spring back
@@ -233,11 +241,13 @@ left_gravity_comp_controller:
     # increase joint7's detent_kp entry if it still creeps once the anchor
     # is catching the drift; increase detent_max_slew_rad_s if slow
     # deliberate hand motion feels resisted.
-    detent_kp_nm_per_rad: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0]
+    detent_kp_nm_per_rad: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5]
     detent_max_slew_rad_s: 0.02
 
 right_gravity_comp_controller:
   ros__parameters:
+    # See left_gravity_comp_controller's comment above - same 7-joint,
+    # ee_type:=openarm_hand reasoning, mirrored for the right side.
     joints:
       - openarm_right_joint1
       - openarm_right_joint2
@@ -246,11 +256,10 @@ right_gravity_comp_controller:
       - openarm_right_joint5
       - openarm_right_joint6
       - openarm_right_joint7
-      - openarm_right_finger_joint1
     base_link: openarm_body_link0
     tip_link: openarm_right_hand_tcp
     ramp_duration_sec: 2.0
-    joint_damping_nm_per_rad_s: [0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 1.0, 0.45]
+    joint_damping_nm_per_rad_s: [0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 1.0]
 
 left_gripper_controller:
   ros__parameters:
