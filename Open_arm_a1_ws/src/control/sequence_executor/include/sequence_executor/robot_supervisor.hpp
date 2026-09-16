@@ -73,10 +73,14 @@ public:
   using FsmState = openarm_messages::msg::FsmState;
   using GoalHandle = rclcpp_action::ServerGoalHandle<RunSequence>;
 
-  /// Builds the owned SequenceFsm; does not advertise anything yet (see start()).
+  /// Builds the owned SequenceFsm; does not advertise anything yet (see
+  /// start()). `motor_enable` defaults to a real MotorEnableClient talking
+  /// to this node's controller_manager - pass a stub subclass instead (see
+  /// motor_enable_client.hpp) where there is no real one, e.g. in tests.
   RobotSupervisor(rclcpp::Node::SharedPtr node, std::shared_ptr<SequenceSource> source,
                   std::shared_ptr<ControlModeProbe> mode_probe,
-                  std::shared_ptr<BuiltinActionRegistry> builtins);
+                  std::shared_ptr<BuiltinActionRegistry> builtins,
+                  std::shared_ptr<MotorEnableClient> motor_enable = nullptr);
 
   // Advertises everything and publishes the first state. Call after the
   // controllers are up.
@@ -156,7 +160,18 @@ private:
   // the hardware components. See FsmState.msg's motors_enabled field
   // comment for why a physical E-stop press that never goes through this
   // command is invisible here.
-  bool motors_enabled_ = true;
+  //
+  // Defaults to false, not true: this process has no way to know whether
+  // the physical motors already lost and regained power before this
+  // instance of RobotSupervisor even existed - found live 2026-09-16, a
+  // motor-power-only cycle (compute stayed up, openarm-robot.service never
+  // restarted, so this flag would have kept a stale `true` from before the
+  // cycle) let a sequence "complete successfully" at the software layer
+  // with the arms never actually re-enabled. Starting distrustful costs one
+  // extra (idempotent, harmless-if-already-active) enable cycle on this
+  // process's very first accepted goal after any restart, in exchange for
+  // never silently trusting a belief this process cannot verify.
+  bool motors_enabled_ = false;
 
   // Set by handleCommand()'s "abort_to_home" while the cancel it just issued
   // is still in flight; consumed by onSequenceFinished() once that cancel

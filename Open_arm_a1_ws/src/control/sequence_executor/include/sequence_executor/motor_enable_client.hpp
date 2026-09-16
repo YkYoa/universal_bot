@@ -32,11 +32,17 @@
 
 namespace sequence_executor {
 
-/// See file header comment.
+/// See file header comment. enableAll() is virtual, and the constructor
+/// protected, so a test can subclass this to stub the re-enable cycle
+/// without a real controller_manager to talk to - see
+/// test_robot_supervisor.cpp's file header comment on why ControlModeProbe
+/// couldn't get the same treatment without a bigger rework; this class was
+/// designed testable from the start instead of retrofitted.
 class MotorEnableClient
 {
 public:
   explicit MotorEnableClient(const rclcpp::Node::SharedPtr& node);
+  virtual ~MotorEnableClient() = default;
 
   /// Cycles every physical (non-mock) hardware component through
   /// inactive -> active, forcing a fresh enable_all() over CAN on each.
@@ -44,7 +50,7 @@ public:
   /// "active"; `message` explains the outcome (component names and
   /// resulting states) either way, suitable for FsmCommand::Response or a
   /// failed goal's error_message.
-  bool enableAll(std::string& message);
+  virtual bool enableAll(std::string& message);
 
 private:
   using ListHardwareComponents = controller_manager_msgs::srv::ListHardwareComponents;

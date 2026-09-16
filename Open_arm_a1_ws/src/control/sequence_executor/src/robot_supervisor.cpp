@@ -33,19 +33,20 @@ const char* toString(RobotState state)
 RobotSupervisor::RobotSupervisor(rclcpp::Node::SharedPtr node,
                                  std::shared_ptr<SequenceSource> source,
                                  std::shared_ptr<ControlModeProbe> mode_probe,
-                                 std::shared_ptr<BuiltinActionRegistry> builtins)
+                                 std::shared_ptr<BuiltinActionRegistry> builtins,
+                                 std::shared_ptr<MotorEnableClient> motor_enable)
   : node_(std::move(node)),
     source_(std::move(source)),
     mode_probe_(std::move(mode_probe)),
     builtins_(std::move(builtins)),
+    motor_enable_(motor_enable ? std::move(motor_enable)
+                               : std::make_shared<MotorEnableClient>(node_)),
     logger_(node_->get_logger())
 {
   SequenceFsm::Clients clients;
   clients.skill = std::make_shared<SkillClient>(node_);
   clients.hand = std::make_shared<HandGripperClient>(node_);
   clients.scene = std::make_shared<SceneClient>(node_);
-
-  motor_enable_ = std::make_shared<MotorEnableClient>(node_);
 
   fsm_ = std::make_unique<SequenceFsm>(node_, source_, clients, mode_probe_, builtins_);
   fsm_->setCallbacks(
