@@ -4,9 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenArm FSM – Supervisory State Machine</title>
-  <link rel="icon" type="image/x-icon" href="/dashboard/favicon/favicon.ico">
-  <link rel="icon" type="image/png" sizes="32x32" href="/dashboard/favicon/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/dashboard/favicon/favicon-16x16.png">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
   <style>
     :root {
       --bg-dark: #090d16;
@@ -113,6 +115,36 @@
       color: #cbd5e1;
       border-color: rgba(71, 85, 105, 0.4);
     }
+    .pill-interactive {
+      user-select: none;
+      transition: all 0.2s ease;
+    }
+    .pill-interactive:focus {
+      outline: 2px solid var(--accent-sky);
+      outline-offset: 2px;
+    }
+    .pill-motor-disabled {
+      cursor: pointer;
+      background: rgba(244, 63, 94, 0.15);
+      border-color: rgba(244, 63, 94, 0.4);
+      color: #f87171;
+      animation: pulse-border 2s infinite;
+    }
+    .pill-motor-disabled:hover {
+      background: rgba(244, 63, 94, 0.25);
+      border-color: rgba(244, 63, 94, 0.7);
+      box-shadow: 0 0 10px rgba(244, 63, 94, 0.3);
+    }
+    .pill-motor-enabled {
+      cursor: default;
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #34d399;
+    }
+    @keyframes pulse-border {
+      0%, 100% { border-color: rgba(244, 63, 94, 0.4); }
+      50% { border-color: rgba(244, 63, 94, 0.8); }
+    }
     .pulse-dot {
       width: 7px;
       height: 7px;
@@ -210,6 +242,18 @@
     }
     @media (max-width: 480px) {
       .controls-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .controls-row-bottom {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .controls-row-bottom .btn {
+      flex: 1;
+      max-width: 210px;
+      padding: 10px 14px;
+      font-size: 12px;
     }
     .btn {
       display: inline-flex;
@@ -742,6 +786,9 @@
         <span class="pulse-dot"></span>
         <span id="fsm-robot-state">IDLE</span>
       </div>
+      <div class="pill pill-meta pill-interactive pill-motor-enabled" id="fsm-motor-pill" role="button" tabindex="0" title="Motors active">
+        Motors: <span id="fsm-motors-state" style="color:#34d399; font-weight:700;">ENABLED</span>
+      </div>
       <div class="pill pill-meta" id="mode-wrapper">
         Mode: <span id="mode" style="color:#38bdf8; font-weight:700;">position</span>
       </div>
@@ -809,19 +856,17 @@
           <h2>Supervisory Controls</h2>
           <span style="font-size: 11px; color: var(--text-muted); font-family: ui-monospace, monospace;">Direct overrides</span>
         </div>
-        <p class="card-hint">Pause takes effect at next step boundary; Abort or E-Stop halts motion immediately.</p>
+        <p class="card-hint">Pause takes effect at next step boundary; Stop or Abort halts motion immediately.</p>
         
         <div class="controls-grid">
           <button id="btnPause" class="btn">Pause</button>
           <button id="btnResume" class="btn">Resume</button>
-          <button id="btnStep" class="btn">Step</button>
-          <button id="btnCancel" class="btn">Cancel</button>
           <button id="btnClear" class="btn">Clear fault</button>
-          <button id="btnAbortHome" class="btn btn-warning" title="Cancel active sequence, clear faults, and safely return both arms to Home posture">Abort ➔ Home</button>
         </div>
 
-        <div style="margin-top: 8px;">
-          <button id="btnEstop" class="btn btn-danger" style="width: 100%; padding: 10px; font-size: 12px; letter-spacing: 0.06em;">E-STOP (EMERGENCY HALT)</button>
+        <div class="controls-row-bottom">
+          <button id="btnStop" class="btn btn-danger" style="letter-spacing: 0.04em;">⏹ STOP (Cancel Sequence)</button>
+          <button id="btnAbortHome" class="btn btn-warning" title="Cancel active sequence, clear faults, and safely return both arms to Home posture">Abort ➔ Home</button>
         </div>
 
         <div class="bar">

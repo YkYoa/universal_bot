@@ -199,6 +199,44 @@ def css_static(filename):
     return send_from_directory(_web_visualizer_dir(), f'{filename}.css')
 
 
+# Favicon & App Manifest endpoints
+@app.route('/favicon.ico', methods=['GET'])
+def root_favicon():
+    """Serve favicon.ico at root."""
+    return send_from_directory(os.path.join(_web_visualizer_dir(), 'favicon'), 'favicon.ico')
+
+
+@app.route('/apple-touch-icon.png', methods=['GET'])
+@app.route('/apple-touch-icon-precomposed.png', methods=['GET'])
+def root_apple_touch_icon():
+    """Serve Apple Touch icon for iOS bookmarks."""
+    return send_from_directory(os.path.join(_web_visualizer_dir(), 'favicon'), 'apple-touch-icon.png')
+
+
+@app.route('/android-chrome-192x192.png', methods=['GET'])
+def root_chrome_192():
+    """Serve Android Chrome 192x192 icon."""
+    return send_from_directory(os.path.join(_web_visualizer_dir(), 'favicon'), 'android-chrome-192x192.png')
+
+
+@app.route('/android-chrome-512x512.png', methods=['GET'])
+def root_chrome_512():
+    """Serve Android Chrome 512x512 icon."""
+    return send_from_directory(os.path.join(_web_visualizer_dir(), 'favicon'), 'android-chrome-512x512.png')
+
+
+@app.route('/site.webmanifest', methods=['GET'])
+def root_webmanifest():
+    """Serve PWA / Web App Manifest."""
+    return send_from_directory(os.path.join(_web_visualizer_dir(), 'favicon'), 'site.webmanifest')
+
+
+@app.route('/favicon/<path:filename>', methods=['GET'])
+def favicon_static(filename):
+    """Serve favicon package assets."""
+    return send_from_directory(os.path.join(_web_visualizer_dir(), 'favicon'), filename)
+
+
 @app.route('/api/urdf', methods=['GET'])
 def get_urdf():
     """
@@ -341,6 +379,43 @@ def get_pose(group_name):
 
 
 # ─────────────────────────────────────────────
+# Motor-enable guard for direct REST API moves
+# ─────────────────────────────────────────────
+_motor_enable_lock = threading.Lock()
+_motor_enable_cache = {'enabled': False, 'expires': 0.0}
+_MOTOR_ENABLE_TTL = 30.0  # seconds
+
+def _ensure_motors_enabled():
+    """Ensure motors are enabled and ready before any move or sequence.
+
+    Uses a TTL cache to avoid spamming the enable service on rapid-fire
+    API calls (e.g. slider UI). Returns (ok, message).
+    """
+    if fsm is None or not fsm.is_connected():
+        # FSM not available — can't check/enable, let the move try anyway
+        return True, ''
+
+    latest = fsm.latest_state()
+    # If the FSM reports motors are not enabled or robot is in FAULT, force auto-recovery
+    if latest and (not latest.get('motors_enabled', False) or latest.get('robot_state') == 'FAULT'):
+        with _motor_enable_lock:
+            _motor_enable_cache['enabled'] = False
+            _motor_enable_cache['expires'] = 0.0
+
+    now = time.time()
+    with _motor_enable_lock:
+        if _motor_enable_cache['enabled'] and now < _motor_enable_cache['expires']:
+            return True, ''
+
+    # Cache miss or expired or faulted — auto-recover and enable
+    ok, message = fsm.ensure_ready_for_motion(timeout_sec=3.0)
+    with _motor_enable_lock:
+        _motor_enable_cache['enabled'] = ok
+        _motor_enable_cache['expires'] = now + _MOTOR_ENABLE_TTL if ok else 0.0
+    return ok, message
+
+
+# ─────────────────────────────────────────────
 # Move to End-Effector Pose
 # ─────────────────────────────────────────────
 
@@ -443,7 +518,11 @@ def move_to_pose():
             'LBKPIECE': 'LBKPIECEkConfigDefault'
         }
         planner = mapping.get(planner, planner)
-    
+
+    ok_en, msg_en = _ensure_motors_enabled()
+    if not ok_en:
+        app.logger.warning(f'Motor enable failed before move_to_pose: {msg_en}')
+
     try:
         result = controller.move_to_pose(
             group_name=group,
@@ -512,6 +591,10 @@ def move_to_joints():
     unit = data.get('unit', 'rad')
     duration = float(data.get('duration', 3.0))
     velocity = float(data.get('velocity_scaling', 0.3))
+
+    ok_en, msg_en = _ensure_motors_enabled()
+    if not ok_en:
+        app.logger.warning(f'Motor enable failed before move_to_joints: {msg_en}')
 
     try:
         result = controller.move_to_joint_positions(
@@ -624,6 +707,10 @@ def move_single_joint():
     unit = data.get('unit', 'rad')
     velocity = float(data.get('velocity_scaling', 0.3))
 
+    ok_en, msg_en = _ensure_motors_enabled()
+    if not ok_en:
+        app.logger.warning(f'Motor enable failed before move_single_joint: {msg_en}')
+
     try:
         result = controller.move_single_joint(
             group_name=group,
@@ -670,6 +757,10 @@ def move_to_named():
             'message': 'group must be one of: left_arm, right_arm, both_arms, '
                        'left_hand_fingers, right_hand_fingers'
         }), 400
+
+    ok_en, msg_en = _ensure_motors_enabled()
+    if not ok_en:
+        app.logger.warning(f'Motor enable failed before move_to_named: {msg_en}')
 
     try:
         result = controller.move_to_named_pose(
@@ -731,7 +822,11 @@ def control_gripper():
             }), 400
     
     duration = float(data.get('duration', 1.0))
-    
+
+    ok_en, msg_en = _ensure_motors_enabled()
+    if not ok_en:
+        app.logger.warning(f'Motor enable failed before control_gripper: {msg_en}')
+
     try:
         result = controller.move_gripper(side, float(position), duration)
         return jsonify(result)
@@ -793,6 +888,10 @@ def control_head():
                 'success': False,
                 'message': 'action ("left"/"right"/"home") or pan+tilt (radians) required'
             }), 400
+
+    ok_en, msg_en = _ensure_motors_enabled()
+    if not ok_en:
+        app.logger.warning(f'Motor enable failed before control_head: {msg_en}')
 
     try:
         result = controller.move_head(float(pan), float(tilt), duration)
@@ -859,6 +958,10 @@ def control_hand():
             'message': 'action ("open"/"close"/"home") or positions (8 values) required'
         }), 400
 
+    ok_en, msg_en = _ensure_motors_enabled()
+    if not ok_en:
+        app.logger.warning(f'Motor enable failed before control_hand: {msg_en}')
+
     try:
         result = controller.move_hand(side, positions=positions, action=action,
                                        velocity_scaling=velocity)
@@ -876,16 +979,13 @@ def control_hand():
 def stop_motion():
     """Stop everything now.
 
-    Goes to the FSM's estop command, which cancels the in-flight motion goal
-    and parks the robot in ESTOP until clear_fault. The old implementation set
-    a module-level flag that only the (now removed) in-request sequence loop
-    ever read, so it could not stop a sequence run by anything else.
+    Cancels the in-flight motion goal and returns to IDLE.
     """
     ok, message = _require_fsm()
     if not ok:
         return jsonify({'success': False, 'message': message}), 503
-    ok, message = fsm.send_command('estop')
-    app.logger.info(f'Emergency stop: {message}')
+    ok, message = fsm.send_command('stop')
+    app.logger.info(f'Stop: {message}')
     return jsonify({'success': ok, 'message': message}), (200 if ok else 409)
 
 
@@ -939,7 +1039,11 @@ def move_both_arms():
             'success': False,
             'message': 'Provide left_positions and/or right_positions (7 values each)'
         }), 400
-    
+
+    ok_en, msg_en = _ensure_motors_enabled()
+    if not ok_en:
+        app.logger.warning(f'Motor enable failed before move_both_arms: {msg_en}')
+
     for t in threads:
         t.start()
     for t in threads:
@@ -992,10 +1096,14 @@ def _get_caller_session_id():
 
 def _require_controller_session():
     """Verify that caller holds the active exclusive control lease.
+    If no operator currently holds the lease, auto-claims for the caller.
     Returns (True, session_id) or (False, error_message).
     """
-    sid = _get_caller_session_id()
-    if not sid or not session_mgr.is_controller(sid):
+    sid = _get_caller_session_id() or 'api_client'
+    state = session_mgr.get_state()
+    if state.get('controller_id') is None:
+        session_mgr.join(sid)
+    elif not session_mgr.is_controller(sid):
         active_state = session_mgr.get_state()
         ctrl_id = active_state.get('controller_id')
         short_id = (ctrl_id[:8] if ctrl_id else 'none')
@@ -1045,8 +1153,8 @@ def fsm_state():
 
 @app.route('/api/fsm/command', methods=['POST'])
 def fsm_command():
-    """pause | resume | step | cancel | estop | clear_fault | enter_teach |
-    exit_teach."""
+    """pause | resume | step | stop | cancel | clear_fault | enter_teach |
+    exit_teach | abort_to_home | enable."""
     ok_ctrl, ctrl_msg = _require_controller_session()
     if not ok_ctrl:
         return jsonify({'success': False, 'message': ctrl_msg}), 403
@@ -1061,6 +1169,15 @@ def fsm_command():
         return jsonify({'success': False, 'message': "'command' is required"}), 400
 
     ok, message = fsm.send_command(command)
+    if command in ('stop', 'cancel', 'clear_fault'):
+        with _motor_enable_lock:
+            _motor_enable_cache['enabled'] = False
+            _motor_enable_cache['expires'] = 0.0
+    elif command == 'enable' and ok:
+        with _motor_enable_lock:
+            _motor_enable_cache['enabled'] = True
+            _motor_enable_cache['expires'] = time.time() + _MOTOR_ENABLE_TTL
+
     # A refused command is a legitimate answer ("not paused", "no fault to
     # clear"), not a server error - 409 so a client can show the message.
     return jsonify({'success': ok, 'message': message}), (200 if ok else 409)
@@ -1126,11 +1243,17 @@ def run_sequence():
     if not name:
         return jsonify({'success': False, 'message': "'name' is required"}), 400
 
+    dry_run = bool(data.get('dry_run', False))
+    if not dry_run:
+        ok_en, msg_en = _ensure_motors_enabled()
+        if not ok_en:
+            return jsonify({'success': False, 'message': f'Cannot start sequence: {msg_en}'}), 409
+
     ok, message = fsm.run_sequence(
         name,
         repeat=data.get('repeat', 0),
         velocity=data.get('velocity', 0.0),
-        dry_run=bool(data.get('dry_run', False)),
+        dry_run=dry_run,
     )
     return jsonify({'success': ok, 'message': message}), (200 if ok else 409)
 
@@ -1240,6 +1363,10 @@ def move_to_workspace_point():
         'orientation': {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0},
     }
 
+    ok_en, msg_en = _ensure_motors_enabled()
+    if not ok_en:
+        app.logger.warning(f'Motor enable failed before move_to_workspace: {msg_en}')
+
     try:
         result = controller.move_to_pose(
             group_name=group, target_pose=target,
@@ -1334,6 +1461,16 @@ def ws_fsm_session_leave(data=None):
 def fsm_session_state():
     """Get active session manager status (current controller, queue length, etc)."""
     return jsonify({'success': True, 'state': session_mgr.get_state()})
+
+
+@app.route('/api/fsm/session_join', methods=['POST'])
+def fsm_session_join():
+    """Register or claim control for a session via REST."""
+    data = request.get_json(silent=True) or {}
+    sid = data.get('session_id') or request.headers.get('X-Session-ID') or 'api_client'
+    state = session_mgr.join(sid)
+    socketio.emit('fsm_session_state', state)
+    return jsonify({'success': True, 'state': state, 'is_controller': session_mgr.is_controller(sid)})
 
 
 @app.route('/api/fsm/release_control', methods=['POST'])
@@ -1535,10 +1672,18 @@ def main():
     global controller, fsm, log_collector
     controller = MoveItEEController()
 
+    def _on_fsm_state(state):
+        """Forward FSM state to WebSocket clients and invalidate motor cache on fault."""
+        socketio.emit('fsm_state', state)
+        if state and state.get('robot_state') == 'FAULT':
+            with _motor_enable_lock:
+                _motor_enable_cache['enabled'] = False
+                _motor_enable_cache['expires'] = 0.0
+
     # Every FSM transition is pushed straight out to connected clients. The
     # executor only publishes when something actually changes, so an idle robot
     # generates no socket traffic - unlike the 10 Hz joint_states stream.
-    fsm = FsmBridge(on_state=lambda state: socketio.emit('fsm_state', state))
+    fsm = FsmBridge(on_state=_on_fsm_state)
 
     # Log collector: subscribes to /rosout, writes .jsonl files, and pushes
     # ERROR/FATAL entries to connected WebSocket clients as 'log_event'.

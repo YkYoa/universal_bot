@@ -4,15 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>OpenArm 3D Dashboard</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 <style>
   html, body { margin: 0; height: 100%; background: #14161a; overflow: hidden; }
-  #viewport { position: fixed; inset: 0; }
+  #viewport { position: fixed; inset: 0; top: 44px; }
   #viewport canvas { display: block; touch-action: none; }
 
   #panel {
-    position: fixed; top: 12px; left: 12px; z-index: 10;
+    position: fixed; top: 56px; left: 12px; z-index: 10;
     width: 280px; max-width: calc(100vw - 24px);
-    max-height: calc(100vh - 24px); overflow-y: auto;
+    max-height: calc(100vh - 68px); overflow-y: auto;
     background: rgba(20, 22, 26, 0.85); color: #e8e8e8;
     border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
     padding: 12px 14px; font: 13px/1.4 -apple-system, Segoe UI, Roboto, sans-serif;
@@ -64,9 +69,6 @@
 
 <div id="panel">
   <h1>OpenArm Dashboard</h1>
-  <!-- The state machine viewer is a separate page: this one's app.js is a
-       minified bundle, so new UI goes in fsm.html/fsm.js instead. -->
-  <a href="./fsm.html" style="color:#6aa9f0; font-size:12px;">State machine →</a>
   <div id="status"><span class="dot" id="statusDot"></span><span id="statusText">connecting...</span></div>
 
   <select id="sequenceSelect"><option>loading sequences...</option></select>
@@ -81,9 +83,7 @@
 <div id="envInfo"></div>
 
 <script>
-  // Always-visible environment fingerprint - cheap to show, saves a round
-  // trip of "what browser is this even" when something fails on an unknown
-  // device (e.g. an embedded/kiosk WebView with no devtools access).
+  // Always-visible environment fingerprint
   (function () {
     var gl = null;
     try {
@@ -104,12 +104,7 @@
 </script>
 
 <script>
-  // Diagnostics that run regardless of module support, so a browser that
-  // can't run app.js shows a clear reason on screen instead of silently
-  // sitting on the static "connecting.../loading sequences..." placeholder
-  // text forever. All imports are relative paths (see app.js/vendor/*),
-  // not bare specifiers, so no import map is needed - this only needs
-  // actual `type="module"` support (Chrome 61+ / Safari 11+ / Firefox 60+).
+  // Diagnostics: show a clear error if app.js fails to load
   function showFatal(msg) {
     var t = document.getElementById('statusText');
     var d = document.getElementById('statusDot');
@@ -130,9 +125,6 @@
     showFatal('JS promise error: ' + (reason && reason.message ? reason.message : reason));
   });
 
-  // app.js sets window.__appJsStarted as its very first statement - if that
-  // never happens, the module failed before running a single line (import
-  // resolution failure, network error on a vendor file, etc).
   setTimeout(function () {
     if (!window.__appJsStarted) {
       showFatal('app.js did not start - check browser console (F12) for the real error');
@@ -141,6 +133,7 @@
 </script>
 
 <script src="./vendor/socket.io/socket.io.min.js"></script>
+<script src="./nav.js"></script>
 <script type="module" src="./app.js"></script>
 
 </body>

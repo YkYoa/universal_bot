@@ -1,27 +1,15 @@
 /**:
   ros__parameters:
     planning_scene_monitor_options:
-      # NOTE: the *_topic fields below (joint_state_topic, attached_collision_object_topic,
-      # monitored_planning_scene_topic, publish_planning_scene_topic) are declared
-      # `const std::string` in this MoveIt version's MoveItCpp::PlanningSceneMonitorOptions
-      # and are only ever set from their compiled-in defaults - load() does not read them
-      # from ROS params. Setting them here is a silent no-op. To keep this MoveItCpp
-      # instance's scene topics from colliding with move_group's (same defaults, both
-      # nodes in moveit_bimanual.launch.py), remap at the launch level instead - see
-      # the `remappings=` on robot_skills_node in moveit_bimanual.launch.py.
       name: "robot_skills_planning_scene_monitor"
       robot_description: "robot_description"
       joint_state_topic: "/joint_states"
       attached_collision_object_topic: "/attached_collision_object"
       publish_planning_scene_topic: "/planning_scene"
       monitored_planning_scene_topic: "monitored_planning_scene"
-      # ros2_control spawner Node actions in launch files aren't serialized
-      # (they race for the controller_manager service), so joint_state_broadcaster
-      # can take well past 10s to actually activate under load - this crashed
-      # robot_skills_node ("Unable to configure planning scene monitor") on a
-      # slow bring-up even though it usually finishes in time. 25s gives real
-      # headroom without meaningfully lengthening the normal case.
       wait_for_initial_state_timeout: 25.0
+
+    octomap_resolution: 0.1
 
     planning_pipelines:
       # Load all 4 planning pipelines
@@ -34,12 +22,52 @@
       request_adapters:
         - default_planning_request_adapters/ResolveConstraintFrames
         - default_planning_request_adapters/ValidateWorkspaceBounds
-        - default_planning_request_adapters/CheckStartStateBounds
         - default_planning_request_adapters/CheckStartStateCollision
       response_adapters:
         - default_planning_response_adapters/AddTimeOptimalParameterization
         - default_planning_response_adapters/ValidateSolution
-      start_state_max_bounds_error: 2.0
+      default_workspace_bounds: 2.0
+      planning_time: 5.0
+      max_planning_threads: 8
+
+      left_arm:
+        planner_configs:
+          - RRTConnectkConfigDefault
+          - LBKPIECEkConfigDefault
+          - RRTstarkConfigDefault
+          - TRRTkConfigDefault
+      right_arm:
+        planner_configs:
+          - RRTConnectkConfigDefault
+          - LBKPIECEkConfigDefault
+          - RRTstarkConfigDefault
+          - TRRTkConfigDefault
+      both_arms:
+        planner_configs:
+          - RRTConnectkConfigDefault
+          - LBKPIECEkConfigDefault
+          - RRTstarkConfigDefault
+          - TRRTkConfigDefault
+
+      planner_configs:
+        RRTConnectkConfigDefault:
+          type: geometric::RRTConnect
+          range: 0.5
+          longest_valid_segment_fraction: 0.01
+        LBKPIECEkConfigDefault:
+          type: geometric::LBKPIECE
+          range: 0.5
+          longest_valid_segment_fraction: 0.01
+        RRTstarkConfigDefault:
+          type: geometric::RRTstar
+          range: 0.5
+          goal_bias: 0.05
+          delay_collision_checking: 1
+        TRRTkConfigDefault:
+          type: geometric::TRRT
+          range: 0.5
+          goal_bias: 0.05
+          delay_collision_checking: 1
 
     pilz_industrial_motion_planner:
       planning_plugin: pilz_industrial_motion_planner/CommandPlanner
@@ -48,10 +76,8 @@
       request_adapters:
         - default_planning_request_adapters/ResolveConstraintFrames
         - default_planning_request_adapters/ValidateWorkspaceBounds
-        - default_planning_request_adapters/CheckStartStateBounds
       response_adapters:
         - default_planning_response_adapters/ValidateSolution
-      start_state_max_bounds_error: 2.0
 
     chomp:
       planning_plugin: chomp_interface/CHOMPPlanner
@@ -60,10 +86,8 @@
       request_adapters:
         - default_planning_request_adapters/ResolveConstraintFrames
         - default_planning_request_adapters/ValidateWorkspaceBounds
-        - default_planning_request_adapters/CheckStartStateBounds
       response_adapters:
         - default_planning_response_adapters/ValidateSolution
-      start_state_max_bounds_error: 2.0
 
     stomp:
       planning_plugin: stomp_moveit/StompPlanner
@@ -72,7 +96,5 @@
       request_adapters:
         - default_planning_request_adapters/ResolveConstraintFrames
         - default_planning_request_adapters/ValidateWorkspaceBounds
-        - default_planning_request_adapters/CheckStartStateBounds
       response_adapters:
         - default_planning_response_adapters/ValidateSolution
-      start_state_max_bounds_error: 2.0

@@ -7,7 +7,7 @@ builtin_interfaces/Time stamp
 
 # ── Supervisory layer ─────────────────────────────────────────
 string robot_state
-# "BOOTING" | "IDLE" | "RUNNING" | "PAUSED" | "FAULT" | "ESTOP" | "TEACHING"
+# "BOOTING" | "IDLE" | "RUNNING" | "PAUSED" | "FAULT" | "TEACHING"
 
 # ── Sequence layer ────────────────────────────────────────────
 string sequence_name        # empty when robot_state is not RUNNING/PAUSED
@@ -33,9 +33,8 @@ float32 progress            # 0.0 → 1.0 across the whole sequence
 string fault_reason         # empty unless FAULT/FAILED
 
 bool motors_enabled
-# Software-tracked, not read back from hardware: true until "estop" is
-# called (see FsmCommand), false from then on until a "run_sequence" goal or
-# an explicit "enable" FsmCommand successfully re-activates the hardware
-# components. A physical E-stop button press that a human never reports
-# through "estop"/the dashboard is invisible here too - there is no wiring
-# from the button into this stack, only from the software command.
+# Software-tracked, not read back from hardware: false on startup and reset to
+# false on clear_fault, until a "run_sequence" goal, direct REST move, or an
+# explicit "enable" FsmCommand successfully activates the hardware components.
+# A physical E-stop button press is invisible to software directly (no wiring
+# into compute), so clear_fault or enable forces a re-activation cycle.

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gesture Teleop Mockup</title>
+<link rel="icon" type="image/x-icon" href="favicon/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="favicon/apple-touch-icon.png">
+<link rel="manifest" href="favicon/site.webmanifest">
+<link rel="stylesheet" href="gesture.css">
+<!-- Vendored, not CDN: this page has to work with no internet, same
+     precedent as moveit_api/web_visualizer/vendor/socket.io. -->
+<script src="vendor/socket.io/socket.io.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Gesture Teleop <span class="badge">MOCKUP - not connected to the real arm</span></h1>
+      <div class="conn-status" id="conn-status">connecting&hellip;</div>
+    </header>
+
+    <div class="grid">
+      <section class="glass-card">
+        <h2>Camera + Pose (bone overlay)</h2>
+        <div class="video-wrap">
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <div id="camera-overlay" class="camera-overlay">
+            <button id="camera-btn" class="btn btn-camera">Enable Camera</button>
+            <p id="camera-message" class="camera-message"></p>
+          </div>
+        </div>
+        <p class="hint">Your browser's own webcam. Never sent anywhere but this page's own server process.</p>
+      </section>
+
+      <section class="glass-card">
+        <h2>Drawn Robot Arm Mock</h2>
+        <canvas id="arm-canvas" width="480" height="480"></canvas>
+        <div class="arm-legend">
+          <span class="dot left"></span> left arm
+          <span class="dot right"></span> right arm
+        </div>
+      </section>
+    </div>
+
+    <section class="glass-card controls">
+      <h2>Session Controls</h2>
+      <div class="row">
+        <label>Mirror mode:
+          <select id="mirror-mode" class="select-field">
+            <option value="mirror" selected>Mirror (face-to-face)</option>
+            <option value="same_side">Same side</option>
+          </select>
+        </label>
+        <button id="engage-btn" class="btn btn-engage">Hold to Engage</button>
+        <span id="engage-hint" class="hint">Press and hold (dead-man switch, mockup only)</span>
+      </div>
+      <div class="row status-row">
+        <div class="status-tile">
+          <div class="status-label">Left arm</div>
+          <div id="state-left" class="status-value">IDLE</div>
+        </div>
+        <div class="status-tile">
+          <div class="status-label">Right arm</div>
+          <div id="state-right" class="status-value">IDLE</div>
+        </div>
+        <div class="status-tile">
+          <div class="status-label">Latency</div>
+          <div id="latency" class="status-value">- ms</div>
+        </div>
+      </div>
+      <div id="reject-reasons" class="reject-reasons"></div>
+    </section>
+
+    <footer>
+      This page never actuates the real robot - it only runs MediaPipe Pose
+      and the same retargeting math as the real pipeline, for watching the
+      algorithm work. See <code>gesture_teleop/mock_server.py</code>.
+    </footer>
+  </div>
+
+  <script src="gesture.js"></script>
+</body>
+</html>

@@ -19,7 +19,6 @@
         {"id": "RUNNING",  "label": "Running",  "kind": "active",   "description": "A sequence is executing."},
         {"id": "PAUSED",   "label": "Paused",   "kind": "warning",  "description": "Held at a step boundary. Resume, single-step, or cancel."},
         {"id": "FAULT",    "label": "Fault",    "kind": "error",    "description": "A sequence failed. Needs clear_fault before anything else runs."},
-        {"id": "ESTOP",    "label": "E-stop",   "kind": "error",    "description": "Operator stopped everything. Needs clear_fault."},
         {"id": "TEACHING", "label": "Teaching", "kind": "special",  "description": "Hand-guiding under gravity compensation. Torque mode only."}
       ],
       "edges": [
@@ -27,14 +26,10 @@
         {"from": "IDLE",     "to": "RUNNING",  "label": "run_sequence"},
         {"from": "RUNNING",  "to": "PAUSED",   "label": "pause"},
         {"from": "PAUSED",   "to": "RUNNING",  "label": "resume / step"},
-        {"from": "RUNNING",  "to": "IDLE",     "label": "completed / cancel"},
-        {"from": "PAUSED",   "to": "IDLE",     "label": "cancel"},
+        {"from": "RUNNING",  "to": "IDLE",     "label": "completed / stop / cancel"},
+        {"from": "PAUSED",   "to": "IDLE",     "label": "stop / cancel"},
         {"from": "RUNNING",  "to": "FAULT",    "label": "step failed"},
         {"from": "FAULT",    "to": "IDLE",     "label": "clear_fault"},
-        {"from": "RUNNING",  "to": "ESTOP",    "label": "estop"},
-        {"from": "PAUSED",   "to": "ESTOP",    "label": "estop"},
-        {"from": "IDLE",     "to": "ESTOP",    "label": "estop"},
-        {"from": "ESTOP",    "to": "IDLE",     "label": "clear_fault"},
         {"from": "IDLE",     "to": "TEACHING", "label": "enter_teach"},
         {"from": "TEACHING", "to": "IDLE",     "label": "exit_teach"}
       ]

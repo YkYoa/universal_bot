@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>gesture_teleop</name>
+  <version>0.1.0</version>
+  <description>
+    Human-arm gesture teleoperation for the OpenArm bimanual robot: MediaPipe
+    Pose retargeted onto the 7-DoF arms via a closed-form S-R-S solver, with
+    an explicit-arm dead-man-switch safety pipeline, plus a separate
+    non-actuating browser mockup (own webcam, bone-line overlay, drawn arm)
+    served on its own port. See src/perception/gesture_teleop/README.md.
+  </description>
+  <maintainer email="tech@infall.io">robot-healthmate</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>controller_manager_msgs</exec_depend>
+  <exec_depend>openarm_messages</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

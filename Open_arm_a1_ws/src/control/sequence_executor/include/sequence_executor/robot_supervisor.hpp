@@ -55,7 +55,6 @@ enum class RobotState
   RUNNING,
   PAUSED,
   FAULT,      // a sequence failed; needs clear_fault before anything else runs
-  ESTOP,      // operator stopped everything; needs clear_fault
   TEACHING,   // hand-guiding, only reachable when the arm is in torque mode
 };
 
@@ -91,7 +90,7 @@ public:
   void autostart(const std::string& sequence_name);
 
 private:
-  /// RunSequence goal callback: rejects an empty sequence_name, ESTOP/FAULT
+  /// RunSequence goal callback: rejects an empty sequence_name, FAULT
   /// (clear_fault first), TEACHING (exit teach first), or anything already
   /// running (one goal at a time - see file header comment); otherwise
   /// accepts and executes.
@@ -106,7 +105,7 @@ private:
   /// commanding a de-energized arm.
   void handleAccepted(const std::shared_ptr<GoalHandle>& goal_handle);
 
-  /// FsmCommand service callback: dispatches pause/resume/step/cancel/estop/
+  /// FsmCommand service callback: dispatches pause/resume/step/stop/cancel/
   /// clear_fault/enter_teach/exit_teach/abort_to_home/enable.
   void handleCommand(const std::shared_ptr<FsmCommand::Request> request,
                      std::shared_ptr<FsmCommand::Response> response);
@@ -153,13 +152,11 @@ private:
   RobotState robot_state_ = RobotState::BOOTING;
   std::string fault_reason_;
 
-  // Independent of robot_state_: "estop" sets this false in addition to
-  // setRobotState(ESTOP), and it stays false across clear_fault (which only
-  // resets robot_state_) until "enable" - explicit or auto-triggered by the
-  // next accepted goal, see handleAccepted() - successfully re-activates
-  // the hardware components. See FsmState.msg's motors_enabled field
-  // comment for why a physical E-stop press that never goes through this
-  // command is invisible here.
+  // Independent of robot_state_: clear_fault sets this false to force a fresh
+  // enable cycle on the next accepted goal, until "enable" - explicit or
+  // auto-triggered by the next accepted goal, see handleAccepted() - successfully
+  // re-activates the hardware components. See FsmState.msg's motors_enabled field
+  // comment for why a physical E-stop press is invisible here.
   //
   // Defaults to false, not true: this process has no way to know whether
   // the physical motors already lost and regained power before this

@@ -15,6 +15,7 @@ deliberately so - an idle robot should produce no traffic at all.
 """
 
 import threading
+import time
 
 import rclpy
 from rclpy.action import ActionClient
@@ -55,6 +56,7 @@ def state_to_dict(msg):
         'control_mode_active': msg.control_mode_active,
         'progress': round(float(msg.progress), 4),
         'fault_reason': msg.fault_reason,
+        'motors_enabled': msg.motors_enabled,
     }
 
 
@@ -113,9 +115,52 @@ class FsmBridge(Node):
 
     # ── commands ─────────────────────────────────────────────────────────────
 
+    def ensure_ready_for_motion(self, timeout_sec=3.0):
+        """Ensure the robot is cleared of faults and motors are enabled.
+
+        Auto-clears FAULT if present, and auto-enables motors if disabled.
+        Waits up to timeout_sec for confirmation.
+        Returns (ok, message).
+        """
+        deadline = time.time() + timeout_sec
+        latest = self.latest_state()
+
+        # Step 1: If in FAULT, auto-clear fault
+        if latest and latest.get('robot_state') == 'FAULT':
+            ok, msg = self.send_command('clear_fault')
+            if not ok:
+                return False, f"Failed to clear fault before motion: {msg}"
+            while time.time() < deadline:
+                latest = self.latest_state()
+                if latest and latest.get('robot_state') != 'FAULT':
+                    break
+                time.sleep(0.05)
+
+        # Step 2: If motors not enabled, auto-enable
+        latest = self.latest_state()
+        if latest is None or not latest.get('motors_enabled', False):
+            ok, msg = self.send_command('enable')
+            if not ok:
+                return False, f"Failed to enable motors: {msg}"
+
+            while time.time() < deadline:
+                latest = self.latest_state()
+                if latest and latest.get('motors_enabled', False) and latest.get('robot_state') != 'FAULT':
+                    return True, "Motors enabled and ready"
+                time.sleep(0.05)
+
+            return False, "Motors failed to enable within 3.0s: check physical E-stop or 48V power"
+
+        return True, "Motors enabled and ready"
+
     def run_sequence(self, name, repeat=0, velocity=0.0, dry_run=False):
         """Fire and forget. Returns as soon as the goal is accepted or refused;
         watch `fsm_state` for what happens next."""
+        if not dry_run:
+            ok, msg = self.ensure_ready_for_motion(timeout_sec=3.0)
+            if not ok:
+                return False, msg
+
         if not self._run_client.wait_for_server(timeout_sec=SERVICE_TIMEOUT_S):
             return False, f'{RUN_ACTION} is not available - is the executor running?'
 
@@ -132,7 +177,7 @@ class FsmBridge(Node):
         handle = future.result()
         if handle is None or not handle.accepted:
             # The executor rejects rather than queues: already running, or in
-            # FAULT/ESTOP/TEACHING. Its own log line says which.
+            # FAULT/TEACHING. Its own log line says which.
             return False, (
                 f"'{name}' was rejected - the robot is busy, faulted, or in teach mode. "
                 'Check /api/fsm/state.'
@@ -140,8 +185,8 @@ class FsmBridge(Node):
         return True, f"'{name}' started"
 
     def send_command(self, command):
-        """pause / resume / step / cancel / estop / clear_fault / enter_teach /
-        exit_teach."""
+        """pause / resume / step / stop / cancel / clear_fault / enter_teach /
+        exit_teach / abort_to_home / enable."""
         if not self._command_client.wait_for_service(timeout_sec=SERVICE_TIMEOUT_S):
             return False, f'{COMMAND_SERVICE} is not available - is the executor running?'
 

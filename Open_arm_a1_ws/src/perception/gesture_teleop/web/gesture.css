@@ -1,0 +1,198 @@
+/* Deliberately plain: no framework, no build step - matches
+   web_visualizer/fsm.js's own precedent for a page that has to run
+   offline on a phone on the same LAN. Dark theme to match the existing
+   dashboard (web_visualizer/hub.html)'s .glass-card look, defined locally
+   here rather than shared since this page ships independently. */
+
+:root {
+  --bg: #0b1220;
+  --panel-bg: rgba(15, 23, 42, 0.65);
+  --panel-border: rgba(51, 65, 85, 0.55);
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --left-color: #38bdf8;
+  --right-color: #f472b6;
+  --danger: #f43f5e;
+  --ok: #34d399;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #0b1220 0%, #111827 100%);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+h1 { font-size: 1.4rem; margin: 0; }
+h2 { font-size: 1rem; margin: 0 0 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.conn-status {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.conn-status.ok { color: var(--ok); }
+.conn-status.bad { color: var(--danger); }
+
+.glass-card {
+  background: var(--panel-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--panel-border);
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,.4);
+  margin-bottom: 1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 720px) {
+  .grid { grid-template-columns: 1fr; }
+}
+
+.video-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+#video, #overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#video { object-fit: cover; transform: scaleX(-1); }
+#overlay { transform: scaleX(-1); }
+
+.camera-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  text-align: center;
+  background: rgba(10, 15, 25, 0.85);
+  transition: opacity 0.15s ease;
+}
+.camera-overlay[hidden] { display: none; }
+.btn-camera { border-color: rgba(56, 189, 248, 0.5); touch-action: auto; }
+.camera-message {
+  margin: 0;
+  max-width: 32rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.camera-message.error { color: var(--danger); }
+.camera-message a { color: var(--accent); }
+
+#arm-canvas {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  background: #0f172a;
+  border-radius: 0.5rem;
+  border: 1px solid var(--panel-border);
+}
+
+.arm-legend {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+.dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.25rem; }
+.dot.left { background: var(--left-color); }
+.dot.right { background: var(--right-color); }
+
+.hint { font-size: 0.75rem; color: var(--muted); margin: 0.5rem 0 0; }
+
+.row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.status-row { gap: 1rem; }
+
+/* Class selectors, not bare tag selectors - a lesson already learned once
+   in this repo (see fsm.html's own comment): if this page ever loads a
+   preflight-style reset from anywhere, bare button/select rules would
+   lose the cascade regardless of source order. */
+.btn {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.6rem 1.4rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--panel-border);
+  background: #1e293b;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.btn-engage { border-color: rgba(56, 189, 248, 0.5); }
+.btn-engage.active { background: var(--ok); color: #052e1c; border-color: var(--ok); }
+
+.select-field {
+  font: inherit;
+  background: #1e293b;
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.6rem;
+}
+
+.status-tile {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid #1e293b;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  min-width: 100px;
+}
+.status-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; }
+.status-value { font-family: monospace; font-weight: 600; margin-top: 0.15rem; }
+.status-value.engaged { color: var(--ok); }
+.status-value.hold { color: #fbbf24; }
+.status-value.idle { color: var(--muted); }
+
+.reject-reasons { font-family: monospace; font-size: 0.75rem; color: var(--danger); min-height: 1.2em; }
+
+footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 1.5rem; }
+footer code { color: var(--accent); }

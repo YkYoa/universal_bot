@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenArm System Health & Diagnostics</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --panel-bg: rgba(15, 23, 42, 0.75);
+      --panel-border: rgba(51, 65, 85, 0.6);
+      --accent-sky: #38bdf8;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --accent-purple: #a855f7;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at 50% 0%, #111e38 0%, #080c14 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 60px 20px 40px;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .glass-card {
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .glass-card:hover {
+      border-color: rgba(56, 189, 248, 0.45);
+      box-shadow: 0 15px 30px -5px rgba(56, 189, 248, 0.15);
+    }
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .title-group h1 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #38bdf8 0%, #34d399 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .title-group p {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+    .status-pills {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+    .pill-live {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .pill-degraded {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+    .pill-dead {
+      background: rgba(244, 63, 94, 0.15);
+      color: #fb7185;
+      border-color: rgba(244, 63, 94, 0.3);
+    }
+    .pill-meta {
+      background: rgba(51, 65, 85, 0.4);
+      color: #cbd5e1;
+      border-color: rgba(71, 85, 105, 0.4);
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+    .metric-card {
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+    .metric-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+    .metric-val {
+      font-size: 20px;
+      font-weight: 700;
+      margin-top: 6px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .metric-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .subsystem-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .subsystem-tile {
+      background: rgba(2, 6, 23, 0.5);
+      border: 1px solid rgba(51, 65, 85, 0.4);
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .subsystem-tile .name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .subsystem-tile .detail {
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+    .json-box {
+      background: #020617;
+      border: 1px solid rgba(51, 65, 85, 0.6);
+      border-radius: 10px;
+      padding: 16px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: #38bdf8;
+      overflow-x: auto;
+      max-height: 280px;
+      margin-top: 14px;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+    }
+    .btn-sky {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+    .btn-sky:hover {
+      background: rgba(56, 189, 248, 0.25);
+    }
+    .btn-ghost {
+      background: rgba(51, 65, 85, 0.3);
+      color: #cbd5e1;
+      border-color: rgba(71, 85, 105, 0.4);
+    }
+    .btn-ghost:hover {
+      background: rgba(51, 65, 85, 0.5);
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- Top Header -->
+    <div class="header">
+      <div class="title-group">
+        <h1>System Health & Diagnostics</h1>
+        <p>Real-time ROS 2 stack metrics, hardware states, and supervisory telemetry</p>
+      </div>
+      <div class="status-pills">
+        <div id="overall-pill" class="pill pill-live">
+          <span class="pulse-dot"></span>
+          <span id="overall-text">CHECKING...</span>
+        </div>
+        <div class="pill pill-meta">Build: <span id="build-text">qvic_2026</span></div>
+        <div class="pill pill-meta">Latency: <span id="latency-text">-- ms</span></div>
+      </div>
+    </div>
+
+    <!-- Core Metrics -->
+    <div class="grid-3">
+      <div class="metric-card">
+        <div class="metric-label">ROS 2 Jazzy Executor</div>
+        <div id="metric-ros" class="metric-val" style="color: #34d399;">Active</div>
+        <div class="metric-sub">MultiThreadedExecutor &bull; CycloneDDS (ID 42)</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Joint Telemetry (10 Hz)</div>
+        <div id="metric-joints" class="metric-val" style="color: #38bdf8;">Checking...</div>
+        <div class="metric-sub">/joint_states &bull; WebSocket synchronized</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Bimanual Arms Motion</div>
+        <div id="metric-moving" class="metric-val">Stationary</div>
+        <div class="metric-sub">Left: Idle &bull; Right: Idle</div>
+      </div>
+    </div>
+
+    <!-- Subsystems Detailed Breakdown -->
+    <div class="glass-card">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 8px;">
+        <h2 style="font-size: 16px; font-weight: 700; color: #fff;">Subsystems Health Matrix</h2>
+        
+        <!-- Neat Legend in Corner -->
+        <div style="display: flex; align-items: center; gap: 14px; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
+          <span style="display: inline-flex; align-items: center; gap: 5px; color: #34d399;" title="Operational & Healthy">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: #34d399; box-shadow: 0 0 5px #34d399;"></span> Operational
+          </span>
+          <span style="display: inline-flex; align-items: center; gap: 5px; color: #fbbf24;" title="Degraded / Warning">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: #fbbf24; box-shadow: 0 0 5px #fbbf24;"></span> Degraded
+          </span>
+          <span style="display: inline-flex; align-items: center; gap: 5px; color: #fb7185;" title="Fault / Unreachable">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: #fb7185; box-shadow: 0 0 5px #fb7185;"></span> Offline / Fault
+          </span>
+          <span style="color: var(--text-muted); border-left: 1px solid rgba(51, 65, 85, 0.6); padding-left: 10px;">
+            Auto-refresh: 2s
+          </span>
+        </div>
+      </div>
+
+      <div class="subsystem-grid">
+        <div class="subsystem-tile">
+          <div class="name">
+            <span>ROS 2 Node Bridge</span>
+            <span id="sub-dot-ros" class="pulse-dot" style="background:#34d399;" title="Operational"></span>
+          </div>
+          <div id="sub-desc-ros" class="detail">robot_api_server :5050</div>
+        </div>
+
+        <div class="subsystem-tile">
+          <div class="name">
+            <span>MoveIt 2 Planner</span>
+            <span id="sub-dot-moveit" class="pulse-dot" style="background:#34d399;" title="Operational"></span>
+          </div>
+          <div id="sub-desc-moveit" class="detail">OMPL + Pilz Industrial</div>
+        </div>
+
+        <div class="subsystem-tile">
+          <div class="name">
+            <span>Sequence FSM</span>
+            <span id="sub-dot-fsm" class="pulse-dot" style="background:#34d399;" title="Operational"></span>
+          </div>
+          <div id="sub-desc-fsm" class="detail">State: Initializing</div>
+        </div>
+
+        <div class="subsystem-tile">
+          <div class="name">
+            <span>Supervisor Logs</span>
+            <span id="sub-dot-logs" class="pulse-dot" style="background:#34d399;" title="Operational"></span>
+          </div>
+          <div id="sub-desc-logs" class="detail">30d Retention (&lt;3GB)</div>
+        </div>
+
+        <div class="subsystem-tile">
+          <div class="name">
+            <span>CAN-FD Setup</span>
+            <span id="sub-dot-can" class="pulse-dot" style="background:#34d399;" title="Operational"></span>
+          </div>
+          <div id="sub-desc-can" class="detail">can0 (R) &bull; can1 (L)</div>
+        </div>
+
+        <div class="subsystem-tile">
+          <div class="name">
+            <span>System Watchdog</span>
+            <span id="sub-dot-watchdog" class="pulse-dot" style="background:#34d399;" title="Operational"></span>
+          </div>
+          <div id="sub-desc-watchdog" class="detail">openarm-watchdog.timer</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Telemetry Inspector -->
+    <div class="glass-card">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <h2 style="font-size: 16px; font-weight: 700; color: #fff;">Live Health JSON Payload</h2>
+        <a href="/health?format=json" target="_blank" class="btn btn-sky" style="padding: 4px 10px; font-size: 11px;">
+          Raw JSON ↗
+        </a>
+      </div>
+      <pre id="json-preview" class="json-box">Fetching health telemetry...</pre>
+      
+      <div class="actions">
+        <a href="/" class="btn btn-ghost">&larr; Gateway Hub</a>
+        <a href="/logs" class="btn btn-ghost">Inspect Logs</a>
+        <a href="/api" class="btn btn-ghost">API Docs</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Shared Top Navigation Bar -->
+  <script src="/dashboard/nav.js"></script>
+
+  <script>
+    (function () {
+      var overallPill = document.getElementById('overall-pill');
+      var overallText = document.getElementById('overall-text');
+      var buildText   = document.getElementById('build-text');
+      var latencyText = document.getElementById('latency-text');
+      var metricRos   = document.getElementById('metric-ros');
+      var metricJoints= document.getElementById('metric-joints');
+      var metricMoving= document.getElementById('metric-moving');
+      var subDescFsm  = document.getElementById('sub-desc-fsm');
+      var jsonPreview = document.getElementById('json-preview');
+
+      function setDot(id, status) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (status === 'ok') {
+          el.style.background = '#34d399';
+          el.style.boxShadow = '0 0 6px #34d399';
+          el.title = 'Operational';
+        } else if (status === 'degraded') {
+          el.style.background = '#fbbf24';
+          el.style.boxShadow = '0 0 6px #fbbf24';
+          el.title = 'Degraded';
+        } else {
+          el.style.background = '#fb7185';
+          el.style.boxShadow = '0 0 6px #fb7185';
+          el.title = 'Offline / Fault';
+        }
+      }
+
+      function pollHealth() {
+        var t0 = performance.now();
+        fetch('/api/health')
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            var ms = Math.round(performance.now() - t0);
+            latencyText.textContent = ms + ' ms';
+            buildText.textContent = data.active_build || 'qvic_2026';
+            jsonPreview.textContent = JSON.stringify(data, null, 2);
+
+            if (data.status === 'ok' && data.ros_ok) {
+              overallPill.className = 'pill pill-live';
+              overallText.textContent = 'ONLINE (OK)';
+              metricRos.textContent = 'Active (Connected)';
+              metricRos.style.color = '#34d399';
+            } else if (data.status === 'degraded') {
+              overallPill.className = 'pill pill-degraded';
+              overallText.textContent = 'DEGRADED';
+              metricRos.textContent = 'ROS Up (Hardware Idle)';
+              metricRos.style.color = '#fbbf24';
+            } else {
+              overallPill.className = 'pill pill-dead';
+              overallText.textContent = 'OFFLINE';
+              metricRos.textContent = 'Disconnected';
+              metricRos.style.color = '#fb7185';
+            }
+
+            // Dynamically update subsystem status dots
+            setDot('sub-dot-ros', data.ros_ok ? 'ok' : 'offline');
+            setDot('sub-dot-moveit', data.moveit_ready ? 'ok' : 'offline');
+            setDot('sub-dot-logs', (data.store_ready !== false) ? 'ok' : 'offline');
+            setDot('sub-dot-watchdog', 'ok');
+            setDot('sub-dot-can', (data.joint_states_available || data.status === 'ok') ? 'ok' : 'degraded');
+          })
+          .catch(function (err) {
+            overallPill.className = 'pill pill-dead';
+            overallText.textContent = 'UNREACHABLE';
+            metricRos.textContent = 'Connection Error';
+            metricRos.style.color = '#fb7185';
+            jsonPreview.textContent = 'Error fetching /api/health: ' + err.message;
+            setDot('sub-dot-ros', 'offline');
+            setDot('sub-dot-moveit', 'offline');
+            setDot('sub-dot-fsm', 'offline');
+            setDot('sub-dot-logs', 'offline');
+            setDot('sub-dot-can', 'offline');
+            setDot('sub-dot-watchdog', 'offline');
+          });
+
+        // Also fetch robot status for joint / motion info
+        fetch('/api/status')
+          .then(function (res) { return res.json(); })
+          .then(function (status) {
+            if (status.success) {
+              metricJoints.textContent = status.joint_states_available ? 'Online (Streaming)' : 'No Stream';
+              metricJoints.style.color = status.joint_states_available ? '#34d399' : '#fbbf24';
+
+              var lm = status.is_moving && status.is_moving.left_arm;
+              var rm = status.is_moving && status.is_moving.right_arm;
+              if (lm || rm) {
+                metricMoving.textContent = 'Moving (' + (lm ? 'L' : '') + (rm ? 'R' : '') + ')';
+                metricMoving.style.color = '#38bdf8';
+              } else {
+                metricMoving.textContent = 'Stationary (Idle)';
+                metricMoving.style.color = '#94a3b8';
+              }
+            }
+          })
+          .catch(function () {});
+
+        // Query FSM state
+        fetch('/api/fsm/state')
+          .then(function (res) { return res.json(); })
+          .then(function (fsmData) {
+            if (fsmData && fsmData.success && fsmData.state) {
+              var robotState = (typeof fsmData.state === 'object' && fsmData.state !== null)
+                ? (fsmData.state.robot_state || 'IDLE')
+                : fsmData.state;
+              subDescFsm.textContent = 'State: ' + robotState;
+              if (robotState === 'FAULT') {
+                setDot('sub-dot-fsm', 'offline');
+              } else if (robotState === 'PAUSED' || robotState === 'BOOTING') {
+                setDot('sub-dot-fsm', 'degraded');
+              } else {
+                setDot('sub-dot-fsm', 'ok');
+              }
+            }
+          })
+          .catch(function () {
+            setDot('sub-dot-fsm', 'offline');
+          });
+      }
+
+      pollHealth();
+      setInterval(pollHealth, 2000);
+    })();
+  </script>
+</body>
+</html>

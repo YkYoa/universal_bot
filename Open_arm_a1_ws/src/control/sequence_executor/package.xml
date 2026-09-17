@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>
     Two-layer robot state machine: a supervisory layer (idle/running/paused/
-    fault/estop/teaching) over a sequence layer that walks an ordered step
+    fault/teaching) over a sequence layer that walks an ordered step
     list. Serves RunSequence, FsmCommand, and a latched FsmState topic.
     Sequences come from a pluggable SequenceSource - a sequence.yaml here, or
     a project's own store.

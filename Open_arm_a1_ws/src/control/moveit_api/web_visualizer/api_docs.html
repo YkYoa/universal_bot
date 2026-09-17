@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenArm REST & WebSocket API Documentation</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --panel-bg: rgba(15, 23, 42, 0.75);
+      --panel-border: rgba(51, 65, 85, 0.6);
+      --accent-sky: #38bdf8;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-purple: #a855f7;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at 50% 0%, #111e38 0%, #080c14 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 60px 20px 40px;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .title-group h1 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .title-group p {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 600;
+      border: 1px solid rgba(71, 85, 105, 0.4);
+      background: rgba(30, 41, 59, 0.6);
+      color: #cbd5e1;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+    }
+    .btn:hover {
+      background: rgba(56, 189, 248, 0.25);
+    }
+    .filters {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    .filter-chip {
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      background: rgba(15, 23, 42, 0.6);
+      color: var(--text-muted);
+      transition: all 0.15s ease;
+    }
+    .filter-chip:hover, .filter-chip.active {
+      border-color: var(--accent-sky);
+      background: rgba(56, 189, 248, 0.15);
+      color: #fff;
+    }
+    .category-section {
+      margin-bottom: 32px;
+    }
+    .category-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #cbd5e1;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .endpoint-card {
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 14px;
+      transition: border-color 0.2s;
+    }
+    .endpoint-card:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .endpoint-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .endpoint-route {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .method {
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    .method-get {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+    }
+    .method-post {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .endpoint-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+    .code-block {
+      background: #020617;
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: #93c5fd;
+      position: relative;
+      overflow-x: auto;
+      margin-top: 8px;
+    }
+    .copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid rgba(71, 85, 105, 0.5);
+      color: #94a3b8;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .copy-btn:hover {
+      color: #fff;
+      border-color: var(--accent-sky);
+    }
+    .param-pill {
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #fbbf24;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- Header -->
+    <div class="header">
+      <div class="title-group">
+        <h1>REST & WebSocket API Portal</h1>
+        <p>Programmatic control, motion planning, sequence execution, and telemetry catalog</p>
+      </div>
+      <div class="header-actions">
+        <span class="badge">OpenArm v1.0.0</span>
+        <span class="badge">CORS: *</span>
+        <a href="/api/docs?format=json" target="_blank" class="btn">View Raw JSON ↗</a>
+      </div>
+    </div>
+
+    <!-- Category Filter Chips -->
+    <div class="filters">
+      <button class="filter-chip active" onclick="filterCategory('all', this)">All Endpoints</button>
+      <button class="filter-chip" onclick="filterCategory('health', this)">Health & Telemetry</button>
+      <button class="filter-chip" onclick="filterCategory('motion', this)">Motion & Joints</button>
+      <button class="filter-chip" onclick="filterCategory('fsm', this)">FSM & Sequences</button>
+      <button class="filter-chip" onclick="filterCategory('gripper', this)">Gripper & Hand</button>
+      <button class="filter-chip" onclick="filterCategory('logs', this)">Supervisor Logs</button>
+    </div>
+
+    <!-- Category 1: Health & Telemetry -->
+    <div class="category-section" data-category="health">
+      <div class="category-title">
+        <span>⚡ Health & Telemetry</span>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-get">GET</span>
+            <span>/health</span>
+          </div>
+          <span class="param-pill">JSON or HTML</span>
+        </div>
+        <p class="endpoint-desc">System health check endpoint used by GitLab CI, watchdog timer, and human operators. Returns <code>status</code>, <code>ros_ok</code>, and <code>active_build</code>.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -s http://192.168.1.226:5050/health')">Copy</button>
+          <code>curl -s http://192.168.1.226:5050/health</code>
+        </div>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-get">GET</span>
+            <span>/api/status</span>
+          </div>
+          <span class="param-pill">Telemetry</span>
+        </div>
+        <p class="endpoint-desc">Query live robot joint positions, arm motion state (<code>is_moving</code>), and joint state streaming availability.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -s http://192.168.1.226:5050/api/status')">Copy</button>
+          <code>curl -s http://192.168.1.226:5050/api/status</code>
+        </div>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-get">GET</span>
+            <span>/api/pose/&lt;group_name&gt;</span>
+          </div>
+          <span class="param-pill">group_name: left_arm | right_arm</span>
+        </div>
+        <p class="endpoint-desc">Calculates and returns the current Cartesian 6D pose (position {x,y,z} and quaternion {x,y,z,w}) of the arm end-effector.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -s http://192.168.1.226:5050/api/pose/right_arm')">Copy</button>
+          <code>curl -s http://192.168.1.226:5050/api/pose/right_arm</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Category 2: Motion Control -->
+    <div class="category-section" data-category="motion">
+      <div class="category-title">
+        <span>🦾 Robot Motion & Trajectory</span>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-post">POST</span>
+            <span>/api/move/joints</span>
+          </div>
+          <span class="param-pill">Trajectory</span>
+        </div>
+        <p class="endpoint-desc">Plans and executes a synchronized joint-space motion for the specified planning group.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -X POST http://192.168.1.226:5050/api/move/joints -H \"Content-Type: application/json\" -d \'{\"group\":\"right_arm\",\"positions\":[0,0,0,0,0,0,0],\"unit\":\"rad\"}\'')">Copy</button>
+          <code>curl -X POST http://192.168.1.226:5050/api/move/joints -H "Content-Type: application/json" -d '{"group":"right_arm","positions":[0,0,0,0,0,0,0],"unit":"rad"}'</code>
+        </div>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-post">POST</span>
+            <span>/api/move/pose</span>
+          </div>
+          <span class="param-pill">Cartesian</span>
+        </div>
+        <p class="endpoint-desc">Move the end-effector to a target 3D Cartesian position and orientation quaternion via inverse kinematics.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -X POST http://192.168.1.226:5050/api/move/pose -H \"Content-Type: application/json\" -d \'{\"group\":\"right_arm\",\"position\":{\"x\":0.3,\"y\":-0.2,\"z\":0.4},\"orientation\":{\"x\":0,\"y\":0,\"z\":0,\"w\":1}}\'')">Copy</button>
+          <code>curl -X POST http://192.168.1.226:5050/api/move/pose -H "Content-Type: application/json" -d '{"group":"right_arm","position":{"x":0.3,"y":-0.2,"z":0.4},"orientation":{"x":0,"y":0,"z":0,"w":1}}'</code>
+        </div>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-post">POST</span>
+            <span>/api/stop</span>
+          </div>
+          <span class="param-pill" style="color:#fb7185; border-color:rgba(244,63,94,0.4);">Safety</span>
+        </div>
+        <p class="endpoint-desc">Emergency stop / motion abort. Immediately stops active trajectory execution on all planning groups.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -X POST http://192.168.1.226:5050/api/stop')">Copy</button>
+          <code>curl -X POST http://192.168.1.226:5050/api/stop</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Category 3: Sequence & FSM -->
+    <div class="category-section" data-category="fsm">
+      <div class="category-title">
+        <span>🔄 State Machine & Sequences</span>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-get">GET</span>
+            <span>/api/fsm/state</span>
+          </div>
+          <span class="param-pill">FSM</span>
+        </div>
+        <p class="endpoint-desc">Query the current supervisory FSM state (<code>BOOTING</code>, <code>IDLE</code>, <code>RUNNING</code>, <code>PAUSED</code>, <code>FAULT</code>) and active step index.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -s http://192.168.1.226:5050/api/fsm/state')">Copy</button>
+          <code>curl -s http://192.168.1.226:5050/api/fsm/state</code>
+        </div>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-post">POST</span>
+            <span>/api/fsm/trigger</span>
+          </div>
+          <span class="param-pill">Command</span>
+        </div>
+        <p class="endpoint-desc">Send transition events to the sequence executor FSM (e.g. <code>pause</code>, <code>resume</code>, <code>abort</code>, <code>reset</code>).</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -X POST http://192.168.1.226:5050/api/fsm/trigger -H \"Content-Type: application/json\" -d \'{\"event\":\"pause\"}\'')">Copy</button>
+          <code>curl -X POST http://192.168.1.226:5050/api/fsm/trigger -H "Content-Type: application/json" -d '{"event":"pause"}'</code>
+        </div>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-get">GET</span>
+            <span>/api/sequences</span>
+          </div>
+          <span class="param-pill">Store</span>
+        </div>
+        <p class="endpoint-desc">List all pre-recorded choreography sequences loaded in the robot's YAML sequence store.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -s http://192.168.1.226:5050/api/sequences')">Copy</button>
+          <code>curl -s http://192.168.1.226:5050/api/sequences</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Category 4: Gripper & Hand -->
+    <div class="category-section" data-category="gripper">
+      <div class="category-title">
+        <span>✋ Grippers & End-Effectors</span>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-post">POST</span>
+            <span>/api/gripper</span>
+          </div>
+          <span class="param-pill">openarm_hand</span>
+        </div>
+        <p class="endpoint-desc">Control parallel-jaw gripper on either arm. Accepts <code>{"side": "left"|"right", "action": "open"|"close"}</code>.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -X POST http://192.168.1.226:5050/api/gripper -H \"Content-Type: application/json\" -d \'{\"side\":\"right\",\"action\":\"open\"}\'')">Copy</button>
+          <code>curl -X POST http://192.168.1.226:5050/api/gripper -H "Content-Type: application/json" -d '{"side":"right","action":"open"}'</code>
+        </div>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-post">POST</span>
+            <span>/api/hand</span>
+          </div>
+          <span class="param-pill">amazing_hand</span>
+        </div>
+        <p class="endpoint-desc">Multi-DOF dexterous hand command. Supports predefined gestures or per-finger joint vector positions.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -X POST http://192.168.1.226:5050/api/hand -H \"Content-Type: application/json\" -d \'{\"side\":\"right\",\"action\":\"open\"}\'')">Copy</button>
+          <code>curl -X POST http://192.168.1.226:5050/api/hand -H "Content-Type: application/json" -d '{"side":"right","action":"open"}'</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Category 5: Supervisor Logs -->
+    <div class="category-section" data-category="logs">
+      <div class="category-title">
+        <span>📜 Supervisor Logs API</span>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-get">GET</span>
+            <span>/api/logs</span>
+          </div>
+          <span class="param-pill">Query</span>
+        </div>
+        <p class="endpoint-desc">Query historical supervisor error logs. Supports parameters: <code>since</code> (ISO timestamp), <code>limit</code> (max 1000), <code>level</code> (ERROR / FATAL), <code>node</code> (substring filter).</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -s \"http://192.168.1.226:5050/api/logs?level=ERROR&limit=10\"')">Copy</button>
+          <code>curl -s "http://192.168.1.226:5050/api/logs?level=ERROR&limit=10"</code>
+        </div>
+      </div>
+
+      <div class="endpoint-card">
+        <div class="endpoint-header">
+          <div class="endpoint-route">
+            <span class="method method-get">GET</span>
+            <span>/api/logs/files</span>
+          </div>
+          <span class="param-pill">Files</span>
+        </div>
+        <p class="endpoint-desc">List available daily JSONL supervisor log archives with dates and file sizes on disk.</p>
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet(this, 'curl -s http://192.168.1.226:5050/api/logs/files')">Copy</button>
+          <code>curl -s http://192.168.1.226:5050/api/logs/files</code>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Shared Top Navigation Bar -->
+  <script src="/dashboard/nav.js"></script>
+
+  <script>
+    function filterCategory(cat, el) {
+      document.querySelectorAll('.filter-chip').forEach(function (btn) {
+        btn.classList.remove('active');
+      });
+      el.classList.add('active');
+
+      document.querySelectorAll('.category-section').forEach(function (sec) {
+        if (cat === 'all' || sec.getAttribute('data-category') === cat) {
+          sec.style.display = 'block';
+        } else {
+          sec.style.display = 'none';
+        }
+      });
+    }
+
+    function copySnippet(btn, text) {
+      navigator.clipboard.writeText(text).then(function () {
+        var original = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(function () { btn.textContent = original; }, 1500);
+      });
+    }
+  </script>
+</body>
+</html>

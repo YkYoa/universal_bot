@@ -182,30 +182,52 @@
 
     var running = state.robot_state === 'RUNNING';
     var paused = state.robot_state === 'PAUSED';
-    var faulted = state.robot_state === 'FAULT' || state.robot_state === 'ESTOP';
+    var faulted = state.robot_state === 'FAULT';
+
+    var motorEl = el('fsm-motors-state');
+    var motorPill = el('fsm-motor-pill');
+    if (motorEl) {
+      if (state.motors_enabled === false) {
+        motorEl.textContent = 'DISABLED';
+        motorEl.style.color = '#f87171';
+        if (motorPill) {
+          motorPill.className = 'pill pill-interactive pill-motor-disabled';
+          motorPill.title = 'Click to enable motors';
+        }
+      } else {
+        motorEl.textContent = 'ENABLED';
+        motorEl.style.color = '#34d399';
+        if (motorPill) {
+          motorPill.className = 'pill pill-interactive pill-motor-enabled';
+          motorPill.title = 'Motors active';
+        }
+      }
+    }
+
+    var stopBtn = el('btnStop');
+    var abortBtn = el('btnAbortHome');
+    var pauseBtn = el('btnPause');
+    var resumeBtn = el('btnResume');
+    var clearBtn = el('btnClear');
+    var runBtn = el('btnRun');
+    var dryBtn = el('btnDry');
 
     if (!_isController) {
-      el('btnPause').disabled = true;
-      el('btnResume').disabled = true;
-      el('btnStep').disabled = true;
-      el('btnCancel').disabled = true;
-      el('btnClear').disabled = true;
-      el('btnEstop').disabled = true;
-      var abortBtn = el('btnAbortHome');
+      if (pauseBtn) { pauseBtn.disabled = true; }
+      if (resumeBtn) { resumeBtn.disabled = true; }
+      if (clearBtn) { clearBtn.disabled = true; }
+      if (stopBtn) { stopBtn.disabled = true; }
       if (abortBtn) { abortBtn.disabled = true; }
-      el('btnRun').disabled = true;
-      el('btnDry').disabled = true;
+      if (runBtn) { runBtn.disabled = true; }
+      if (dryBtn) { dryBtn.disabled = true; }
     } else {
-      el('btnPause').disabled = !running;
-      el('btnResume').disabled = !paused;
-      el('btnStep').disabled = !paused;
-      el('btnCancel').disabled = !(running || paused);
-      el('btnClear').disabled = !faulted;
-      el('btnEstop').disabled = false;
-      var abortBtn = el('btnAbortHome');
+      if (pauseBtn) { pauseBtn.disabled = !running; }
+      if (resumeBtn) { resumeBtn.disabled = !paused; }
+      if (clearBtn) { clearBtn.disabled = !faulted; }
+      if (stopBtn) { stopBtn.disabled = false; }
       if (abortBtn) { abortBtn.disabled = false; }
-      el('btnRun').disabled = running || paused || faulted;
-      el('btnDry').disabled = running || paused || faulted;
+      if (runBtn) { runBtn.disabled = running || paused; }
+      if (dryBtn) { dryBtn.disabled = running || paused; }
     }
 
     renderSteps(state);
@@ -574,7 +596,11 @@
 
   function command(name) {
     post('/api/fsm/command', { command: name }).then(function (res) {
-      if (!res.success) { el('runMsg').textContent = res.message || 'refused'; }
+      if (res && res.message) {
+        el('runMsg').textContent = res.message;
+      } else if (!res.success) {
+        el('runMsg').textContent = 'refused';
+      }
     });
   }
 
@@ -649,12 +675,38 @@
     // Wire up nav badge
     if (window.oaNav) { window.oaNav.setSocket(socket); }
 
-    el('btnPause').onclick  = function () { command('pause'); };
-    el('btnResume').onclick = function () { command('resume'); };
-    el('btnStep').onclick   = function () { command('step'); };
-    el('btnCancel').onclick = function () { command('cancel'); };
-    el('btnClear').onclick  = function () { command('clear_fault'); };
-    el('btnEstop').onclick  = function () { command('estop'); };
+    if (el('btnPause')) { el('btnPause').onclick = function () { command('pause'); }; }
+    if (el('btnResume')) { el('btnResume').onclick = function () { command('resume'); }; }
+    if (el('btnClear')) { el('btnClear').onclick = function () { command('clear_fault'); }; }
+    if (el('btnStop')) {
+      el('btnStop').onclick = function () { command('stop'); };
+    }
+    if (el('btnEstop')) {
+      el('btnEstop').onclick = function () { command('stop'); };
+    }
+
+    var motorPill = el('fsm-motor-pill');
+    function triggerMotorEnable() {
+      if (!_isController) {
+        el('runMsg').textContent = 'Spectator mode: control lease required to enable motors';
+        return;
+      }
+      if (lastState && lastState.motors_enabled === false) {
+        el('runMsg').textContent = 'Enabling motors…';
+        command('enable');
+      } else {
+        el('runMsg').textContent = 'Motors are already enabled';
+      }
+    }
+    if (motorPill) {
+      motorPill.onclick = triggerMotorEnable;
+      motorPill.onkeydown = function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          triggerMotorEnable();
+        }
+      };
+    }
 
     var btnAbortHome = el('btnAbortHome');
     if (btnAbortHome) {

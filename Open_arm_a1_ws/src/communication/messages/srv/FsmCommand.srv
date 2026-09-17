@@ -7,15 +7,14 @@ string command
 #               trajectory mid-flight)
 # "resume"      PAUSED -> RUNNING
 # "step"        PAUSED only: run exactly one step, then hold in PAUSED
-# "cancel"      stop now - cancels the in-flight ExecuteSkill goal
-# "clear_fault" FAULT|ESTOP -> IDLE
-# "estop"       any -> ESTOP, cancels everything
+# "stop" / "cancel" stop now - cancels the in-flight ExecuteSkill goal and returns to IDLE
+# "clear_fault" FAULT -> IDLE (sets motors_enabled false to force re-enable on next goal)
 # "enter_teach" IDLE -> TEACHING (rejected unless control mode is torque)
 # "exit_teach"  TEACHING -> IDLE
 # "abort_to_home" cancels now (like "cancel"), then once actually stopped
 #               automatically runs "builtin:action_01" (home both arms).
 #               From IDLE, homes immediately (nothing to cancel). Refused
-#               from FAULT|ESTOP|TEACHING - clear_fault/exit_teach first.
+#               from FAULT|TEACHING - clear_fault/exit_teach first.
 # "enable"      Re-activates the physical hardware components (see
 #               motor_enable_client.hpp) so they resend "enable" over CAN -
 #               needed after a physical E-stop press+release, which cuts

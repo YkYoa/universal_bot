@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenArm Gateway Hub</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            darkBg: '#090d16',
+            panelBg: 'rgba(20, 26, 38, 0.75)',
+            panelBorder: 'rgba(51, 65, 85, 0.5)',
+            accentBlue: '#38bdf8',
+            accentEmerald: '#10b981',
+            accentAmber: '#f59e0b',
+            accentRose: '#f43f5e',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background: radial-gradient(circle at 50% 0%, #111e38 0%, #080c14 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(51, 65, 85, 0.55);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+    }
+    .glass-card:hover {
+      border-color: rgba(56, 189, 248, 0.45);
+      box-shadow: 0 15px 30px -5px rgba(56, 189, 248, 0.15);
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.3);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+
+<body class="flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
+  <div class="max-w-5xl w-full">
+    
+    <!-- Top Header -->
+    <header class="mb-6 text-center">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-sky-500/30 bg-sky-500/10 text-sky-400 text-xs font-mono uppercase tracking-wider mb-3">
+        <span class="inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
+        Robot Healthmate • Bimanual Platform
+      </div>
+      <h1 class="text-3xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-teal-300 to-emerald-400 tracking-tight">
+        OpenArm Gateway Hub
+      </h1>
+      <p class="text-slate-400 text-sm sm:text-base mt-2">
+        Central control, telemetry inspection, and high-level choreographic interface
+      </p>
+    </header>
+
+    <!-- Health Status Banner -->
+    <div id="health-banner" class="glass-card rounded-2xl p-4 sm:p-5 mb-8 transition-all duration-300">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        
+        <!-- Live Indicator -->
+        <div class="flex items-center gap-3">
+          <div class="relative flex h-3.5 w-3.5 shrink-0">
+            <span id="ping-ring" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span id="ping-dot" class="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="system-status-text" class="font-bold text-sm uppercase tracking-wide text-emerald-400">CONNECTING...</span>
+              <span id="build-badge" class="px-2 py-0.5 text-xs font-mono rounded bg-slate-800 border border-slate-700 text-slate-300">qvic_2026</span>
+              <span id="hardware-badge" class="px-2 py-0.5 text-xs font-mono rounded bg-slate-800 border border-slate-700 text-slate-400">hardware: checking</span>
+            </div>
+            <p id="degraded-msg" class="text-xs text-amber-400 mt-0.5 hidden"></p>
+          </div>
+        </div>
+
+        <!-- Meta badges -->
+        <div class="flex flex-wrap items-center gap-2 font-mono text-xs text-slate-400">
+          <div class="px-2.5 py-1 rounded-md bg-slate-900/60 border border-slate-800">
+            Version: <span id="version-text" class="text-slate-200">2026.09.16</span>
+          </div>
+          <div class="px-2.5 py-1 rounded-md bg-slate-900/60 border border-slate-800">
+            Latency: <span id="latency-text" class="text-slate-200">-- ms</span>
+          </div>
+          <a href="/health?format=json" target="_blank" class="px-2.5 py-1 rounded-md bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-400 transition-colors">
+            /health JSON ↗
+          </a>
+        </div>
+
+      </div>
+
+      <!-- Subsystems Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mt-4 pt-4 border-t border-slate-700/50">
+        
+        <div class="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800">
+          <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">ROS 2 Node</div>
+          <div id="sub-ros" class="text-xs font-mono font-medium text-slate-400 mt-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-slate-600"></span> Checking
+          </div>
+        </div>
+
+        <div class="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800">
+          <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">MoveIt 2</div>
+          <div id="sub-moveit" class="text-xs font-mono font-medium text-slate-400 mt-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-slate-600"></span> Checking
+          </div>
+        </div>
+
+        <div class="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800">
+          <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Joint States</div>
+          <div id="sub-joints" class="text-xs font-mono font-medium text-slate-400 mt-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-slate-600"></span> Checking
+          </div>
+        </div>
+
+        <div class="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800">
+          <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Sequence FSM</div>
+          <div id="sub-fsm" class="text-xs font-mono font-medium text-slate-400 mt-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-slate-600"></span> Checking
+          </div>
+        </div>
+
+        <div class="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800">
+          <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Sequence Store</div>
+          <div id="sub-store" class="text-xs font-mono font-medium text-slate-400 mt-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-slate-600"></span> Checking
+          </div>
+        </div>
+
+        <div class="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800">
+          <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Camera Bridge</div>
+          <div id="sub-camera" class="text-xs font-mono font-medium text-slate-400 mt-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-slate-600"></span> Checking
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Navigation Hub Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-8">
+      
+      <!-- Card 1: 3D Visualizer -->
+      <a href="/3d" class="glass-card rounded-2xl p-5 sm:p-6 transition-all group relative overflow-hidden">
+        <div class="flex items-start justify-between">
+          <div class="p-3 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20 group-hover:bg-sky-500/20 transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
+          </div>
+          <span class="text-xs font-mono text-slate-400 group-hover:text-sky-400 flex items-center gap-1">Launch ↗</span>
+        </div>
+        <h2 class="text-xl font-bold text-white mt-4 group-hover:text-sky-300 transition-colors">
+          3D Robot Dashboard
+        </h2>
+        <p class="text-slate-400 text-sm mt-2 leading-relaxed">
+          Interactive Three.js & URDF visualizer driven by real-time WebSocket joint telemetry. Includes sequence trigger controls and per-joint sliders.
+        </p>
+        <div class="mt-4 flex items-center gap-2 text-xs font-mono text-slate-500">
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">Three.js</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">urdf-loader</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">10 Hz Telemetry</span>
+        </div>
+      </a>
+
+      <!-- Card 2: FSM Viewer -->
+      <a href="/fsm" class="glass-card rounded-2xl p-5 sm:p-6 transition-all group relative overflow-hidden">
+        <div class="flex items-start justify-between">
+          <div class="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:bg-emerald-500/20 transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+          </div>
+          <span class="text-xs font-mono text-slate-400 group-hover:text-emerald-400 flex items-center gap-1">Inspect ↗</span>
+        </div>
+        <h2 class="text-xl font-bold text-white mt-4 group-hover:text-emerald-300 transition-colors">
+          State Machine (FSM) Viewer
+        </h2>
+        <p class="text-slate-400 text-sm mt-2 leading-relaxed">
+          Interactive SVG graph viewer for the two-layer supervisory state machine (<code class="text-xs text-slate-300">IDLE</code>, <code class="text-xs text-slate-300">RUNNING</code>, <code class="text-xs text-slate-300">PAUSED</code>, <code class="text-xs text-slate-300">FAULT</code>) with live Console.
+        </p>
+        <div class="mt-4 flex items-center gap-2 text-xs font-mono text-slate-500">
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">Live Console</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">Pause / Resume</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">qvic_fsm</span>
+        </div>
+      </a>
+
+      <!-- Card 3: Supervisor Error Logs -->
+      <a href="/logs" class="glass-card rounded-2xl p-5 sm:p-6 transition-all group relative overflow-hidden">
+        <div class="flex items-start justify-between">
+          <div class="p-3 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 group-hover:bg-purple-500/20 transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+          </div>
+          <span class="text-xs font-mono text-slate-400 group-hover:text-purple-400 flex items-center gap-1">Logs ↗</span>
+        </div>
+        <h2 class="text-xl font-bold text-white mt-4 group-hover:text-purple-300 transition-colors">
+          Supervisor Error Logs
+        </h2>
+        <p class="text-slate-400 text-sm mt-2 leading-relaxed">
+          Historical archive and live stream for supervisor <code class="text-xs text-slate-300">ERROR</code> and <code class="text-xs text-slate-300">FATAL</code> events. 30-day retention with automatic soft 3GB storage cleanup.
+        </p>
+        <div class="mt-4 flex items-center gap-2 text-xs font-mono text-slate-500">
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">30d Retention</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">&lt; 3 GB Cap</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">Live Stream</span>
+        </div>
+      </a>
+
+      <!-- Card 4: System Health & Diagnostics -->
+      <a href="/health" class="glass-card rounded-2xl p-5 sm:p-6 transition-all group relative overflow-hidden">
+        <div class="flex items-start justify-between">
+          <div class="p-3 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20 group-hover:bg-teal-500/20 transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+          </div>
+          <span class="text-xs font-mono text-slate-400 group-hover:text-teal-400 flex items-center gap-1">Diagnostics ↗</span>
+        </div>
+        <h2 class="text-xl font-bold text-white mt-4 group-hover:text-teal-300 transition-colors">
+          Health & Diagnostics
+        </h2>
+        <p class="text-slate-400 text-sm mt-2 leading-relaxed">
+          Comprehensive stack diagnostics: ROS 2 node graph, MoveIt 2 status, CycloneDDS networking, and systemd watchdog health checks.
+        </p>
+        <div class="mt-4 flex items-center gap-2 text-xs font-mono text-slate-500">
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">Watchdog Active</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">CycloneDDS 42</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">QVIC 2026</span>
+        </div>
+      </a>
+
+      <!-- Card 5: REST & WebSocket API Docs -->
+      <a href="/api" class="glass-card rounded-2xl p-5 sm:p-6 transition-all group relative overflow-hidden">
+        <div class="flex items-start justify-between">
+          <div class="p-3 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 group-hover:bg-indigo-500/20 transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+          </div>
+          <span class="text-xs font-mono text-slate-400 group-hover:text-indigo-400 flex items-center gap-1">Docs ↗</span>
+        </div>
+        <h2 class="text-xl font-bold text-white mt-4 group-hover:text-indigo-300 transition-colors">
+          REST & WebSocket API Docs
+        </h2>
+        <p class="text-slate-400 text-sm mt-2 leading-relaxed">
+          Interactive catalog for programmatic robot control: joint-space target moves, Cartesian EE poses, gripper toggles, and sequence endpoints.
+        </p>
+        <div class="mt-4 flex items-center gap-2 text-xs font-mono text-slate-500">
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">Interactive</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">JSON Payload</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">curl Snippets</span>
+        </div>
+      </a>
+
+      <!-- Card 6: Launch Process Supervisor -->
+      <div class="glass-card rounded-2xl p-5 sm:p-6 transition-all relative overflow-hidden">
+        <div class="flex items-start justify-between">
+          <div class="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+          </div>
+          <a id="launch-mgr-link" href="#" target="_blank" class="text-xs font-mono text-slate-400 hover:text-amber-400 flex items-center gap-1">
+            Port 5060 ↗
+          </a>
+        </div>
+        <h2 class="text-xl font-bold text-white mt-4">
+          Launch Process Supervisor
+        </h2>
+        <p class="text-slate-400 text-sm mt-2 leading-relaxed">
+          Supervises top-level <code class="text-xs text-slate-300">ros2 launch</code> commands via subprocess. Allows starting, stopping, and tailing stdout/stderr log streams remotely.
+        </p>
+        <div class="mt-4 flex items-center gap-2 text-xs font-mono text-slate-500">
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">:5060/api/launch</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">Subprocess Popen</span>
+        </div>
+      </div>
+
+      <!-- Card 7: Gesture Teleop Mockup -->
+      <a id="gesture-card" href="#" target="_blank" class="glass-card rounded-2xl p-5 sm:p-6 transition-all group relative overflow-hidden md:col-span-2">
+        <div class="flex items-start justify-between">
+          <div class="p-3 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 group-hover:bg-rose-500/20 transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path></svg>
+          </div>
+          <span class="text-xs font-mono text-slate-400 group-hover:text-rose-400 flex items-center gap-1">
+            Port 5055 ↗
+          </span>
+        </div>
+        <h2 class="text-xl font-bold text-white mt-4 group-hover:text-rose-300 transition-colors">
+          Gesture Teleop Mockup
+        </h2>
+        <p class="text-slate-400 text-sm mt-2 leading-relaxed">
+          Own-webcam MediaPipe Pose + closed-form retargeting demo, served on a separate process/port. Draws the detected pose as bone-line segments and a mock of the retargeted arm. Runs the exact same algorithm as the real teleop node but <strong class="text-rose-300">never actuates the real robot</strong> - see <code class="text-xs text-slate-300">gesture_teleop/mock_server.py</code>.
+        </p>
+        <div class="mt-4 flex items-center gap-2 text-xs font-mono text-slate-500">
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">:5055</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">Non-actuating</span>
+          <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">MediaPipe Pose</span>
+        </div>
+      </a>
+
+    </div>
+
+    <!-- Quick Developer Reference -->
+    <div class="glass-card rounded-2xl p-5 sm:p-6 mb-4">
+      <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+        <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+        Quick CLI Cheat Sheet
+      </h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
+        <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+          <div class="text-slate-400 mb-1"># Query robot health</div>
+          <code class="text-sky-300 select-all">curl -s http://127.0.0.1:5050/health | jq .</code>
+        </div>
+        <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+          <div class="text-slate-400 mb-1"># Check live FSM state</div>
+          <code class="text-sky-300 select-all">curl -s http://127.0.0.1:5050/api/fsm/state | jq .</code>
+        </div>
+        <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+          <div class="text-slate-400 mb-1"># Service status on IQ9 / Ubuntu</div>
+          <code class="text-emerald-300 select-all">sudo systemctl status openarm-robot.service</code>
+        </div>
+        <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+          <div class="text-slate-400 mb-1"># View live systemd journal logs</div>
+          <code class="text-emerald-300 select-all">journalctl -u openarm-robot.service -f</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="text-center text-xs text-slate-500 py-2">
+      OpenArm Bimanual Manipulator System • Qualcomm Vietnam Innovation Challenge (QVIC 2026)
+    </footer>
+
+  </div>
+
+  <script>
+    // Dynamically populate link to launch manager port 5060 on same host
+    const host = window.location.hostname || 'localhost';
+    document.getElementById('launch-mgr-link').href = `http://${host}:5060/api/launch/status`;
+    // https, not http: the mockup's camera panel needs a secure context
+    // for navigator.mediaDevices to exist at all (see mock_server.py's
+    // --https flag) - the browser will show a one-time self-signed-cert
+    // warning for this LAN device, which is expected.
+    document.getElementById('gesture-card').href = `https://${host}:5055/`;
+
+    function updateBadge(elId, ok, labelOk = 'Ready', labelFail = 'Offline') {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      if (ok) {
+        el.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> ${labelOk}`;
+        el.className = 'text-xs font-mono font-medium text-emerald-400 mt-1 flex items-center gap-1.5';
+      } else {
+        el.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-500"></span> ${labelFail}`;
+        el.className = 'text-xs font-mono font-medium text-slate-400 mt-1 flex items-center gap-1.5';
+      }
+    }
+
+    async function pollHealth() {
+      const t0 = performance.now();
+      try {
+        const resp = await fetch('/api/health');
+        const latency = Math.round(performance.now() - t0);
+        document.getElementById('latency-text').innerText = `${latency} ms`;
+        
+        if (!resp.ok && resp.status !== 503) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+
+        // Status text & colors
+        const statusEl = document.getElementById('system-status-text');
+        const pingRing = document.getElementById('ping-ring');
+        const pingDot = document.getElementById('ping-dot');
+        const degradedMsg = document.getElementById('degraded-msg');
+
+        if (data.status === 'ok') {
+          statusEl.innerText = 'OPERATIONAL';
+          statusEl.className = 'font-bold text-sm uppercase tracking-wide text-emerald-400';
+          pingRing.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75';
+          pingDot.className = 'relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500';
+          degradedMsg.classList.add('hidden');
+        } else {
+          statusEl.innerText = 'DEGRADED';
+          statusEl.className = 'font-bold text-sm uppercase tracking-wide text-amber-400';
+          pingRing.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75';
+          pingDot.className = 'relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500';
+          if (data.degraded_reasons && data.degraded_reasons.length > 0) {
+            degradedMsg.innerText = `Note: ${data.degraded_reasons.join('; ')}`;
+            degradedMsg.classList.remove('hidden');
+          } else {
+            degradedMsg.classList.add('hidden');
+          }
+        }
+
+        // Badges
+        if (data.active_build) {
+          document.getElementById('build-badge').innerText = data.active_build;
+        }
+        if (data.hardware_mode) {
+          const hw = document.getElementById('hardware-badge');
+          hw.innerText = `mode: ${data.hardware_mode}`;
+          if (data.hardware_mode === 'live') {
+            hw.className = 'px-2 py-0.5 text-xs font-mono rounded bg-emerald-950/60 border border-emerald-800/60 text-emerald-400';
+          } else {
+            hw.className = 'px-2 py-0.5 text-xs font-mono rounded bg-amber-950/60 border border-amber-800/60 text-amber-400';
+          }
+        }
+        if (data.version) {
+          document.getElementById('version-text').innerText = data.version;
+        }
+
+        // Subsystems
+        updateBadge('sub-ros', data.ros_ok);
+        updateBadge('sub-moveit', data.moveit_ready);
+        updateBadge('sub-joints', data.joint_states_available);
+        updateBadge('sub-fsm', data.fsm_ready);
+        updateBadge('sub-store', data.store_ready !== false);
+        updateBadge('sub-camera', data.camera_bridge_ready);
+
+      } catch (err) {
+        document.getElementById('system-status-text').innerText = 'OFFLINE';
+        document.getElementById('system-status-text').className = 'font-bold text-sm uppercase tracking-wide text-rose-400';
+        document.getElementById('ping-ring').className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75';
+        document.getElementById('ping-dot').className = 'relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500';
+        document.getElementById('latency-text').innerText = '-- ms';
+      }
+    }
+
+    pollHealth();
+    setInterval(pollHealth, 3000);
+  </script>
+</body>
+</html>

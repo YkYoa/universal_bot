@@ -7,7 +7,12 @@ board). Open it from any phone or PC on the same network as the robot.
 ## Open it
 
 ```
-http://<robot-ip>:5050/dashboard/
+http://<robot-ip>:5050/        # Gateway Hub
+http://<robot-ip>:5050/3d      # 3D Robot Visualizer
+http://<robot-ip>:5050/fsm     # State Machine (FSM) Viewer
+http://<robot-ip>:5050/logs    # Supervisor Error Logs
+http://<robot-ip>:5050/health  # Health & Diagnostics
+http://<robot-ip>:5050/api     # Interactive API Documentation
 ```
 
 It's served by `robot_api_server` (same Flask process as the REST API,

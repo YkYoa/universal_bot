@@ -59,7 +59,7 @@ Two layers, published together. `robot_state` is what to show big; the
 sequence fields are the detail underneath it.
 
 ```
-robot_state     BOOTING | IDLE | RUNNING | PAUSED | FAULT | ESTOP | TEACHING
+robot_state     BOOTING | IDLE | RUNNING | PAUSED | FAULT | TEACHING
 sequence_state  (empty) | LOADING | VALIDATING | STEP_PLANNING | STEP_EXECUTING
                 | STEP_DONE | LOOP_CHECK | COMPLETED | FAILED | CANCELLED
 ```
@@ -80,7 +80,8 @@ transition; nothing is sent while the robot is idle.
   "loop_index": 0, "loop_total": -1,
   "control_mode_active": "position",
   "progress": 0.33,
-  "fault_reason": ""
+  "fault_reason": "",
+  "motors_enabled": true
 }
 ```
 
@@ -108,15 +109,15 @@ The web viewer at `/dashboard/fsm.html` is a worked example.
 | `pause` | stops at the **next step boundary**; a trajectory already moving finishes |
 | `resume` | continues from where it paused |
 | `step` | runs exactly one step, then holds (only while paused) |
-| `cancel` | stops now — cancels the in-flight motion goal |
-| `estop` | cancels everything and parks in `ESTOP` |
-| `clear_fault` | `FAULT`/`ESTOP` → `IDLE` |
+| `cancel` / `stop` | stops now — cancels the in-flight motion goal and returns to `IDLE` |
+| `clear_fault` | `FAULT` → `IDLE` (forces motor re-enable cycle on next goal) |
+| `enable` | manually re-enables motor hardware drivers |
 | `enter_teach` / `exit_teach` | hand-guiding; refused unless the arm is in torque mode |
 
 `200` = done, `409` = refused with a human-readable `message`
 ("not paused", "no fault to clear"). Show the message.
 
-`POST /api/stop` is a shortcut for `estop`.
+`POST /api/stop` is a shortcut for `stop`.
 
 ### Running something
 

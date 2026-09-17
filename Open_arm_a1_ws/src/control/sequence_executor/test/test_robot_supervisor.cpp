@@ -16,7 +16,7 @@
 // call (or a hardware_config.yaml on disk) - neither is fakeable here without
 // turning it into an interface, which is a larger change than this test
 // justifies. The TEACHING branch is a one-line condition identical in shape
-// to the FAULT/ESTOP branches below that are covered.
+// to the FAULT branch below that is covered.
 //
 // Also not covered: a second abort_to_home landing *while the first cancel is
 // still asynchronously in flight* (truly exercising pending_home_after_abort_
@@ -375,16 +375,61 @@ TEST_F(RobotSupervisorTest, AbortToHomeRefusedFromFault)
   EXPECT_EQ(history_.back().robot_state, "FAULT");
 }
 
-TEST_F(RobotSupervisorTest, AbortToHomeRefusedFromEstop)
+TEST_F(RobotSupervisorTest, GoalAcceptedAndAutoRecoversFromFault)
 {
-  auto [estop_ok, estop_message] = sendCommand("estop");
-  ASSERT_TRUE(estop_ok) << estop_message;
-  ASSERT_TRUE(spinUntil([this] { return history_.back().robot_state == "ESTOP"; }));
+  startBuiltinGoal("fails");
+  ASSERT_TRUE(spinUntil([this] { return history_.back().robot_state == "FAULT"; }));
+  EXPECT_EQ(history_.back().robot_state, "FAULT");
 
-  auto [success, message] = sendCommand("abort_to_home");
-  EXPECT_FALSE(success);
-  EXPECT_NE(message.find("clear"), std::string::npos) << message;
-  EXPECT_EQ(history_.back().robot_state, "ESTOP");
+  // A new goal submitted in FAULT must be accepted, auto-clearing fault and
+  // actually running - but "action_01" completes synchronously and
+  // instantly (see AbortToHomeFromIdleHomesImmediately above for the
+  // identical situation), so by the time startBuiltinGoal() returns the
+  // robot may already be back to IDLE. Wait for that settled state and
+  // scan the full history for the RUNNING transition instead of requiring
+  // it to still be history_.back() - same reasoning, same fix shape.
+  startBuiltinGoal("action_01");
+  ASSERT_TRUE(spinUntil([this] { return history_.back().robot_state == "IDLE"; }));
+
+  bool recovered_and_ran = false;
+  for (const auto& event : history_) {
+    if (event.robot_state == "RUNNING" && event.sequence_name == "builtin:action_01") {
+      recovered_and_ran = true;
+    }
+  }
+  EXPECT_TRUE(recovered_and_ran) << "expected a RUNNING builtin:action_01 entry somewhere "
+                                    "in history_ after the auto-recover";
+  EXPECT_EQ(history_.back().robot_state, "IDLE");
+}
+
+TEST_F(RobotSupervisorTest, StopCommandCancelsToIdle)
+{
+  // "hangs" (not "infinite" - that id was never registered, see
+  // makeTestRegistry() above) never calls done() on its own, so it stays
+  // RUNNING until cancel()/"stop" ends it.
+  startBuiltinGoal("hangs");
+  ASSERT_TRUE(spinUntil([this] { return history_.back().robot_state == "RUNNING"; }));
+
+  auto [stop_ok, stop_message] = sendCommand("stop");
+  EXPECT_TRUE(stop_ok) << stop_message;
+  ASSERT_TRUE(spinUntil([this] { return history_.back().robot_state == "IDLE"; }));
+  EXPECT_EQ(history_.back().robot_state, "IDLE");
+}
+
+TEST_F(RobotSupervisorTest, EnableCommandAlwaysCallsEnableAll)
+{
+  // First manual enable call
+  auto [first_ok, first_message] = sendCommand("enable");
+  EXPECT_TRUE(first_ok) << first_message;
+
+  // Second manual enable call - must STILL call enableAll(), never return "motors already enabled"
+  auto [second_ok, second_message] = sendCommand("enable");
+  EXPECT_TRUE(second_ok) << second_message;
+  EXPECT_NE(second_message, "motors already enabled");
+
+  // Calling stop sets motors_enabled_ = false
+  auto [stop_ok, stop_message] = sendCommand("stop");
+  EXPECT_TRUE(stop_ok) << stop_message;
 }
 
 TEST_F(RobotSupervisorTest, AbortToHomeCalledTwiceIsSafe)

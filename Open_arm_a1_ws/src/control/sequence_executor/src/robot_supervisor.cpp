@@ -24,7 +24,6 @@ const char* toString(RobotState state)
     case RobotState::RUNNING:  return "RUNNING";
     case RobotState::PAUSED:   return "PAUSED";
     case RobotState::FAULT:    return "FAULT";
-    case RobotState::ESTOP:    return "ESTOP";
     case RobotState::TEACHING: return "TEACHING";
   }
   return "UNKNOWN";
@@ -101,16 +100,11 @@ rclcpp_action::GoalResponse RobotSupervisor::handleGoal(
     RCLCPP_WARN(logger_, "Rejecting goal: sequence_name is empty");
     return rclcpp_action::GoalResponse::REJECT;
   }
-  if (robot_state_ == RobotState::ESTOP || robot_state_ == RobotState::FAULT) {
-    RCLCPP_WARN(logger_, "Rejecting '%s': robot is in %s, clear_fault first",
-                goal->sequence_name.c_str(), toString(robot_state_));
-    return rclcpp_action::GoalResponse::REJECT;
-  }
   if (robot_state_ == RobotState::TEACHING) {
     RCLCPP_WARN(logger_, "Rejecting '%s': exit teach mode first", goal->sequence_name.c_str());
     return rclcpp_action::GoalResponse::REJECT;
   }
-  if (robot_state_ != RobotState::IDLE) {
+  if (robot_state_ != RobotState::IDLE && robot_state_ != RobotState::FAULT) {
     RCLCPP_WARN(logger_, "Rejecting '%s': '%s' is already running",
                 goal->sequence_name.c_str(), last_progress_.sequence_name.c_str());
     return rclcpp_action::GoalResponse::REJECT;
@@ -132,6 +126,14 @@ void RobotSupervisor::handleAccepted(const std::shared_ptr<GoalHandle>& goal_han
   active_goal_ = goal_handle;
   const auto goal = goal_handle->get_goal();
 
+  // If robot was in FAULT, auto-clear fault before executing new goal
+  if (robot_state_ == RobotState::FAULT) {
+    RCLCPP_INFO(logger_, "Auto-clearing fault ('%s') for incoming goal '%s'",
+                fault_reason_.c_str(), goal->sequence_name.c_str());
+    fault_reason_.clear();
+    setRobotState(RobotState::IDLE);
+  }
+
   // Goal is already accepted from the caller's point of view - it will run,
   // just not necessarily this instant. Re-enable before starting it rather
   // than having rejected it back in handleGoal(): the caller (a sequence
@@ -150,11 +152,12 @@ void RobotSupervisor::handleAccepted(const std::shared_ptr<GoalHandle>& goal_han
                    goal->sequence_name.c_str(), enable_message.c_str());
       auto result = std::make_shared<RunSequence::Result>();
       result->success = false;
-      result->error_message = "motors disabled and could not be re-enabled: " + enable_message;
+      result->error_message = "motors disabled and could not be re-enabled (check physical E-stop or 48V power): " + enable_message;
       result->steps_completed = 0;
       active_goal_->abort(result);
       active_goal_.reset();
       fault_reason_ = result->error_message;
+      motors_enabled_ = false;
       setRobotState(RobotState::FAULT);
       return;
     }
@@ -194,38 +197,37 @@ void RobotSupervisor::handleCommand(const std::shared_ptr<FsmCommand::Request> r
     }
   } else if (command == "cancel") {
     ok = fsm_->cancel(message);
-  } else if (command == "estop") {
-    // Unconditional, and it always succeeds: an e-stop that can be refused is
-    // not an e-stop. motors_enabled_ goes false here too, not just
-    // robot_state_ - clear_fault below only resets the latter, on the theory
-    // that whatever the operator was worried about needs a real re-enable,
-    // not just an acknowledgement, before anything moves again.
-    fsm_->cancel(message);
-    fault_reason_ = "emergency stop requested";
-    setRobotState(RobotState::ESTOP);
     motors_enabled_ = false;
-    ok = true;
-    message = "stopped";
+    publishState();
+  } else if (command == "stop") {
+    // Software stop: equivalent to cancel. The real emergency stop is the
+    // physical button on the robot which cuts motor driver power directly.
+    ok = fsm_->cancel(message);
+    if (!ok) {
+      // Nothing was running — still "ok" from the operator's perspective.
+      ok = true;
+      message = "nothing was running";
+    }
+    motors_enabled_ = false;
+    publishState();
   } else if (command == "enable") {
     // Manual equivalent of the auto-enable handleAccepted() does before
     // starting a goal - exposed as its own command so a dashboard can offer
     // an explicit "Enable Motors" action instead of only finding out via a
     // goal's failure message.
-    if (motors_enabled_) {
-      ok = true;
-      message = "motors already enabled";
-    } else {
-      ok = motor_enable_->enableAll(message);
-      if (ok) {
-        motors_enabled_ = true;
-      }
+    // Always call enableAll() unconditionally so an operator can recover
+    // motors from physical E-stop power loss or fault states.
+    ok = motor_enable_->enableAll(message);
+    if (ok) {
+      motors_enabled_ = true;
     }
     publishState();
   } else if (command == "clear_fault") {
-    if (robot_state_ != RobotState::FAULT && robot_state_ != RobotState::ESTOP) {
+    if (robot_state_ != RobotState::FAULT) {
       message = "no fault to clear";
     } else {
       fault_reason_.clear();
+      motors_enabled_ = false;  // Force re-enable cycle on next goal
       setRobotState(RobotState::IDLE);
       ok = true;
       message = "cleared";
@@ -240,7 +242,7 @@ void RobotSupervisor::handleCommand(const std::shared_ptr<FsmCommand::Request> r
       // or queue a second home.
       ok = true;
       message = "already cancelling and homing";
-    } else if (robot_state_ == RobotState::FAULT || robot_state_ == RobotState::ESTOP) {
+    } else if (robot_state_ == RobotState::FAULT) {
       message = "clear the fault first (clear_fault), then abort_to_home";
     } else if (robot_state_ == RobotState::TEACHING) {
       message = "exit teach mode first (exit_teach), then abort_to_home";
@@ -265,7 +267,7 @@ void RobotSupervisor::handleCommand(const std::shared_ptr<FsmCommand::Request> r
     }
   } else {
     message = "unknown command '" + command +
-              "'; expected pause|resume|step|cancel|estop|clear_fault|enter_teach|exit_teach|"
+              "'; expected pause|resume|step|stop|cancel|clear_fault|enter_teach|exit_teach|"
               "abort_to_home|enable";
   }
 
@@ -344,6 +346,7 @@ void RobotSupervisor::onSequenceFinished(bool success, const std::string& error_
     setRobotState(RobotState::IDLE);
   } else {
     fault_reason_ = error_message;
+    motors_enabled_ = false;
     setRobotState(RobotState::FAULT);
   }
 

@@ -223,6 +223,13 @@ class MoveItEEController(Node):
         with self._urdf_lock:
             return self._urdf_string
 
+    def is_movegroup_ready(self) -> bool:
+        """Returns True if MoveGroup action server is currently reachable."""
+        try:
+            return bool(self._move_group_client and self._move_group_client.server_is_ready())
+        except Exception:
+            return False
+
     # ──────────────────────────────────────────────
     # End-Effector Pose Control via MoveGroup Action
     # ──────────────────────────────────────────────

@@ -18,6 +18,7 @@
 #include <rclcpp/logging.hpp>
 
 #if defined(OPENARM_HARDWARE_HAS_OPENARMCAN)
+#include <linux/can.h>
 #include <openarm/can/socket/openarm.hpp>
 #include <openarm/damiao_motor/dm_motor_constants.hpp>
 #endif
@@ -312,6 +313,24 @@ void OpenArm_v10HW::drive_home_blocking()
     return;
   }
 
+  impl_->openarm->refresh_all();
+  impl_->openarm->recv_all();
+
+  const auto& arm_motors_init = impl_->openarm->get_arm().get_motors();
+  bool any_enabled = false;
+  for (const auto& m : arm_motors_init) {
+    if (m.is_enabled()) {
+      any_enabled = true;
+      break;
+    }
+  }
+  if (!any_enabled) {
+    RCLCPP_INFO(
+      rclcpp::get_logger("OpenArm_v10HW"),
+      "Motors already disabled, skipping drive_home_blocking on %s.", can_interface_.c_str());
+    return;
+  }
+
   const auto deadline =
     std::chrono::steady_clock::now() + std::chrono::milliseconds(shutdown_home_timeout_ms_);
 
@@ -356,6 +375,21 @@ hardware_interface::CallbackReturn OpenArm_v10HW::on_activate(
     RCLCPP_ERROR(rclcpp::get_logger("OpenArm_v10HW"), "OpenArm instance not initialized");
     return CallbackReturn::ERROR;
   }
+
+  // DaMiao motor protocol: after an E-stop button press or power cut, motor MCUs latch
+  // an undervoltage/fault state (red LED) and reject enable_all() (0xFC) until clear_error
+  // (0xFB) is sent first to reset the fault latch.
+  auto& can_sock = impl_->openarm->get_master_can_device_collection().get_can_socket();
+  const uint32_t max_id = hand_ ? 0x08 : 0x07;
+  for (uint32_t id = 0x01; id <= max_id; ++id) {
+    can_frame frame{};
+    frame.can_id = id;
+    frame.can_dlc = 8;
+    std::memset(frame.data, 0xFF, 7);
+    frame.data[7] = 0xFB;  // DaMiao Clear Error command
+    can_sock.write_can_frame(frame);
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   impl_->openarm->set_callback_mode_all(openarm::damiao_motor::CallbackMode::STATE);
   impl_->openarm->enable_all();
@@ -702,11 +736,22 @@ hardware_interface::CallbackReturn HeadHW::on_activate(
       std::chrono::milliseconds(static_cast<int>(retry_interval_s_ * 1000)));
   }
 
+  // SUCCESS, not FAILURE: a hardware component's activation failure is fatal
+  // to the whole ros2_control_node (confirmed on real hardware 2026-08-16 -
+  // see sequence_executor.launch.py's head_motor_driver_node comment), which
+  // would take the arms down over an absent head board. read()/write()
+  // already treat connected_=false as "freeze last known state, don't fail
+  // the controller" - on_activate falls back to that same degraded-not-dead
+  // state instead of being the one path that still brings everything else
+  // down with it. is_healthy_ stays false so callers watching that flag
+  // (see read()) still see the head is absent.
   RCLCPP_ERROR(
     rclcpp::get_logger("HeadHW"),
-    "Could not connect to %s after %.1fs - is head_motor_driver_node running?",
+    "Could not connect to %s after %.1fs - is head_motor_driver_node running? "
+    "Continuing with the head inactive; every other component is unaffected.",
     socket_path_.c_str(), retry_timeout_s_);
-  return CallbackReturn::FAILURE;
+  is_healthy_ = false;
+  return CallbackReturn::SUCCESS;
 }
 
 hardware_interface::CallbackReturn HeadHW::on_deactivate(

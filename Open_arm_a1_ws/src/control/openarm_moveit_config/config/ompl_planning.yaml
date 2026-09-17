@@ -1,5 +1,6 @@
 /**:
   ros__parameters:
+    octomap_resolution: 0.1
     planning_pipelines:
       pipeline_names:
         - ompl
@@ -11,14 +12,13 @@
       request_adapters:
         - default_planning_request_adapters/ResolveConstraintFrames
         - default_planning_request_adapters/ValidateWorkspaceBounds
-        - default_planning_request_adapters/CheckStartStateBounds
         - default_planning_request_adapters/CheckStartStateCollision
       response_adapters:
         - default_planning_response_adapters/AddTimeOptimalParameterization
         - default_planning_response_adapters/AddRuckigTrajectorySmoothing
         - default_planning_response_adapters/ValidateSolution
         - default_planning_response_adapters/DisplayMotionPath
-      start_state_max_bounds_error: 2.0
+      default_workspace_bounds: 2.0
       planning_time: 5.0
       max_planning_threads: 8
       
