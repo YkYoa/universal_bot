@@ -180,11 +180,29 @@ class OpenArmSceneCfg(InteractiveSceneCfg):
     )
 
     # Yellow Bottle
+    #
+    # Phase 42 (2026-09-16): user QUAN SÁT TRỰC TIẾP qua demo GUI — tay quẹt
+    # vào bát ngay từ REACH, trước cả khi kẹp bắt đầu đóng. Đo lại bằng đúng
+    # tâm hình học bát THẬT (bbox, không phải root — xem comment ở Bowl bên
+    # dưới): tâm bát thật ở (0.494, 0.300), chai spawn danh nghĩa (0.53,0.40)
+    # chỉ cách tâm đó ~107mm — bát bán kính thật ~80mm + chai bán kính 21.65mm
+    # → mép chai chỉ cách THÀNH BÁT ~5mm. Khe hở gần như bằng 0, kẹp mở rộng
+    # 100mm chắc chắn quẹt bát khi vươn từ phía đó. Tính toán trước đây (Phase
+    # 36) dùng nhầm ROOT bát (0.58,0.22) → tưởng khoảng cách 187mm là đủ an
+    # toàn — SAI, vì root lệch tâm 8-8.6cm (đã tự ghi rõ ở Bowl nhưng chưa ai
+    # áp dụng lại vào bài toán khoảng cách REACH/GRASP).
+    #
+    # Dời chai ra xa bát dọc đúng phương nối tâm-bát→chai cũ, tới tổng khoảng
+    # cách ~201mm (bát 80 + chai 21.65 + nửa sải kẹp ~50 + biên an toàn ~50mm,
+    # đủ chịu được bottle_pos_noise=0.05 xấu nhất mà không quẹt lại). ĐỔI VỊ
+    # TRÍ CHAI = thay đổi observation nền tảng ở MỌI stage → BẮT BUỘC train
+    # lại từ đầu (không fine-tune được từ policy_1M_success57.pt, theo đúng
+    # bài học Phase 36 khi dời bát). User đã xác nhận chấp nhận train lại.
     bottle: RigidObjectCfg = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Scene/Bottle",
         spawn=None,
         init_state=RigidObjectCfg.InitialStateCfg(
-            pos=(0.53, 0.40, 0.638),
+            pos=(0.56, 0.49, 0.638),
             rot=_IDENTITY_QUAT,  # xyzw (>=3.0) hoặc wxyz (<3.0) — xem _identity_quat()
         ),
     )

@@ -1910,3 +1910,28 @@ User đúng: bài toán "đặt chai vào bát" GIẢI ĐƯỢC bằng scripted-
 
 ### Xác nhận thêm (seed=1, 50 episode, không cherry-pick)
 3/3 episode chạm được PLACE đều **success=True** (100%, không phải may mắn 1 lần): tilt cuối 0.94-1.85° (rất thấp, chai đứng vững), release_dist 101-116mm (đều trong vùng 120mm). Nút thắt duy nhất còn lại là tỉ lệ GRASP/LIFT thượng nguồn (grasp=0.58, lift_start=0.34 ở seed này) — vấn đề đã biết từ trước, không liên quan gì tới PLACE nữa.
+
+## Phase 42 — User quan sát trực tiếp qua demo GUI: tay quẹt bát ngay từ REACH (2026-09-16)
+
+### Phát hiện
+User xem demo GUI (`--task-phase 3 --stage place --seed 0`, `--no-bottle-rand` nên chai ở ĐÚNG spawn danh nghĩa, không nhiễu) và thấy tay quẹt vào bát **ngay từ lúc đang REACH tới chai**, trước cả khi kẹp bắt đầu đóng.
+
+Đo lại bằng đúng tâm hình học bát THẬT (bbox, S9, KHÔNG phải root — xem `bowl_center_local_xy_x/y` đã có sẵn từ Phase 10 nhưng chưa ai áp lại vào bài toán khoảng cách chai-bát): tâm bát thật ở **(0.494, 0.300)**, KHÁC HẲN root (0.58, 0.22). Chai spawn danh nghĩa (0.53, 0.40) cách tâm thật chỉ **~107mm** — bát bán kính thật ~80mm (đo bbox) + chai bán kính 21.65mm → **mép chai chỉ cách thành bát ~5mm**. Toàn bộ tính toán khoảng cách "187mm, đủ xa" ở Phase 36 dùng NHẦM root bát — sai be bét vì root lệch tâm bbox tới 8-8.6cm.
+
+Với `bottle_pos_noise=0.05` (dùng trong mọi eval headless trước đây), phần lớn episode ngẫu nhiên đẩy chai RA XA bát hơn spawn danh nghĩa (seed=0 cho khoảng cách ~154mm thay vì 107mm) nên collision ít lộ ra — nhưng bài toán vẫn tồn tại với xác suất đáng kể cho các episode có noise đẩy chai VỀ PHÍA bát.
+
+### Quyết định — dời CHAI, chấp nhận train lại từ đầu
+User chọn dời chai/bát xa hơn ngay và chấp nhận train lại (không chỉ fine-tune — đổi vị trí chai đổi observation nền tảng ở MỌI stage, đúng bài học Phase 36 khi dời bát). Dời CHAI (không phải bát) dọc đúng phương nối tâm-bát→chai cũ, tới tổng khoảng cách ~201mm (bát 80mm + chai 21.65mm + nửa sải kẹp ~50mm + biên an toàn ~50mm — đủ chịu noise=0.05 xấu nhất):
+```
+bottle.init_state.pos: (0.53, 0.40, 0.638) → (0.56, 0.49, 0.638)
+```
+Khoảng cách mới tới base: 0.743m (so với 0.664m cũ, +79mm — vẫn trong tầm với thoải mái, không đẩy chai ra rìa workspace).
+
+### Smoke test scene mới (checkpoint CŨ, KHÔNG kỳ vọng grasp thành công)
+Chạy sạch, không lỗi vật lý/nổ simulation. Checkpoint cũ (`policy_1M_success57.pt`) không gắp được ở vị trí mới (`grasp_rate` metric ở đây nghĩa là "đã vào STAGE_GRASP", KHÔNG phải "gắp thành công" — `latch=0.00` với mọi episode) — ĐÚNG NHƯ KỲ VỌNG, xác nhận cần train lại thật, không thể chỉ đổi eval.
+
+### File sửa (Phase 42)
+`isaaclab_openarm_env/config.py`: `bottle.init_state.pos` (0.53,0.40,0.638) → (0.56,0.49,0.638), kèm comment giải thích đầy đủ phép tính khoảng cách.
+
+### Việc cần làm tiếp — TRAIN LẠI TỪ ĐẦU (chưa làm, cần xác nhận trước khi chạy)
+Không thể tái dùng `policy_1M_success57.pt` (checkpoint cũ học REACH với chai ở vị trí cũ). Cần train mới hoàn toàn qua đúng chuỗi curriculum: phase 1 (REACH) → phase 2 (REACH+GRASP+LIFT) → phase 3 (+PLACE, giờ đã có state machine + release hoạt động thật từ Phase 41). Đây là cam kết thời gian LỚN — checkpoint hiện tại mất nhiều ngày huấn luyện qua nhiều lần chạy để đạt 57% success ở phase 2; train lại từ đầu với scene mới nhiều khả năng cũng cần quy mô tương đương, dù có 4090 rảnh có thể nhanh hơn đáng kể so với lần đầu (kinh nghiệm + hạ tầng debug đã có sẵn).
