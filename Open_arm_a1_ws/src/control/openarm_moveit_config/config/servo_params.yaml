@@ -1,0 +1,73 @@
+# -----------------------------------------------------------------------------
+# servo_params.yaml
+#
+# Shared moveit_servo config for both arms. servo.launch.py loads this once
+# per arm and overrides move_group_name/command_out_topic/ee_frame_name on
+# top of it (see that file) - the two arms are kinematically identical
+# (same v10 arm repeated), so duplicating this whole file per side would
+# just be two copies that drift out of sync over time.
+#
+# Schema/field names come from the real installed package
+# (/opt/ros/jazzy/share/moveit_servo/config/panda_simulated_config.yaml on
+# IQ9075, moveit_servo 2.12.4) - copied from there rather than written from
+# memory, since a wrong field name here fails silently (unused, not an
+# error) rather than loudly.
+#
+# TODO(human): The numeric values below (command_in_type/scale, publish/
+# latency timing, singularity thresholds, joint_limit_margins, collision
+# proximity thresholds) are moveit_servo's own upstream demo defaults
+# (Panda, a very different arm) - NOT tuned for this robot. Before running
+# this against real hardware, review and adjust every value in this file
+# for the actual OpenArm v10 arm: safe max Cartesian/joint velocity for
+# this workspace and payload, actual singularity behavior (run
+# servo_keyboard_input near a wrist singularity and watch the condition
+# number moveit_servo logs), and how close self/scene collision should be
+# allowed to get before slowing down given this arm's real link geometry.
+# Treat every value here as a placeholder, not a recommendation.
+# -----------------------------------------------------------------------------
+
+## Properties of outgoing commands
+publish_period: 0.034  # 1 / ~30 Hz
+max_expected_latency: 0.1
+
+command_in_type: "unitless"  # [-1:1], as if from a joystick/gesture input
+scale:
+  linear: 0.2       # m/s
+  rotational: 0.8   # rad/s
+  joint: 0.5
+
+command_out_type: trajectory_msgs/JointTrajectory
+publish_joint_positions: true
+publish_joint_velocities: true
+publish_joint_accelerations: false
+
+use_smoothing: true
+smoothing_filter_plugin_name: "online_signal_smoothing::AccelerationLimitedPlugin"
+
+# move_group already runs as the primary planning scene monitor for this
+# workspace (moveit_bimanual.launch.py's move_group_node) when it's up -
+# false here so this Servo instance doesn't also try to own
+# /get_planning_scene.
+is_primary_planning_scene_monitor: false
+check_octomap_collisions: false
+
+## Configure handling of singularities and joint limits
+lower_singularity_threshold: 10.0
+hard_stop_singularity_threshold: 30.0
+leaving_singularity_threshold_multiplier: 2.0
+joint_limit_margins: [0.12]
+
+## Topic names (relative - servo.launch.py namespaces each instance, e.g.
+## /left_arm_servo/delta_twist_cmds, so left/right never collide)
+cartesian_command_in_topic: ~/delta_twist_cmds
+joint_command_in_topic: ~/delta_joint_cmds
+joint_topic: /joint_states
+status_topic: ~/status
+# command_out_topic and move_group_name are NOT set here - servo.launch.py
+# supplies them per-arm on top of this file.
+
+## Collision checking for the entire robot body
+check_collisions: true
+collision_check_rate: 10.0
+self_collision_proximity_threshold: 0.01
+scene_collision_proximity_threshold: 0.02
