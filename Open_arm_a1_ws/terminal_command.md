@@ -228,3 +228,28 @@ Rsyncs `src/` (excludes build/install/log) to the robot's `~/arm_ws/src/` and ru
 - **Left arm joint1 mechanical limit ≈ -90° to +30°** (`-1.5708`..`+0.5236` rad) — real mechanism limit, tighter than the URDF/software range. Don't plan/command `openarm_left_joint1` outside this without confirming the current physical limit first.
 - All 8 motors per arm confirmed physically connected as of 2026-08-17 (an earlier "motor 8 unplugged" note is stale).
 - CAN mapping: `left_can → can1`, `right_can → can0`.
+
+## 9. moveit_servo — real-time jogging
+
+One `servo_node` per arm (`control/openarm_servo` package), namespaced `left_arm_servo`/`right_arm_servo` — separate from the offline OMPL/Pilz planning pipelines in `openarm_moveit_config`. `servo_params.yaml`'s velocity numbers are reasoned from real `joint_limits.yaml`/`planner_profiles.yaml` data, but singularity thresholds and collision proximity margins are still moveit_servo's generic defaults — not yet validated against the real arm. **Test on fake hardware first.**
+
+```bash
+# 0. One-time: install moveit_servo, then rebuild the two new packages
+sudo apt install ros-jazzy-moveit-servo
+cd /home/hans/universal_bot/Open_arm_a1_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select openarm_servo openarm_moveit_config --symlink-install
+source install/setup.bash
+
+# 1. Bringup on fake hardware + RViz (separate terminal)
+ros2 launch openarm_moveit_config moveit_bimanual.launch.py use_fake_hardware:=true use_rviz:=true
+
+# 2. Servo nodes (separate terminal, source install/setup.bash again)
+ros2 launch openarm_servo servo.launch.py use_fake_hardware:=true
+
+# 3. Interactive keyboard jog test (separate terminal) - left arm example
+ros2 run moveit_servo servo_keyboard_input --ros-args -r cmd_vel:=/left_arm_servo/delta_twist_cmds
+```
+Watch RViz for smooth motion and the servo terminal for `DECELERATE_FOR_SINGULARITY`/`HALT_FOR_COLLISION`/`JOINT_BOUND` warnings before ever pointing this at the real robot (`use_fake_hardware:=false`, same launch commands, run on IQ9075 not the laptop).
+
+Programmatic jogging (C++, e.g. from a future teleop node): `openarm_servo::ServoClient` (`include/openarm_servo/servo_client.hpp`) wraps the raw topics — `jogCartesian()`, `jogJoint()`, `stop()`, `setStatusCallback()`. It has zero awareness of the FSM/`motors_enabled_` - a caller that must not jog during FAULT/E-stop has to check `~/state` itself first.
