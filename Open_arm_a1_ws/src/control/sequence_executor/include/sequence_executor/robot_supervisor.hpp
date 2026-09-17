@@ -30,11 +30,13 @@
 // call, this just does the mechanical re-activation they'd otherwise have
 // to trigger by hand.
 // -----------------------------------------------------------------------------
+#include <atomic>
 #include <memory>
 #include <string>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 
 #include <openarm_messages/action/run_sequence.hpp>
 #include <openarm_messages/msg/fsm_state.hpp>
@@ -137,6 +139,9 @@ private:
   /// Leaves TEACHING mode back to IDLE.
   bool exitTeach(std::string& message);
 
+  /// Queries real hardware component state from motor_enable_ and updates motors_enabled_.
+  void refreshMotorState();
+
   rclcpp::Node::SharedPtr node_;
   std::shared_ptr<SequenceSource> source_;
   std::shared_ptr<ControlModeProbe> mode_probe_;
@@ -148,6 +153,9 @@ private:
   rclcpp_action::Server<RunSequence>::SharedPtr run_server_;
   rclcpp::Service<FsmCommand>::SharedPtr command_service_;
   rclcpp::Publisher<FsmState>::SharedPtr state_pub_;
+  rclcpp::TimerBase::SharedPtr motor_poll_timer_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
+  std::atomic<int64_t> last_joint_state_time_ns_{0};
 
   RobotState robot_state_ = RobotState::BOOTING;
   std::string fault_reason_;

@@ -394,11 +394,34 @@ hardware_interface::CallbackReturn OpenArm_v10HW::on_activate(
   impl_->openarm->set_callback_mode_all(openarm::damiao_motor::CallbackMode::STATE);
   impl_->openarm->enable_all();
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  impl_->openarm->refresh_all();
   impl_->openarm->recv_all();
 
-  return_to_zero();
+  // Hold current position smoothly upon activation instead of violently snapping to 0.0
+  const auto& arm_motors = impl_->openarm->get_arm().get_motors();
+  for (std::size_t i = 0; i < ARM_DOF && i < arm_motors.size(); ++i) {
+    const double cur_pos = arm_motors[i].get_position();
+    pos_states_[i] = cur_pos;
+    pos_commands_[i] = cur_pos;
+    vel_states_[i] = 0.0;
+    tau_states_[i] = 0.0;
+  }
 
-  RCLCPP_INFO(rclcpp::get_logger("OpenArm_v10HW"), "Activated on %s", can_interface_.c_str());
+  if (control_mode_ == "mit") {
+    std::vector<openarm::damiao_motor::MITParam> arm_params;
+    for (std::size_t i = 0; i < ARM_DOF && i < arm_motors.size(); ++i) {
+      arm_params.push_back({kp_[i], kd_[i], arm_motors[i].get_position(), 0.0, 0.0});
+    }
+    impl_->openarm->get_arm().mit_control_all(arm_params);
+  } else if (control_mode_ == "position") {
+    std::vector<openarm::damiao_motor::PosVelParam> arm_params;
+    for (std::size_t i = 0; i < ARM_DOF && i < arm_motors.size(); ++i) {
+      arm_params.push_back({arm_motors[i].get_position(), position_mode_velocity_});
+    }
+    impl_->openarm->get_arm().posvel_control_all(arm_params);
+  }
+
+  RCLCPP_INFO(rclcpp::get_logger("OpenArm_v10HW"), "Activated on %s (holding current position)", can_interface_.c_str());
   return CallbackReturn::SUCCESS;
 #endif
 }

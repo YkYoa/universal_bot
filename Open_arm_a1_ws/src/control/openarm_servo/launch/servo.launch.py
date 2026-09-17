@@ -13,8 +13,9 @@ from openarm_moveit_config.srdf_utils import load_srdf_for_ee_type
 # moveit_servo real-time Cartesian/joint jogging - see servo_params.yaml's
 # file header for the two servo_node instances this launches (one per arm,
 # each namespaced so their ~/delta_twist_cmds etc. don't collide) and its
-# own TODO(human) for the safety-critical numbers that still need tuning
-# for this robot before real use.
+# own comments on which values are reasoned from this robot's real
+# joint_limits.yaml/planner_profiles.yaml data vs. still-generic
+# moveit_servo defaults that need live testing to tune properly.
 #
 # Standalone from moveit_bimanual.launch.py on purpose: that launch already
 # starts robot_state_publisher/ros2_control/controllers/move_group - this
@@ -22,10 +23,18 @@ from openarm_moveit_config.srdf_utils import load_srdf_for_ee_type
 # bimanual bringup, the same way sequence_executor.launch.py and
 # robot_api.launch.py are each their own layer rather than one launch file
 # trying to own everything.
+#
+# Lives in its own package (openarm_servo), not openarm_moveit_config:
+# this is a second, always-running-alongside-bringup process for a
+# different use case (live jogging) than that package's job (offline
+# OMPL/Pilz/CHOMP/STOMP planning pipeline config) - reuses its
+# srdf_utils.load_srdf_for_ee_type() via a normal package dependency
+# rather than duplicating that logic.
 
 
 def launch_setup(context, *args, **kwargs):
     moveit_config_pkg = get_package_share_directory("openarm_moveit_config")
+    servo_pkg = get_package_share_directory("openarm_servo")
 
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -77,7 +86,7 @@ def launch_setup(context, *args, **kwargs):
     kinematics_yaml_path = os.path.join(moveit_config_pkg, "config", "kinematics.yaml")
     joint_limits_yaml_path = os.path.join(moveit_config_pkg, "config", "joint_limits.yaml")
 
-    with open(os.path.join(moveit_config_pkg, "config", "servo_params.yaml")) as f:
+    with open(os.path.join(servo_pkg, "config", "servo_params.yaml")) as f:
         base_servo_params = yaml.safe_load(f)
 
     def servo_node_for(side: str, move_group_name: str, enabled: LaunchConfiguration) -> Node:

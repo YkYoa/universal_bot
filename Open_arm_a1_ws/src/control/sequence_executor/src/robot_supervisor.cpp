@@ -77,6 +77,20 @@ void RobotSupervisor::start()
     [this](const std::shared_ptr<FsmCommand::Request> request,
            std::shared_ptr<FsmCommand::Response> response) { handleCommand(request, response); });
 
+  // Subscribe to /joint_states to monitor telemetry and motor liveness
+  joint_state_sub_ = node_->create_subscription<sensor_msgs::msg::JointState>(
+    "/joint_states", 10,
+    [this](const sensor_msgs::msg::JointState::SharedPtr /*msg*/) {
+      last_joint_state_time_ns_.store(node_->now().nanoseconds());
+    });
+
+  // Probe real motor lifecycle states immediately on startup
+  refreshMotorState();
+
+  // Periodic 1-second timer to monitor real motor lifecycle state without blocking transitions
+  motor_poll_timer_ = node_->create_wall_timer(
+    std::chrono::seconds(1), [this]() { refreshMotorState(); });
+
   setRobotState(RobotState::IDLE);
   RCLCPP_INFO(logger_, "Robot supervisor ready. Sequences from %s", source_->describe().c_str());
 }
@@ -109,6 +123,17 @@ rclcpp_action::GoalResponse RobotSupervisor::handleGoal(
                 goal->sequence_name.c_str(), last_progress_.sequence_name.c_str());
     return rclcpp_action::GoalResponse::REJECT;
   }
+
+  // Gracefully skip/reject movement if motors are disabled (dry runs permitted)
+  if (!goal->dry_run) {
+    refreshMotorState();
+    if (!motors_enabled_) {
+      RCLCPP_WARN(logger_, "Rejecting '%s': Motors are disabled; please enable motors before starting motion.",
+                  goal->sequence_name.c_str());
+      return rclcpp_action::GoalResponse::REJECT;
+    }
+  }
+
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
@@ -134,30 +159,18 @@ void RobotSupervisor::handleAccepted(const std::shared_ptr<GoalHandle>& goal_han
     setRobotState(RobotState::IDLE);
   }
 
-  // Goal is already accepted from the caller's point of view - it will run,
-  // just not necessarily this instant. Re-enable before starting it rather
-  // than having rejected it back in handleGoal(): the caller (a sequence
-  // picked from a menu, a builtin triggered by the FSM itself) has no
-  // reason to know or care that the last E-stop left the hardware
-  // components needing a fresh activate cycle - see motor_enable_client.hpp.
-  if (!motors_enabled_) {
-    std::string enable_message;
-    RCLCPP_INFO(logger_, "'%s' accepted while motors are disabled - enabling first",
-                goal->sequence_name.c_str());
-    if (motor_enable_->enableAll(enable_message)) {
-      motors_enabled_ = true;
-      RCLCPP_INFO(logger_, "motors enabled: %s", enable_message.c_str());
-    } else {
-      RCLCPP_ERROR(logger_, "could not enable motors for '%s': %s",
-                   goal->sequence_name.c_str(), enable_message.c_str());
+  // Double-check motor state in case power dropped between handleGoal and handleAccepted
+  if (!goal->dry_run) {
+    refreshMotorState();
+    if (!motors_enabled_) {
+      RCLCPP_ERROR(logger_, "Cannot run '%s': motors are disabled", goal->sequence_name.c_str());
       auto result = std::make_shared<RunSequence::Result>();
       result->success = false;
-      result->error_message = "motors disabled and could not be re-enabled (check physical E-stop or 48V power): " + enable_message;
+      result->error_message = "Motors are disabled; please enable motors before starting motion.";
       result->steps_completed = 0;
       active_goal_->abort(result);
       active_goal_.reset();
       fault_reason_ = result->error_message;
-      motors_enabled_ = false;
       setRobotState(RobotState::FAULT);
       return;
     }
@@ -197,7 +210,6 @@ void RobotSupervisor::handleCommand(const std::shared_ptr<FsmCommand::Request> r
     }
   } else if (command == "cancel") {
     ok = fsm_->cancel(message);
-    motors_enabled_ = false;
     publishState();
   } else if (command == "stop") {
     // Software stop: equivalent to cancel. The real emergency stop is the
@@ -208,18 +220,15 @@ void RobotSupervisor::handleCommand(const std::shared_ptr<FsmCommand::Request> r
       ok = true;
       message = "nothing was running";
     }
-    motors_enabled_ = false;
     publishState();
   } else if (command == "enable") {
-    // Manual equivalent of the auto-enable handleAccepted() does before
-    // starting a goal - exposed as its own command so a dashboard can offer
-    // an explicit "Enable Motors" action instead of only finding out via a
-    // goal's failure message.
-    // Always call enableAll() unconditionally so an operator can recover
-    // motors from physical E-stop power loss or fault states.
-    ok = motor_enable_->enableAll(message);
-    if (ok) {
-      motors_enabled_ = true;
+    refreshMotorState();
+    if (motors_enabled_) {
+      ok = true;
+      message = "Motors are already enabled";
+    } else {
+      ok = motor_enable_->enableAll(message);
+      refreshMotorState();
     }
     publishState();
   } else if (command == "clear_fault") {
@@ -227,7 +236,7 @@ void RobotSupervisor::handleCommand(const std::shared_ptr<FsmCommand::Request> r
       message = "no fault to clear";
     } else {
       fault_reason_.clear();
-      motors_enabled_ = false;  // Force re-enable cycle on next goal
+      refreshMotorState();
       setRobotState(RobotState::IDLE);
       ok = true;
       message = "cleared";
@@ -346,7 +355,6 @@ void RobotSupervisor::onSequenceFinished(bool success, const std::string& error_
     setRobotState(RobotState::IDLE);
   } else {
     fault_reason_ = error_message;
-    motors_enabled_ = false;
     setRobotState(RobotState::FAULT);
   }
 
@@ -417,6 +425,46 @@ void RobotSupervisor::publishState()
 {
   if (state_pub_) {
     state_pub_->publish(buildStateMessage());
+  }
+}
+
+void RobotSupervisor::refreshMotorState()
+{
+  std::string msg;
+  bool any_physical = false;
+  bool mock_found = false;
+  const bool active = motor_enable_->queryMotorsEnabled(msg, any_physical, mock_found);
+
+  bool enabled = false;
+  if (any_physical) {
+    // For physical hardware, motors are only enabled if controller_manager reports them active
+    // AND joint states are actively streaming (received within the last 2 seconds).
+    const int64_t last_js = last_joint_state_time_ns_.load();
+    const int64_t now_ns = node_->now().nanoseconds();
+    const bool js_fresh = (last_js > 0) && ((now_ns - last_js) < 2000000000LL);
+
+    if (active && js_fresh) {
+      enabled = true;
+    } else if (active && !js_fresh) {
+      RCLCPP_DEBUG_THROTTLE(logger_, *node_->get_clock(), 5000,
+        "Physical motors active in ros2_control but /joint_states is offline or stale");
+      enabled = false;
+    } else {
+      enabled = false;
+    }
+  } else if (mock_found && active) {
+    // Mock simulation build explicitly detected and active
+    enabled = true;
+  } else {
+    // Controller manager down, timed out, or no valid components
+    enabled = false;
+  }
+
+  if (enabled != motors_enabled_) {
+    motors_enabled_ = enabled;
+    RCLCPP_INFO(logger_, "Motor lifecycle state changed: %s (%s)",
+                motors_enabled_ ? "ENABLED" : "DISABLED", msg.c_str());
+    publishState();
   }
 }
 

@@ -381,38 +381,23 @@ def get_pose(group_name):
 # ─────────────────────────────────────────────
 # Motor-enable guard for direct REST API moves
 # ─────────────────────────────────────────────
-_motor_enable_lock = threading.Lock()
-_motor_enable_cache = {'enabled': False, 'expires': 0.0}
-_MOTOR_ENABLE_TTL = 30.0  # seconds
 
 def _ensure_motors_enabled():
-    """Ensure motors are enabled and ready before any move or sequence.
-
-    Uses a TTL cache to avoid spamming the enable service on rapid-fire
-    API calls (e.g. slider UI). Returns (ok, message).
+    """Verify that motors are enabled and ready before commanding movement.
+    
+    Does NOT auto-enable; returns (ok: bool, message: str).
     """
     if fsm is None or not fsm.is_connected():
-        # FSM not available — can't check/enable, let the move try anyway
         return True, ''
 
     latest = fsm.latest_state()
-    # If the FSM reports motors are not enabled or robot is in FAULT, force auto-recovery
-    if latest and (not latest.get('motors_enabled', False) or latest.get('robot_state') == 'FAULT'):
-        with _motor_enable_lock:
-            _motor_enable_cache['enabled'] = False
-            _motor_enable_cache['expires'] = 0.0
+    if latest:
+        if latest.get('robot_state') == 'FAULT':
+            return False, f"Robot is in FAULT ({latest.get('fault_reason', 'unknown fault')}). Please clear fault first."
+        if not latest.get('motors_enabled', False):
+            return False, "Motors are disabled; please enable motors before commanding motion."
 
-    now = time.time()
-    with _motor_enable_lock:
-        if _motor_enable_cache['enabled'] and now < _motor_enable_cache['expires']:
-            return True, ''
-
-    # Cache miss or expired or faulted — auto-recover and enable
-    ok, message = fsm.ensure_ready_for_motion(timeout_sec=3.0)
-    with _motor_enable_lock:
-        _motor_enable_cache['enabled'] = ok
-        _motor_enable_cache['expires'] = now + _MOTOR_ENABLE_TTL if ok else 0.0
-    return ok, message
+    return True, ''
 
 
 # ─────────────────────────────────────────────
@@ -521,7 +506,7 @@ def move_to_pose():
 
     ok_en, msg_en = _ensure_motors_enabled()
     if not ok_en:
-        app.logger.warning(f'Motor enable failed before move_to_pose: {msg_en}')
+        return jsonify({'success': False, 'message': msg_en}), 422
 
     try:
         result = controller.move_to_pose(
@@ -594,7 +579,7 @@ def move_to_joints():
 
     ok_en, msg_en = _ensure_motors_enabled()
     if not ok_en:
-        app.logger.warning(f'Motor enable failed before move_to_joints: {msg_en}')
+        return jsonify({'success': False, 'message': msg_en}), 422
 
     try:
         result = controller.move_to_joint_positions(
@@ -709,7 +694,7 @@ def move_single_joint():
 
     ok_en, msg_en = _ensure_motors_enabled()
     if not ok_en:
-        app.logger.warning(f'Motor enable failed before move_single_joint: {msg_en}')
+        return jsonify({'success': False, 'message': msg_en}), 422
 
     try:
         result = controller.move_single_joint(
@@ -760,7 +745,7 @@ def move_to_named():
 
     ok_en, msg_en = _ensure_motors_enabled()
     if not ok_en:
-        app.logger.warning(f'Motor enable failed before move_to_named: {msg_en}')
+        return jsonify({'success': False, 'message': msg_en}), 422
 
     try:
         result = controller.move_to_named_pose(
@@ -1139,6 +1124,27 @@ def fsm_graph():
     return jsonify({'success': True, 'graph': _fsm_graph()})
 
 
+@app.route('/api/fsm/motors_state', methods=['GET'])
+def fsm_motors_state():
+    """Get the current motor lifecycle state.
+
+    Response:
+    {
+        "success": true,
+        "motors_enabled": true,
+        "robot_state": "IDLE"
+    }
+    """
+    if fsm is None:
+        return jsonify({'success': False, 'message': 'the ROS bridge did not start'}), 503
+    enabled, robot_state = fsm.get_motors_state()
+    return jsonify({
+        'success': True,
+        'motors_enabled': enabled,
+        'robot_state': robot_state,
+    })
+
+
 @app.route('/api/fsm/state', methods=['GET'])
 def fsm_state():
     """The latest snapshot. Prefer the `fsm_state` socket event for live use -
@@ -1169,14 +1175,6 @@ def fsm_command():
         return jsonify({'success': False, 'message': "'command' is required"}), 400
 
     ok, message = fsm.send_command(command)
-    if command in ('stop', 'cancel', 'clear_fault'):
-        with _motor_enable_lock:
-            _motor_enable_cache['enabled'] = False
-            _motor_enable_cache['expires'] = 0.0
-    elif command == 'enable' and ok:
-        with _motor_enable_lock:
-            _motor_enable_cache['enabled'] = True
-            _motor_enable_cache['expires'] = time.time() + _MOTOR_ENABLE_TTL
 
     # A refused command is a legitimate answer ("not paused", "no fault to
     # clear"), not a server error - 409 so a client can show the message.
@@ -1365,7 +1363,7 @@ def move_to_workspace_point():
 
     ok_en, msg_en = _ensure_motors_enabled()
     if not ok_en:
-        app.logger.warning(f'Motor enable failed before move_to_workspace: {msg_en}')
+        return jsonify({'success': False, 'message': msg_en}), 422
 
     try:
         result = controller.move_to_pose(
@@ -1673,12 +1671,8 @@ def main():
     controller = MoveItEEController()
 
     def _on_fsm_state(state):
-        """Forward FSM state to WebSocket clients and invalidate motor cache on fault."""
+        """Forward FSM state to WebSocket clients."""
         socketio.emit('fsm_state', state)
-        if state and state.get('robot_state') == 'FAULT':
-            with _motor_enable_lock:
-                _motor_enable_cache['enabled'] = False
-                _motor_enable_cache['expires'] = 0.0
 
     # Every FSM transition is pushed straight out to connected clients. The
     # executor only publishes when something actually changes, so an idle robot

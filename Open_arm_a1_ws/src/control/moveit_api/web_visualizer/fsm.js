@@ -732,6 +732,10 @@
     function run(dry) {
       var name = el('seqPicker').value;
       if (!name) { return; }
+      if (!dry && lastState && lastState.motors_enabled === false) {
+        el('runMsg').textContent = 'Motors are disabled; please click the Motors badge to enable motors first.';
+        return;
+      }
       el('runMsg').textContent = 'starting ' + name + '…';
       post('/api/sequence/run', { name: name, dry_run: dry }).then(function (res) {
         el('runMsg').textContent = res.message || '';

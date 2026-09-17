@@ -55,8 +55,21 @@ public:
   explicit MotorEnableClient(const rclcpp::Node::SharedPtr& node);
   virtual ~MotorEnableClient() = default;
 
+  /// Queries the real lifecycle state of all hardware components
+  /// via controller_manager's list_hardware_components service.
+  /// Returns true iff every physical component is currently PRIMARY_STATE_ACTIVE.
+  /// Sets `message` with a summary of component states.
+  /// Sets `any_physical_found` to true if at least one physical component was listed.
+  /// Sets `mock_components_found` to true if mock components were found and no physical components were listed.
+  virtual bool queryMotorsEnabled(std::string& message, bool& any_physical_found,
+                                  bool& mock_components_found);
+
+  /// 2-parameter overload for backwards compatibility.
+  virtual bool queryMotorsEnabled(std::string& message, bool& any_physical_found);
+
   /// Cycles every physical (non-mock) hardware component through
   /// inactive -> active, forcing a fresh enable_all() over CAN on each.
+  /// If motors are already active, skips re-activation and returns true.
   /// Blocking. Returns true iff every physical component ended the cycle
   /// "active"; `message` explains the outcome (component names and
   /// resulting states) either way, suitable for FsmCommand::Response or a

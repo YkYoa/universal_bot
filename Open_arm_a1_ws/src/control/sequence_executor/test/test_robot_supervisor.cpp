@@ -45,6 +45,7 @@
 #include <openarm_messages/action/run_sequence.hpp>
 #include <openarm_messages/msg/fsm_state.hpp>
 #include <openarm_messages/srv/fsm_command.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 
 #include "sequence_executor/builtin_actions.hpp"
 #include "sequence_executor/control_mode_probe.hpp"
@@ -94,6 +95,26 @@ class FakeMotorEnableClient : public sequence_executor::MotorEnableClient
 {
 public:
   using MotorEnableClient::MotorEnableClient;
+
+  bool query_active = true;
+  bool any_physical = false;
+  bool mock_found = true;
+
+  bool queryMotorsEnabled(std::string& message, bool& any_physical_found,
+                          bool& mock_components_found) override
+  {
+    message = "fake motor state: active";
+    any_physical_found = any_physical;
+    mock_components_found = mock_found;
+    return query_active;
+  }
+
+  bool queryMotorsEnabled(std::string& message, bool& any_physical_found) override
+  {
+    bool mock = false;
+    return queryMotorsEnabled(message, any_physical_found, mock);
+  }
+
   bool enableAll(std::string& message) override
   {
     message = "fake enable - always succeeds";
@@ -164,9 +185,9 @@ protected:
     // of a step's required_control_mode - every test builtin above also
     // declares kModeAny, so this never gates anything either way.
     auto mode_probe = std::make_shared<sequence_executor::ControlModeProbe>(node_, "");
-    auto motor_enable = std::make_shared<FakeMotorEnableClient>(node_);
+    motor_enable_ = std::make_shared<FakeMotorEnableClient>(node_);
     supervisor_ = std::make_shared<RobotSupervisor>(node_, source, mode_probe, makeTestRegistry(),
-                                                    motor_enable);
+                                                    motor_enable_);
     supervisor_->start();
 
     // KeepLast(20), not (1): several transitions in a row happen
@@ -192,7 +213,7 @@ protected:
         // collapsing immediate repeats is correct, not just papering over
         // it: a genuine transition history cannot contain two identical
         // consecutive entries by construction.
-        StateEvent event{msg->robot_state, msg->sequence_name};
+        StateEvent event{msg->robot_state, msg->sequence_name, msg->motors_enabled};
         if (history_.empty() || !(history_.back() == event)) {
           history_.push_back(event);
         }
@@ -291,15 +312,18 @@ protected:
   {
     std::string robot_state;
     std::string sequence_name;
+    bool motors_enabled{false};
 
     bool operator==(const StateEvent& other) const
     {
-      return robot_state == other.robot_state && sequence_name == other.sequence_name;
+      return robot_state == other.robot_state && sequence_name == other.sequence_name &&
+             motors_enabled == other.motors_enabled;
     }
   };
 
   rclcpp::Node::SharedPtr node_;
   std::shared_ptr<RobotSupervisor> supervisor_;
+  std::shared_ptr<FakeMotorEnableClient> motor_enable_;
   rclcpp::executors::SingleThreadedExecutor executor_;
   rclcpp::Subscription<FsmState>::SharedPtr state_sub_;
   rclcpp_action::Client<RunSequence>::SharedPtr run_client_;
@@ -454,6 +478,49 @@ TEST_F(RobotSupervisorTest, AbortToHomeCalledTwiceIsSafe)
     }
   }
   EXPECT_EQ(home_runs, 2) << "one home run per abort_to_home call, no double-queueing";
+}
+
+TEST_F(RobotSupervisorTest, MotorsEnabledWhenMockComponentsReported)
+{
+  ASSERT_TRUE(spinUntil([this] { return !history_.empty() && history_.back().motors_enabled; }));
+  EXPECT_TRUE(history_.back().motors_enabled);
+}
+
+TEST_F(RobotSupervisorTest, MotorsDisabledWhenControllerManagerUnreachable)
+{
+  motor_enable_->query_active = false;
+  motor_enable_->any_physical = false;
+  motor_enable_->mock_found = false;
+
+  ASSERT_TRUE(spinUntil([this] { return !history_.empty() && !history_.back().motors_enabled; }));
+  EXPECT_FALSE(history_.back().motors_enabled);
+}
+
+TEST_F(RobotSupervisorTest, MotorsDisabledWhenPhysicalWithoutJointStates)
+{
+  motor_enable_->query_active = true;
+  motor_enable_->any_physical = true;
+  motor_enable_->mock_found = false;
+
+  ASSERT_TRUE(spinUntil([this] { return !history_.empty() && !history_.back().motors_enabled; }));
+  EXPECT_FALSE(history_.back().motors_enabled);
+}
+
+TEST_F(RobotSupervisorTest, MotorsEnabledWhenPhysicalWithFreshJointStates)
+{
+  motor_enable_->query_active = true;
+  motor_enable_->any_physical = true;
+  motor_enable_->mock_found = false;
+
+  auto js_pub = node_->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
+  sensor_msgs::msg::JointState js_msg;
+  js_msg.header.stamp = node_->now();
+  js_msg.name = {"joint1"};
+  js_msg.position = {0.0};
+  js_pub->publish(js_msg);
+
+  ASSERT_TRUE(spinUntil([this] { return !history_.empty() && history_.back().motors_enabled; }));
+  EXPECT_TRUE(history_.back().motors_enabled);
 }
 
 // Deliberately does NOT use RobotSupervisorTest/FakeMotorEnableClient: that

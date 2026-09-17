@@ -115,51 +115,24 @@ class FsmBridge(Node):
 
     # ── commands ─────────────────────────────────────────────────────────────
 
-    def ensure_ready_for_motion(self, timeout_sec=3.0):
-        """Ensure the robot is cleared of faults and motors are enabled.
-
-        Auto-clears FAULT if present, and auto-enables motors if disabled.
-        Waits up to timeout_sec for confirmation.
-        Returns (ok, message).
-        """
-        deadline = time.time() + timeout_sec
+    def get_motors_state(self):
+        """Returns (enabled: bool, robot_state: str) based on the latest FsmState."""
         latest = self.latest_state()
-
-        # Step 1: If in FAULT, auto-clear fault
-        if latest and latest.get('robot_state') == 'FAULT':
-            ok, msg = self.send_command('clear_fault')
-            if not ok:
-                return False, f"Failed to clear fault before motion: {msg}"
-            while time.time() < deadline:
-                latest = self.latest_state()
-                if latest and latest.get('robot_state') != 'FAULT':
-                    break
-                time.sleep(0.05)
-
-        # Step 2: If motors not enabled, auto-enable
-        latest = self.latest_state()
-        if latest is None or not latest.get('motors_enabled', False):
-            ok, msg = self.send_command('enable')
-            if not ok:
-                return False, f"Failed to enable motors: {msg}"
-
-            while time.time() < deadline:
-                latest = self.latest_state()
-                if latest and latest.get('motors_enabled', False) and latest.get('robot_state') != 'FAULT':
-                    return True, "Motors enabled and ready"
-                time.sleep(0.05)
-
-            return False, "Motors failed to enable within 3.0s: check physical E-stop or 48V power"
-
-        return True, "Motors enabled and ready"
+        if latest is None:
+            return False, 'UNKNOWN (no state received)'
+        enabled = bool(latest.get('motors_enabled', False))
+        robot_state = latest.get('robot_state', 'UNKNOWN')
+        return enabled, robot_state
 
     def run_sequence(self, name, repeat=0, velocity=0.0, dry_run=False):
         """Fire and forget. Returns as soon as the goal is accepted or refused;
         watch `fsm_state` for what happens next."""
         if not dry_run:
-            ok, msg = self.ensure_ready_for_motion(timeout_sec=3.0)
-            if not ok:
-                return False, msg
+            latest = self.latest_state()
+            if latest and latest.get('robot_state') == 'FAULT':
+                return False, f"Cannot run sequence: robot is in FAULT ({latest.get('fault_reason', 'unknown fault')}). Please clear fault first."
+            if latest and not latest.get('motors_enabled', False):
+                return False, "Motors are disabled; please enable motors before starting motion."
 
         if not self._run_client.wait_for_server(timeout_sec=SERVICE_TIMEOUT_S):
             return False, f'{RUN_ACTION} is not available - is the executor running?'

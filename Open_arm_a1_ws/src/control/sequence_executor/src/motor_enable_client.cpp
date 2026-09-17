@@ -60,9 +60,87 @@ bool MotorEnableClient::setComponentState(const std::string& name, uint8_t targe
   return true;
 }
 
+bool MotorEnableClient::queryMotorsEnabled(std::string& message, bool& any_physical_found,
+                                           bool& mock_components_found)
+{
+  using lifecycle_msgs::msg::State;
+  any_physical_found = false;
+  mock_components_found = false;
+
+  if (!list_client_->wait_for_service(std::chrono::seconds(2))) {
+    message = "list_hardware_components service unavailable";
+    return false;
+  }
+
+  auto future =
+    list_client_->async_send_request(std::make_shared<ListHardwareComponents::Request>());
+  if (rclcpp::spin_until_future_complete(internal_node_, future.future, std::chrono::seconds(3)) !=
+      rclcpp::FutureReturnCode::SUCCESS) {
+    list_client_->remove_pending_request(future);
+    message = "timed out listing hardware components";
+    return false;
+  }
+
+  auto response = future.future.get();
+  if (!response) {
+    message = "list_hardware_components returned an empty response";
+    return false;
+  }
+
+  bool all_active = true;
+  std::vector<std::string> states;
+  for (const auto& component : response->component) {
+    if (component.plugin_name == kMockPluginName ||
+        component.plugin_name.find("mock") != std::string::npos ||
+        component.plugin_name.find("fake") != std::string::npos) {
+      mock_components_found = true;
+      continue;
+    }
+    any_physical_found = true;
+    const bool is_active = (component.state.id == State::PRIMARY_STATE_ACTIVE);
+    states.push_back(component.name + ": " + component.state.label);
+    if (!is_active) {
+      all_active = false;
+    }
+  }
+
+  if (!any_physical_found) {
+    if (mock_components_found) {
+      message = "mock hardware components found";
+      return true;
+    }
+    message = "no hardware components found";
+    return false;
+  }
+
+  message.clear();
+  for (size_t i = 0; i < states.size(); ++i) {
+    if (i > 0) {
+      message += "; ";
+    }
+    message += states[i];
+  }
+  return all_active;
+}
+
+bool MotorEnableClient::queryMotorsEnabled(std::string& message, bool& any_physical_found)
+{
+  bool mock_found = false;
+  return queryMotorsEnabled(message, any_physical_found, mock_found);
+}
+
 bool MotorEnableClient::enableAll(std::string& message)
 {
   using lifecycle_msgs::msg::State;
+
+  // If physical motors are already active, skip re-activation to avoid jerking motion
+  bool any_physical = false;
+  std::string current_state_msg;
+  if (queryMotorsEnabled(current_state_msg, any_physical) && any_physical) {
+    message = "Motors are already enabled (" + current_state_msg + ")";
+    RCLCPP_INFO(logger_, "enableAll: %s, skipping re-activation", message.c_str());
+    return true;
+  }
 
   if (!list_client_->wait_for_service(std::chrono::seconds(2))) {
     message = "list_hardware_components service unavailable";
@@ -91,6 +169,12 @@ bool MotorEnableClient::enableAll(std::string& message)
   std::vector<std::string> outcomes;
   for (const auto& component : response->component) {
     if (component.plugin_name == kMockPluginName) {
+      continue;
+    }
+
+    // Skip components that are already active
+    if (component.state.id == State::PRIMARY_STATE_ACTIVE) {
+      outcomes.push_back(component.name + ": already active");
       continue;
     }
 
